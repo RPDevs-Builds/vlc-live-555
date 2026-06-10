@@ -79,11 +79,15 @@ jobs:
 
           tar -xf live555-latest.tar.gz --strip-components=1 -C live-latest
           tar -xf "live.${VERSION_DATE}.tar.gz" --strip-components=1 -C "live-${VERSION_DATE}"
-
+          
       - name: Compile Live555
         if: env.CHANGED == 'true'
         run: |
           cd ./source/live-latest
+          
+          # Inject C++20 standard requirement to support std::atomic_flag::test()
+          sed -i 's/^COMPILE_OPTS.*/& -std=c++20/' config.linux
+          
           ./genMakefiles linux
           make -j$(nproc)
 
