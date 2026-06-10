@@ -49,23 +49,21 @@ jobs:
         run: |
           cd ./source
 
-          # Live555 utilizes MD5, not SHA1
           curl -sSL "${{ env.BASE_URL }}/live555-latest.tar.gz" -o live555-latest.tar.gz
-          curl -sSL "${{ env.BASE_URL }}/live555-latest-md5.txt" -o live555-latest-md5.txt
+          curl -sSL "${{ env.BASE_URL }}/live555-latest-sha1.txt" -o live555-latest-sha1.txt
 
-          # Hash format is 'md5 <hash> <filename>', so we extract $2
-          EXPECTED_MD5=$(awk '{print $2}' live555-latest-md5.txt)
-          CALCULATED_MD5=$(md5sum live555-latest.tar.gz | awk '{print $1}')
+          EXPECTED_SHA1=$(awk '{print $1}' live555-latest-sha1.txt)
+          CALCULATED_SHA1=$(sha1sum live555-latest.tar.gz | awk '{print $1}')
 
-          if [ "$EXPECTED_MD5" != "$CALCULATED_MD5" ]; then
-            echo "::error::Checksum verification failed! Expected: $EXPECTED_MD5, Got: $CALCULATED_MD5"
+          if [ "$EXPECTED_SHA1" != "$CALCULATED_SHA1" ]; then
+            echo "::error::Checksum verification failed! Expected: $EXPECTED_SHA1, Got: $CALCULATED_SHA1"
             exit 1
           fi
 
-          # Strip trailing colons from the changelog string using -Eo
+          # Fix: Strip trailing colons from the changelog string using -Eo
           VERSION_DATE=$(grep -Eo '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' changelog.txt | head -n 1)
           
-          # Fix date bug (%m.%m -> %m.%d)
+          # Fix: Correct fallback date bug (%m.%m -> %m.%d)
           if [ -z "$VERSION_DATE" ]; then
             VERSION_DATE=$(date +%Y.%m.%d)
           fi
@@ -92,6 +90,7 @@ jobs:
       - name: Commit and Push to Repo
         if: env.CHANGED == 'true'
         run: |
+          # Fix: Complete severed git config and commit loop
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
