@@ -43,13 +43,11 @@ jobs:
           else
             echo "CHANGED=false" >> $GITHUB_ENV
           fi
-
-      - name: Download and Verify Artifacts
+- name: Download and Verify Artifacts
         if: env.CHANGED == 'true'
         run: |
           cd ./source
 
-          # Added -f to force curl to fail on HTTP errors (e.g., 404)
           curl -fsSL "${{ env.BASE_URL }}/live555-latest.tar.gz" -o live555-latest.tar.gz
           curl -fsSL "${{ env.BASE_URL }}/live555-latest-sha1.txt" -o live555-latest-sha1.txt
 
@@ -61,16 +59,16 @@ jobs:
             exit 1
           fi
 
-          # Replaced pipe to head -n 1 with -m 1 to fix the broken pipe error
-          VERSION_DATE=$(grep -m 1 -Eo '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' changelog.txt)
+          # Removed the '^' anchor to bypass BOMs or leading whitespace
+          VERSION_DATE=$(grep -m 1 -Eo '[0-9]{4}\.[0-9]{2}\.[0-9]{2}' changelog.txt)
           
+          # Replaced flawed `date` fallback with absolute ground-truth extraction
           if [ -z "$VERSION_DATE" ]; then
-            VERSION_DATE=$(date +%Y.%m.%d)
+            VERSION_DATE=$(tar -xOf live555-latest.tar.gz live/liveMedia/include/liveMedia_version.hh | grep -m 1 -Eo '[0-9]{4}\.[0-9]{2}\.[0-9]{2}')
           fi
           
           echo "VERSION_DATE=$VERSION_DATE" >> $GITHUB_ENV
           
-          # Added -f to prevent downloading HTML error pages if the date is wrong
           curl -fsSL "${{ env.BASE_URL }}/live.${VERSION_DATE}.tar.gz" -o "live.${VERSION_DATE}.tar.gz"
 
           rm -rf live-latest
