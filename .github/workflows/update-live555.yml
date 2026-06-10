@@ -43,7 +43,8 @@ jobs:
           else
             echo "CHANGED=false" >> $GITHUB_ENV
           fi
-- name: Download and Verify Artifacts
+
+      - name: Download and Verify Artifacts
         if: env.CHANGED == 'true'
         run: |
           cd ./source
