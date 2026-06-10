@@ -2,8 +2,12 @@ name: Monitor, Verify, and Update Live555
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Checks every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+
+# The single source of truth for the domain across the entire script
+env:
+  BASE_URL: "https://download.live555.com"
 
 permissions:
   contents: write
@@ -21,10 +25,8 @@ jobs:
       - name: Check Changelog for Updates
         id: check_changelog
         run: |
-          # Fetch the remote changelog from the correct download subdomain
-          curl -sSL "https://live555.com" -o current_changelog.txt
+          curl -sSL "${{ env.BASE_URL }}/changelog.txt" -o current_changelog.txt
           
-          # Compare MD5 with tracked version
           REMOTE_HASH=$(md5sum current_changelog.txt | awk '{print $1}')
           
           if [ -f .github/tracking/changelog.md5 ]; then
@@ -38,10 +40,8 @@ jobs:
             mkdir -p .github/tracking
             echo "$REMOTE_HASH" > .github/tracking/changelog.md5
             mv current_changelog.txt ./source/changelog.txt
-            echo "Update detected. Proceeding to download and verify."
           else
             echo "CHANGED=false" >> $GITHUB_ENV
-            echo "No changes in changelog."
           fi
 
       - name: Download and Verify Artifacts
@@ -49,52 +49,32 @@ jobs:
         run: |
           cd ./source
 
-          # --- DOWNLOAD STEP FROM CORRECT SUBDOMAIN ---
-          echo "Downloading latest assets..."
-          curl -sSL "https://live555.com" -o live555-latest.tar.gz
-          curl -sSL "https://live555.com" -o live555-latest-sha1.txt
+          curl -sSL "${{ env.BASE_URL }}/live555-latest.tar.gz" -o live555-latest.tar.gz
+          curl -sSL "${{ env.BASE_URL }}/live555-latest-sha1.txt" -o live555-latest-sha1.txt
 
-          # --- VERIFICATION STEP ---
-          # Extract the hash from the text file (first field)
           EXPECTED_SHA1=$(awk '{print $1}' live555-latest-sha1.txt)
-          
-          # Calculate the hash of the downloaded tarball
           CALCULATED_SHA1=$(sha1sum live555-latest.tar.gz | awk '{print $1}')
 
-          echo "Expected:   $EXPECTED_SHA1"
-          echo "Calculated: $CALCULATED_SHA1"
-
           if [ "$EXPECTED_SHA1" != "$CALCULATED_SHA1" ]; then
-            echo "::error::Checksum verification failed! The downloaded file may be corrupted or compromised."
+            echo "::error::Checksum verification failed!"
             exit 1
-          else
-            echo "Checksum verified successfully."
           fi
 
-          # --- VERSION ARCHIVAL STEP ---
-          # Parse version date from the verified changelog (Format matches: 2026.06.01)
           VERSION_DATE=$(grep -E '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' changelog.txt | head -n 1 | awk '{print $1}')
           
           if [ -z "$VERSION_DATE" ]; then
-            VERSION_DATE=$(date +%Y.%m.%m) # Fallback if parsing fails
+            VERSION_DATE=$(date +%Y.%m.%m)
           fi
           
-          # FIXED: Domain corrected to download.live555.com
-          echo "Archiving versioned file: live.${VERSION_DATE}.tar.gz"
-          curl -sSL "https://live555.com{VERSION_DATE}.tar.gz" -o "live.${VERSION_DATE}.tar.gz"
+          curl -sSL "${{ env.BASE_URL }}/live.${VERSION_DATE}.tar.gz" -o "live.${VERSION_DATE}.tar.gz"
 
-          # --- EXTRACTION STEP ---
-          # Clean previous extractions to ensure directory purity
           rm -rf live-latest
           rm -rf "live-${VERSION_DATE}"
           mkdir -p live-latest
           mkdir -p "live-${VERSION_DATE}"
 
-          # Extract Latest and Versioned archives with flat hierarchies 
           tar -xf live555-latest.tar.gz --strip-components=1 -C live-latest
           tar -xf "live.${VERSION_DATE}.tar.gz" --strip-components=1 -C "live-${VERSION_DATE}"
-
-          echo "Success. Artifacts and source code folders match and are saved."
 
       - name: Commit and Push to Repo
         if: env.CHANGED == 'true'
