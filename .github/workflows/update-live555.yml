@@ -60,10 +60,10 @@ jobs:
             exit 1
           fi
 
-          # Removed the '^' anchor to bypass BOMs or leading whitespace
-          VERSION_DATE=$(grep -m 1 -Eo '[0-9]{4}\.[0-9]{2}\.[0-9]{2}' changelog.txt)
+          # Extract YYYY-MM-DD from changelog and translate hyphens to periods
+          VERSION_DATE=$(grep -m 1 -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}' changelog.txt | tr '-' '.')
           
-          # Replaced flawed `date` fallback with absolute ground-truth extraction
+          # Absolute ground-truth fallback via C++ header if changelog format breaks again
           if [ -z "$VERSION_DATE" ]; then
             VERSION_DATE=$(tar -xOf live555-latest.tar.gz live/liveMedia/include/liveMedia_version.hh | grep -m 1 -Eo '[0-9]{4}\.[0-9]{2}\.[0-9]{2}')
           fi
@@ -90,16 +90,4 @@ jobs:
       - name: Commit and Push to Repo
         if: env.CHANGED == 'true'
         run: |
-          # Fix: Complete severed git config and commit loop
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git add .github/tracking/changelog.md5
-          git add ./source/
-          
-          if ! git diff-index --quiet HEAD; then
-            git commit -m "build(live555): update and compile version ${{ env.VERSION_DATE }}"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git config --global
