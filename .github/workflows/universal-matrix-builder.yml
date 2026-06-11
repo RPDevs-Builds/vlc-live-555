@@ -83,7 +83,7 @@ jobs:
 
   build-matrix:
     needs: sync-upstream
-    if: needs.sync-upstream.outputs.changed == 'true'
+    if: needs.sync-upstream.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
     name: Compile (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -183,6 +183,7 @@ jobs:
 
   publish-release:
     needs: [sync-upstream, build-matrix]
+    if: needs.sync-upstream.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
     name: Package and Publish Universal GitHub Release
     runs-on: ubuntu-latest
     permissions:
