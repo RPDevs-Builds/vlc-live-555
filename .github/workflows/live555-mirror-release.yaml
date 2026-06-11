@@ -1,0 +1,171 @@
+name: Live555 Mirror & Release
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_URL: "https://download.live555.com"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-upstream:
+    name: Sync Upstream & Tag
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changelog.outputs.CHANGED }}
+      version: ${{ steps.changelog.outputs.VERSION_DATE }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Required to allow git pushes to main
+          fetch-depth: 0
+
+      - name: Inspect Upstream Release Status
+        id: changelog
+        run: |
+          curl -fsSL "${{ env.BASE_URL }}/changelog.txt" -o current_changelog.txt
+          REMOTE_HASH=$(md5sum current_changelog.txt | awk '{print $1}')
+          
+          if [ -f .github/tracking/changelog.md5 ]; then
+            LOCAL_HASH=$(cat .github/tracking/changelog.md5)
+          else
+            LOCAL_HASH=""
+          fi
+
+          if [ "$REMOTE_HASH" != "$LOCAL_HASH" ]; then
+            echo "CHANGED=true" >> $GITHUB_OUTPUT
+            VERSION_DATE=$(grep -m 1 -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}' current_changelog.txt | tr '-' '.')
+            echo "VERSION_DATE=$VERSION_DATE" >> $GITHUB_OUTPUT
+          else
+            echo "CHANGED=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Mirror Source to Main Branch
+        if: steps.changelog.outputs.CHANGED == 'true'
+        run: |
+          # Isolate download to prevent overwriting .git directories during extraction
+          mkdir -p /tmp/live555-source
+          curl -fsSL "${{ env.BASE_URL }}/live555-latest.tar.gz" -o /tmp/live555-latest.tar.gz
+          tar -xf /tmp/live555-latest.tar.gz --strip-components=1 -C /tmp/live555-source
+          
+          # Use rsync to cleanly mirror directories (handles upstream file deletions)
+          rsync -av --delete --exclude '.git' --exclude '.github' /tmp/live555-source/ ./
+          
+          # Update the tracking hash
+          mkdir -p .github/tracking
+          md5sum current_changelog.txt | awk '{print $1}' > .github/tracking/changelog.md5
+          mv current_changelog.txt changelog.txt
+          
+          # Commit and Tag
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add -A
+          
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "upstream: mirror Live555 release v${{ steps.changelog.outputs.VERSION_DATE }}"
+            git tag "v${{ steps.changelog.outputs.VERSION_DATE }}"
+            
+            git push origin main
+            git push origin "v${{ steps.changelog.outputs.VERSION_DATE }}"
+          fi
+
+  build-matrix:
+    needs: sync-upstream
+    if: needs.sync-upstream.outputs.changed == 'true'
+    name: Compile (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-64bit
+            os: ubuntu-latest
+            suffix: linux-64bit
+          - target: armlinux
+            os: ubuntu-latest
+            suffix: armlinux
+          - target: macosx-64bit
+            os: macos-latest
+            suffix: macosx-64bit
+          - target: mingw
+            os: ubuntu-latest
+            suffix: mingw
+
+    steps:
+      - name: Checkout Tagged Release
+        uses: actions/checkout@v4
+        with:
+          # Explicitly checkout the tag we just created in the sync job
+          ref: refs/tags/v${{ needs.sync-upstream.outputs.version }}
+
+      - name: Setup Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: matrix-${{ matrix.target }}-ccache-${{ needs.sync-upstream.outputs.version }}
+          restore-keys: matrix-${{ matrix.target }}-ccache-
+
+      - name: Provision Multi-Arch Host Toolchains
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache gcc-arm-linux-gnueabi g++-arm-linux-gnueabi mingw-w64
+
+      - name: Universal C++20 Injection and Compilation
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          export CCACHE_DIR=~/.cache/ccache
+          
+          # Source is now natively in the root directory
+          sed -i 's/^COMPILE_OPTS.*/& -std=c++20/' config.${{ matrix.suffix }}
+          ./genMakefiles ${{ matrix.suffix }}
+          make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+      - name: Execute Local Staging and Compression
+        run: |
+          mkdir -p local_staging
+          make install DESTDIR="$(pwd)/local_staging" PREFIX=/usr/local
+          
+          tar -czvf live555-${{ matrix.target }}-${{ needs.sync-upstream.outputs.version }}.tar.gz -C local_staging/usr/local .
+
+      - name: Pass Artifacts to Release Pipeline
+        uses: actions/upload-artifact@v4
+        with:
+          name: live555-${{ matrix.target }}-${{ needs.sync-upstream.outputs.version }}
+          path: ./*.tar.gz
+          retention-days: 1
+
+  publish-release:
+    needs: [sync-upstream, build-matrix]
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Aggregated Binary Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: Attach Binaries to Tag Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Links the assets directly to the tag pushed in Job 1
+          tag_name: v${{ needs.sync-upstream.outputs.version }}
+          name: Live555 Upstream v${{ needs.sync-upstream.outputs.version }}
+          files: ./release-assets/*.tar.gz
+          body: |
+            Automated matrix compilation for Live555 release `v${{ needs.sync-upstream.outputs.version }}`.
+            
+            * **Branch**: `main`
+            * **Compiler Standard**: C++20 enforced across all toolchains.
+            * **Upstream Changelog**: [changelog.txt](https://download.live555.com/changelog.txt)
