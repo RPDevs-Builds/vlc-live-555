@@ -147,7 +147,7 @@ jobs:
           ref: refs/tags/v${{ needs.sync-upstream.outputs.version }}
 
       - name: Setup Compiler Cache
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.2.0
+        uses: actions/cache@d4323d4df104b026a6ec63da397e2095a1b9b141 # v4.2.0
         with:
           path: ~/.cache/ccache
           key: matrix-${{ matrix.target }}-ccache-${{ needs.sync-upstream.outputs.version }}
@@ -175,7 +175,7 @@ jobs:
           make install DESTDIR="$(pwd)/local_staging" PREFIX=/usr/local
 
       - name: Stage Artifact Payload for Packaging
-        uses: actions/upload-artifact@65c86c38e96942221701902516aa0a66e509bac0 # v4.6.1
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: compiled-binaries-${{ matrix.output_name }}
           path: ./local_staging/usr/local/
@@ -189,7 +189,7 @@ jobs:
       contents: write # Explicitly required to post attachments onto GitHub Release objects
     steps:
       - name: Download Aggregated Binary Artifacts
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        uses: actions/download-artifact@cc200ea28ba4524672103da300819ee10fa797d9 # v4.1.9
         with:
           path: ./downloaded-payloads
 
