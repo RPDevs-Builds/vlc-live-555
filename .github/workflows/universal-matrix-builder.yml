@@ -177,15 +177,23 @@ jobs:
 
           # Target configuration file manipulation routing
           # Use portable sed logic for macOS/Linux compatibility
-          sed -i.bak 's/^COMPILE_OPTS.*/& -std=c++20/' config.${{ matrix.suffix }}
+          # Target CPLUSPLUS_FLAGS specifically to avoid C compiler errors with -std=c++20
+          sed -i.bak 's/^CPLUSPLUS_FLAGS.*/& -std=c++20/' config.${{ matrix.suffix }}
           
-          # Force NO_OPENSSL for cross-compilers without dedicated no-openssl configs
+          # Force NO_OPENSSL for targets without dedicated no-openssl configs or known issues
           if [[ "${{ matrix.target }}" == "armlinux" || "${{ matrix.target }}" == "mingw" ]]; then
             sed -i.bak 's/^COMPILE_OPTS.*/& -DNO_OPENSSL=1/' config.${{ matrix.suffix }}
-            # Strip openssl libraries from the link line for MinGW
-            if [[ "${{ matrix.target }}" == "mingw" ]]; then
-              sed -i.bak 's/-lssl -lcrypto//' config.mingw
-            fi
+          fi
+          
+          # Global OpenSSL library stripping for NO_OPENSSL targets
+          if grep -q "DNO_OPENSSL=1" config.${{ matrix.suffix }}; then
+            sed -i.bak 's/LIBS_FOR_CONSOLE_APPLICATION =.*/LIBS_FOR_CONSOLE_APPLICATION =/' config.${{ matrix.suffix }}
+            sed -i.bak 's/LIBS_FOR_GUI_APPLICATION =.*/LIBS_FOR_GUI_APPLICATION =/' config.${{ matrix.suffix }}
+          fi
+
+          # Resolve FreeBSD sockaddr_in.sin_len incompatibility on Linux runners
+          if [[ "${{ matrix.target }}" == "freebsd" ]]; then
+            sed -i.bak 's/-DHAVE_SOCKADDR_LEN=1//' config.${{ matrix.suffix }}
           fi
           
           ./genMakefiles ${{ matrix.suffix }}
