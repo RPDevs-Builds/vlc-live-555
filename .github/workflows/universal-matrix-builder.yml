@@ -166,8 +166,19 @@ jobs:
           export PATH="/usr/lib/ccache:$PATH"
           export CCACHE_DIR=~/.cache/ccache
           
+          # Cross-Compiler Environment Routing
+          if [[ "${{ matrix.target }}" == "armlinux" ]]; then
+            export CROSS_COMPILE=arm-linux-gnueabi-
+          elif [[ "${{ matrix.target }}" == "mingw" ]]; then
+            export CC=x86_64-w64-mingw32-gcc
+            export CXX=x86_64-w64-mingw32-g++
+            export LD=x86_64-w64-mingw32-ld
+          fi
+
           # Target configuration file manipulation routing
-          sed -i 's/^COMPILE_OPTS.*/& -std=c++20/' config.${{ matrix.suffix }}
+          # Use portable sed logic for macOS/Linux compatibility
+          sed -i.bak 's/^COMPILE_OPTS.*/& -std=c++20/' config.${{ matrix.suffix }}
+          
           ./genMakefiles ${{ matrix.suffix }}
           make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
