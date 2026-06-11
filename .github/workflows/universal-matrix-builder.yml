@@ -183,6 +183,10 @@ jobs:
           # Force NO_OPENSSL for targets without dedicated no-openssl configs or known issues
           if [[ "${{ matrix.target }}" == "armlinux" || "${{ matrix.target }}" == "mingw" ]]; then
             sed -i.bak 's/^COMPILE_OPTS.*/& -DNO_OPENSSL=1/' config.${{ matrix.suffix }}
+            # MinGW specific compatibility flags
+            if [[ "${{ matrix.target }}" == "mingw" ]]; then
+              sed -i.bak 's/^COMPILE_OPTS.*/& -DNO_GETIFADDRS=1/' config.${{ matrix.suffix }}
+            fi
           fi
           
           # Global OpenSSL library stripping for NO_OPENSSL targets
