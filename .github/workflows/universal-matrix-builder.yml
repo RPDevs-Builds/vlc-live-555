@@ -60,7 +60,7 @@ jobs:
           tar -xf /tmp/live555-latest.tar.gz --strip-components=1 -C /tmp/live555-source
           
           # Upstream source tracking synchronization loop
-          rsync -av --delete --exclude '.git' --exclude '.github' /tmp/live555-source/ ./
+          rsync -av --delete --exclude '.git' --exclude '.github' --exclude '.gemini/' /tmp/live555-source/ ./
           
           mkdir -p .github/tracking
           md5sum /tmp/current_changelog.txt | awk '{print $1}' > .github/tracking/changelog.md5
@@ -72,9 +72,13 @@ jobs:
           git add -A
           if ! git diff-index --quiet HEAD; then
             git commit -m "upstream: mirror clean live555 source v${{ steps.changelog.outputs.VERSION_DATE }}"
-            git tag "v${{ steps.changelog.outputs.VERSION_DATE }}"
-            git push origin main
-            git push origin "v${{ steps.changelog.outputs.VERSION_DATE }}"
+            if ! git rev-parse "v${{ steps.changelog.outputs.VERSION_DATE }}" >/dev/null 2>&1; then
+              git tag "v${{ steps.changelog.outputs.VERSION_DATE }}"
+              git push origin main
+              git push origin "v${{ steps.changelog.outputs.VERSION_DATE }}"
+            else
+              git push origin main
+            fi
           fi
 
   build-matrix:
