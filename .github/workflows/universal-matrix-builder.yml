@@ -191,8 +191,7 @@ jobs:
           
           # Global OpenSSL library stripping for NO_OPENSSL targets
           if grep -q "DNO_OPENSSL=1" config.${{ matrix.suffix }}; then
-            sed -i.bak 's/LIBS_FOR_CONSOLE_APPLICATION =.*/LIBS_FOR_CONSOLE_APPLICATION =/' config.${{ matrix.suffix }}
-            sed -i.bak 's/LIBS_FOR_GUI_APPLICATION =.*/LIBS_FOR_GUI_APPLICATION =/' config.${{ matrix.suffix }}
+            sed -i.bak 's/-lssl -lcrypto//g' config.${{ matrix.suffix }}
           fi
 
           # Resolve FreeBSD sockaddr_in.sin_len incompatibility on Linux runners
