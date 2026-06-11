@@ -119,7 +119,7 @@ jobs:
           # BSD UNIX Matrix Targets
           - target: freebsd
             os: ubuntu-latest
-            suffix: freebsd
+            suffix: freebsd-no-openssl
             output_name: freebsd
           - target: openbsd
             os: ubuntu-latest
@@ -135,11 +135,11 @@ jobs:
           # Apple Darwin Native Toolchain Targets
           - target: macosx-bigsur
             os: macos-latest
-            suffix: macosx-bigsur
+            suffix: macosx-no-openssl
             output_name: macosx-bigsur
           - target: iphoneos
             os: macos-latest
-            suffix: iphoneos
+            suffix: macosx-no-openssl
             output_name: iphoneos
 
     steps:
@@ -178,6 +178,15 @@ jobs:
           # Target configuration file manipulation routing
           # Use portable sed logic for macOS/Linux compatibility
           sed -i.bak 's/^COMPILE_OPTS.*/& -std=c++20/' config.${{ matrix.suffix }}
+          
+          # Force NO_OPENSSL for cross-compilers without dedicated no-openssl configs
+          if [[ "${{ matrix.target }}" == "armlinux" || "${{ matrix.target }}" == "mingw" ]]; then
+            sed -i.bak 's/^COMPILE_OPTS.*/& -DNO_OPENSSL=1/' config.${{ matrix.suffix }}
+            # Strip openssl libraries from the link line for MinGW
+            if [[ "${{ matrix.target }}" == "mingw" ]]; then
+              sed -i.bak 's/-lssl -lcrypto//' config.mingw
+            fi
+          fi
           
           ./genMakefiles ${{ matrix.suffix }}
           make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
