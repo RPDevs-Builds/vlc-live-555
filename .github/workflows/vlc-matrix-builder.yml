@@ -22,15 +22,17 @@ jobs:
           EVENT_NAME="${{ github.event_name }}"
           
           if [ "$EVENT_NAME" = "push" ] || [ "$TRACK_INPUT" = "both" ] || [ -z "$TRACK_INPUT" ]; then
-            echo 'matrix={"target": ["linux-x64", "armlinux", "raspberrypi", "win64", "macos-x64"], "track": ["dev", "stable"]}' >> $GITHUB_OUTPUT
+            TRACKS='["dev", "stable"]'
           else
-            echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": [\"$TRACK_INPUT\"]}" >> $GITHUB_OUTPUT
+            TRACKS="[\"$TRACK_INPUT\"]"
           fi
+          
+          echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": $TRACKS}" >> $GITHUB_OUTPUT
 
   build-vlc:
     needs: setup-matrix
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || fromJSON('["self-hosted", "vlc-builder"]') }}
+    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || 'vlc-builder' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
