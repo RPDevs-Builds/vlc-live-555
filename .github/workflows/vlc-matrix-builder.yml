@@ -1,0 +1,107 @@
+name: VLC Matrix Builder (Live555 Support)
+
+on:
+  workflow_run:
+    workflows: ["Universal Cross-Platform Matrix Release Engine"]
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-vlc:
+    name: Build VLC (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+            live555_suffix: linux-64bit
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Provision VLC Build Environment (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git build-essential pkg-config libtool automake autoconf gettext \
+            flex bison lua5.2 liblua5.2-dev libmad0-dev libavcodec-dev \
+            libavformat-dev libswscale-dev libpostproc-dev liba52-0.7.4-dev \
+            libmpeg2-4-dev libvorbis-dev libogg-dev libtheora-dev libshout3-dev \
+            libspeex-dev libtwolame-dev libx264-dev libva-dev libdrm-dev \
+            libxcb1-dev libxcb-shm0-dev libxcb-xv0-dev libxcb-keysyms1-dev \
+            libxcb-randr0-dev libxcb-composite0-dev libxcb-render0-dev \
+            libxcb-image0-dev libxcb-util0-dev libxcb-xkb-dev libxkbcommon-x11-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev libidn11-dev
+
+      - name: Synthesize Live555 Pkg-Config
+        id: live555
+        run: |
+          # Auto-discover latest versioned artifacts
+          LATEST_VERSION=$(ls compiled/ | sort -r | head -n 1)
+          LIVE555_PATH="$(pwd)/compiled/$LATEST_VERSION/${{ matrix.live555_suffix }}"
+          
+          if [ ! -d "$LIVE555_PATH" ]; then
+            echo "Error: Live555 path not found at $LIVE555_PATH"
+            exit 1
+          fi
+          
+          mkdir -p /tmp/pkgconfig
+          cat <<EOF > /tmp/pkgconfig/live555.pc
+prefix=$LIVE555_PATH
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: live555
+Description: Multimedia streaming libraries
+Version: $LATEST_VERSION
+Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
+Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
+EOF
+          echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
+
+      - name: Bootstrap VLC Build System
+        working-directory: ./source/vlc
+        run: ./bootstrap
+
+      - name: Configure VLC with Live555
+        working-directory: ./source/vlc
+        run: |
+          ./configure \
+            --prefix=$(pwd)/install \
+            --enable-live555 \
+            --disable-qt \
+            --disable-skins2 \
+            --disable-nls \
+            --disable-vlc \
+            --disable-vlc-wrapper
+
+      - name: Compile VLC Core and Plugins
+        working-directory: ./source/vlc
+        run: make -j$(nproc 2>/dev/null || echo 2)
+
+      - name: Extract Build Artifacts
+        working-directory: ./source/vlc
+        run: make install
+
+      - name: Package VLC Binary Distribution
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: vlc-binaries-${{ matrix.target }}
+          path: ./source/vlc/install/
+          retention-days: 7
