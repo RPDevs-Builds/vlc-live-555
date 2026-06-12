@@ -1,4 +1,4 @@
-name: Matrix Test
+name: Step Test
 
 on:
   push:
@@ -6,9 +6,23 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [linux-x64, macos-x64]
+        target: [linux-x64]
     steps:
-      - run: echo "Target is ${{ matrix.target }}"
+      - name: Checkout Primary Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: main-repo
+
+      - name: Configure Target Variables
+        id: target-vars
+        run: |
+          case "${{ matrix.target }}" in
+            linux-x64)
+              echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
+              echo "host=x86_64-linux-gnu" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          echo "vlc_ref=master" >> $GITHUB_OUTPUT
