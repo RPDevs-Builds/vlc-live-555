@@ -18,16 +18,19 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          if [ "${{ github.event.inputs.track_input }}" == "both" ] || [ "${{ github.event_name }}" == "push" ]; then
+          TRACK_INPUT="${{ github.event.inputs.track_input }}"
+          EVENT_NAME="${{ github.event_name }}"
+          
+          if [ "$EVENT_NAME" = "push" ] || [ "$TRACK_INPUT" = "both" ] || [ -z "$TRACK_INPUT" ]; then
             echo 'matrix={"target": ["linux-x64", "armlinux", "raspberrypi", "win64", "macos-x64"], "track": ["dev", "stable"]}' >> $GITHUB_OUTPUT
           else
-            echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": [\"${{ github.event.inputs.track_input }}\"]}" >> $GITHUB_OUTPUT
+            echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": [\"$TRACK_INPUT\"]}" >> $GITHUB_OUTPUT
           fi
 
   build-vlc:
     needs: setup-matrix
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ${{ (matrix.target == 'macos-x64' && 'macos-latest') || fromJSON('["self-hosted", "vlc-builder"]') }}
+    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || fromJSON('["self-hosted", "vlc-builder"]') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
@@ -39,31 +42,37 @@ jobs:
           path: main-repo
 
       - name: Install System Dependencies (Hosted macOS)
-        if: ${{ !contains(runner.labels, 'self-hosted') && matrix.target == 'macos-x64' }}
+        if: ${{ runner.os == 'macOS' }}
         run: |
           brew install autoconf automake libtool gettext pkg-config lua
 
       - name: Configure Target Variables
         id: target-vars
         run: |
-          if [ "${{ matrix.target }}" == "linux-x64" ]; then
-            echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
-            echo "host=x86_64-linux-gnu" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.target }}" == "armlinux" ]; then
-            echo "live555_suffix=armlinux" >> $GITHUB_OUTPUT
-            echo "host=arm-linux-gnueabi" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.target }}" == "raspberrypi" ]; then
-            echo "live555_suffix=raspberrypi" >> $GITHUB_OUTPUT
-            echo "host=arm-linux-gnueabihf" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.target }}" == "win64" ]; then
-            echo "live555_suffix=mingw" >> $GITHUB_OUTPUT
-            echo "host=x86_64-w64-mingw32" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.target }}" == "macos-x64" ]; then
-            echo "live555_suffix=macosx-no-openssl" >> $GITHUB_OUTPUT
-            echo "host=x86_64-apple-darwin" >> $GITHUB_OUTPUT
-          fi
+          case "${{ matrix.target }}" in
+            linux-x64)
+              echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
+              echo "host=x86_64-linux-gnu" >> $GITHUB_OUTPUT
+              ;;
+            armlinux)
+              echo "live555_suffix=armlinux" >> $GITHUB_OUTPUT
+              echo "host=arm-linux-gnueabi" >> $GITHUB_OUTPUT
+              ;;
+            raspberrypi)
+              echo "live555_suffix=raspberrypi" >> $GITHUB_OUTPUT
+              echo "host=arm-linux-gnueabihf" >> $GITHUB_OUTPUT
+              ;;
+            win64)
+              echo "live555_suffix=mingw" >> $GITHUB_OUTPUT
+              echo "host=x86_64-w64-mingw32" >> $GITHUB_OUTPUT
+              ;;
+            macos-x64)
+              echo "live555_suffix=macosx-no-openssl" >> $GITHUB_OUTPUT
+              echo "host=x86_64-apple-darwin" >> $GITHUB_OUTPUT
+              ;;
+          esac
 
-          if [ "${{ matrix.track }}" == "dev" ]; then
+          if [ "${{ matrix.track }}" = "dev" ]; then
             echo "vlc_ref=master" >> $GITHUB_OUTPUT
           else
             echo "vlc_ref=latest_tag" >> $GITHUB_OUTPUT
@@ -73,14 +82,15 @@ jobs:
         id: vlc-source
         working-directory: main-repo
         run: |
-          if [[ "${{ steps.target-vars.outputs.vlc_ref }}" == "latest_tag" ]]; then
+          VLC_REF="${{ steps.target-vars.outputs.vlc_ref }}"
+          if [ "$VLC_REF" = "latest_tag" ]; then
             cd source/vlc
             git fetch --tags
             LATEST_TAG=$(git tag -l "3.0.*" | sort -V | tail -n 1)
             if [ -z "$LATEST_TAG" ]; then LATEST_TAG=$(git tag -l | sort -V | tail -n 1); fi
             echo "resolved_ref=$LATEST_TAG" >> $GITHUB_OUTPUT
           else
-            echo "resolved_ref=${{ steps.target-vars.outputs.vlc_ref }}" >> $GITHUB_OUTPUT
+            echo "resolved_ref=$VLC_REF" >> $GITHUB_OUTPUT
           fi
 
       - name: Prepare VLC Workspace
@@ -104,17 +114,20 @@ jobs:
         run: |
           VLC_VERSION=$(grep "AC_INIT" vlc-workspace/configure.ac | head -n 1 | cut -d'[' -f3 | cut -d']' -f1)
           if [ -z "$VLC_VERSION" ]; then VLC_VERSION="${{ steps.vlc-source.outputs.resolved_ref }}"; fi
+          
           LIVE555_VERSION=$(ls main-repo/compiled/ | sort -r | head -n 1)
           LIVE555_PATH="$(pwd)/main-repo/compiled/$LIVE555_VERSION/${{ steps.target-vars.outputs.live555_suffix }}"
           
           L555_CONFIG="main-repo/source/live555/config.${{ steps.target-vars.outputs.live555_suffix }}"
           L555_LIBS="-lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment"
-          if grep -q "lssl" "$L555_CONFIG"; then
+          
+          if [ -f "$L555_CONFIG" ] && grep -q "lssl" "$L555_CONFIG"; then
             L555_LIBS="$L555_LIBS -lssl -lcrypto"
           fi
 
           echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
           echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
+          
           mkdir -p /tmp/pkgconfig
           cat <<PC > /tmp/pkgconfig/live555.pc
 prefix=$LIVE555_PATH
