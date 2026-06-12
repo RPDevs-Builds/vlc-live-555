@@ -2,11 +2,6 @@ name: VLC Builder
 
 on:
   workflow_dispatch:
-    inputs:
-      force_build:
-        description: 'Force rebuild'
-        required: false
-        default: 'false'
   push:
     branches: [main]
 
@@ -28,18 +23,6 @@ jobs:
             os: ubuntu-latest
             live555_suffix: linux-64bit
             host: x86_64-linux-gnu
-            track: stable
-            vlc_ref: latest_tag
-          - target: macos-x64
-            os: macos-latest
-            live555_suffix: macosx-no-openssl
-            host: x86_64-apple-darwin
-            track: dev
-            vlc_ref: master
-          - target: macos-x64
-            os: macos-latest
-            live555_suffix: macosx-no-openssl
-            host: x86_64-apple-darwin
             track: stable
             vlc_ref: latest_tag
 
@@ -87,11 +70,6 @@ jobs:
             libxcb-randr0-dev libxcb-composite0-dev libxcb-render0-dev \
             libxcb-image0-dev libxcb-util0-dev libxcb-xkb-dev libxkbcommon-x11-dev \
             libasound2-dev libpulse-dev libdbus-1-dev libidn11-dev
-
-      - name: Provision Build Environment (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install autoconf automake libtool gettext pkg-config lua
 
       - name: Extract Versions and Synthesize Live555 Pkg-Config
         id: meta
