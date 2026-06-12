@@ -1,4 +1,4 @@
-name: Step Test
+name: Workspace Test
 
 on:
   push:
@@ -19,10 +19,23 @@ jobs:
       - name: Configure Target Variables
         id: target-vars
         run: |
-          case "${{ matrix.target }}" in
-            linux-x64)
-              echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
-              echo "host=x86_64-linux-gnu" >> $GITHUB_OUTPUT
-              ;;
-          esac
+          echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
           echo "vlc_ref=master" >> $GITHUB_OUTPUT
+
+      - name: Resolve VLC Source Reference
+        id: vlc-source
+        working-directory: main-repo
+        run: |
+          echo "resolved_ref=master" >> $GITHUB_OUTPUT
+
+      - name: Prepare VLC Workspace
+        run: |
+          mkdir -p vlc-workspace
+          if [ -d "main-repo/source/vlc" ]; then
+            echo "Caching vlc"
+          fi
+          cd vlc-workspace
+          git init
+          git remote add origin https://github.com/videolan/vlc.git
+          git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
+          git checkout -f FETCH_HEAD
