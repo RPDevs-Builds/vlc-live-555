@@ -64,17 +64,16 @@ jobs:
           echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
           echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
           mkdir -p /tmp/pkgconfig
-          cat <<EOF > /tmp/pkgconfig/live555.pc
-prefix=$LIVE555_PATH
-exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
-includedir=\${prefix}/include
-Name: live555
-Description: Multimedia streaming libraries
-Version: $LIVE555_VERSION
-Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
-Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
-EOF
+          echo "prefix=$LIVE555_PATH" > /tmp/pkgconfig/live555.pc
+          echo "exec_prefix=\${prefix}" >> /tmp/pkgconfig/live555.pc
+          echo "libdir=\${exec_prefix}/lib" >> /tmp/pkgconfig/live555.pc
+          echo "includedir=\${prefix}/include" >> /tmp/pkgconfig/live555.pc
+          echo "Name: live555" >> /tmp/pkgconfig/live555.pc
+          echo "Description: Multimedia streaming libraries" >> /tmp/pkgconfig/live555.pc
+          echo "Version: $LIVE555_VERSION" >> /tmp/pkgconfig/live555.pc
+          echo "Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment" >> /tmp/pkgconfig/live555.pc
+          echo "Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment" >> /tmp/pkgconfig/live555.pc
           echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
+
 
 
