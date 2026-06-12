@@ -23,18 +23,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Primary Linux Target
           - target: linux-x64
             os: ubuntu-latest
             live555_suffix: linux-64bit
+            host: x86_64-linux-gnu
+
+          # Apple Darwin Target
+          - target: macos-x64
+            os: macos-latest
+            live555_suffix: macosx-no-openssl
+            host: x86_64-apple-darwin
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Provision VLC Build Environment (Ubuntu)
-        if: runner.os == 'Linux'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -48,18 +56,26 @@ jobs:
             libxcb-image0-dev libxcb-util0-dev libxcb-xkb-dev libxkbcommon-x11-dev \
             libasound2-dev libpulse-dev libdbus-1-dev libidn11-dev
 
-      - name: Synthesize Live555 Pkg-Config
-        id: live555
+      - name: Provision VLC Build Environment (macOS)
+        if: matrix.os == 'macos-latest'
         run: |
-          # Auto-discover latest versioned artifacts
-          LATEST_VERSION=$(ls compiled/ | sort -r | head -n 1)
-          LIVE555_PATH="$(pwd)/compiled/$LATEST_VERSION/${{ matrix.live555_suffix }}"
+          brew install autoconf automake libtool gettext pkg-config lua
+
+      - name: Extract Versions and Synthesize Live555 Pkg-Config
+        id: meta
+        run: |
+          # Metadata Extraction
+          VLC_VERSION=$(grep "AC_INIT" source/vlc/configure.ac | head -n 1 | cut -d'[' -f3 | cut -d']' -f1)
+          if [ -z "$VLC_VERSION" ]; then VLC_VERSION="unknown"; fi
           
-          if [ ! -d "$LIVE555_PATH" ]; then
-            echo "Error: Live555 path not found at $LIVE555_PATH"
-            exit 1
-          fi
+          LIVE555_VERSION=$(ls compiled/ | sort -r | head -n 1)
+          LIVE555_PATH="$(pwd)/compiled/$LIVE555_VERSION/${{ matrix.live555_suffix }}"
           
+          echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
+          echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
+          echo "path=$LIVE555_PATH" >> $GITHUB_OUTPUT
+          
+          # Create pkg-config file
           mkdir -p /tmp/pkgconfig
           cat <<EOF > /tmp/pkgconfig/live555.pc
 prefix=$LIVE555_PATH
@@ -68,8 +84,8 @@ libdir=\${exec_prefix}/lib
 includedir=\${prefix}/include
 
 Name: live555
-Description: Multimedia streaming libraries
-Version: $LATEST_VERSION
+Description: Multimedia streaming libraries (VLC build)
+Version: $LIVE555_VERSION
 Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
 Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
 EOF
@@ -82,18 +98,21 @@ EOF
       - name: Configure VLC with Live555
         working-directory: ./source/vlc
         run: |
+          # Minimal functional configuration to verify Live555 integration
           ./configure \
             --prefix=$(pwd)/install \
+            --host=${{ matrix.host }} \
             --enable-live555 \
             --disable-qt \
             --disable-skins2 \
             --disable-nls \
             --disable-vlc \
-            --disable-vlc-wrapper
+            --disable-vlc-wrapper \
+            --disable-lua
 
       - name: Compile VLC Core and Plugins
         working-directory: ./source/vlc
-        run: make -j$(nproc 2>/dev/null || echo 2)
+        run: make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 2)
 
       - name: Extract Build Artifacts
         working-directory: ./source/vlc
@@ -102,6 +121,6 @@ EOF
       - name: Package VLC Binary Distribution
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: vlc-binaries-${{ matrix.target }}
+          name: vlc-${{ steps.meta.outputs.vlc_version }}-live555-${{ steps.meta.outputs.live555_version }}-${{ matrix.target }}
           path: ./source/vlc/install/
           retention-days: 7
