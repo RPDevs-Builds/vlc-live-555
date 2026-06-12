@@ -8,7 +8,7 @@ on:
 jobs:
   build-vlc:
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, vlc-builder]
     strategy:
       fail-fast: false
       matrix:
