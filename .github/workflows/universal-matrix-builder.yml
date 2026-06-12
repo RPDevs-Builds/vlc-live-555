@@ -161,7 +161,7 @@ jobs:
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
           path: ~/.cache/ccache
-          key: matrix-${{ matrix.target }}-ccache-${{ needs.sync-upstream.outputs.version }}
+          key: matrix-${{ matrix.target }}-ccache-${{ needs.sync-upstream.outputs.version }}-v2
           restore-keys: matrix-${{ matrix.target }}-ccache-
 
       - name: Provision Multi-Arch Host Toolchains (Linux Worker Nodes)
