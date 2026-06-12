@@ -1,4 +1,4 @@
-name: PkgConfig Test
+name: Printf Test
 
 on:
   push:
@@ -7,37 +7,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [linux-x64]
     steps:
-      - name: Checkout Primary Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: main-repo
-
-      - name: Extract Versions and Synthesize Live555 Pkg-Config
-        id: meta
+      - name: Synthesize Pkg-Config
         run: |
-          LIVE555_VERSION="v2026.06.12"
           LIVE555_PATH="/tmp/live555"
+          LIVE555_VERSION="v2026.06.12"
           L555_LIBS="-lliveMedia"
-
-          echo "vlc_version=master" >> $GITHUB_OUTPUT
-          echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
           
           mkdir -p /tmp/pkgconfig
-          cat <<PC > /tmp/pkgconfig/live555.pc
-prefix=$LIVE555_PATH
-exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
-includedir=\${prefix}/include
-
-Name: live555
-Description: Multimedia streaming libraries
-Version: $LIVE555_VERSION
-Cflags: -I\${includedir}/liveMedia
-Libs: -L\${libdir} $L555_LIBS
-PC
-          echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
+          printf "prefix=%s\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: live555\nDescription: Multimedia streaming libraries\nVersion: %s\nCflags: -I\${includedir}/liveMedia\nLibs: -L\${libdir} %s\n" \
+            "$LIVE555_PATH" "$LIVE555_VERSION" "$L555_LIBS" > /tmp/pkgconfig/live555.pc
+          
           cat /tmp/pkgconfig/live555.pc
