@@ -21,7 +21,7 @@ jobs:
           if [ "${{ github.event.inputs.track_input }}" == "both" ] || [ "${{ github.event_name }}" == "push" ]; then
             echo 'matrix={"target": ["linux-x64", "armlinux", "raspberrypi", "win64", "macos-x64"], "track": ["dev", "stable"]}' >> $GITHUB_OUTPUT
           else
-            echo 'matrix={"target": ["linux-x64", "armlinux", "raspberrypi", "win64", "macos-x64"], "track": ["${{ github.event.inputs.track_input }}"]}' >> $GITHUB_OUTPUT
+            echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": [\"${{ github.event.inputs.track_input }}\"]}" >> $GITHUB_OUTPUT
           fi
 
   build-vlc:
@@ -86,7 +86,6 @@ jobs:
       - name: Prepare VLC Workspace
         run: |
           mkdir -p vlc-workspace
-          # If main-repo/source/vlc exists, use it as a cache/baseline
           if [ -d "main-repo/source/vlc" ]; then
             rsync -av main-repo/source/vlc/ vlc-workspace/
           fi
@@ -108,7 +107,6 @@ jobs:
           LIVE555_VERSION=$(ls main-repo/compiled/ | sort -r | head -n 1)
           LIVE555_PATH="$(pwd)/main-repo/compiled/$LIVE555_VERSION/${{ steps.target-vars.outputs.live555_suffix }}"
           
-          # Check if Live555 was built with OpenSSL
           L555_CONFIG="main-repo/source/live555/config.${{ steps.target-vars.outputs.live555_suffix }}"
           L555_LIBS="-lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment"
           if grep -q "lssl" "$L555_CONFIG"; then
@@ -118,7 +116,7 @@ jobs:
           echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
           echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
           mkdir -p /tmp/pkgconfig
-          cat <<EOF > /tmp/pkgconfig/live555.pc
+          cat <<PC > /tmp/pkgconfig/live555.pc
 prefix=$LIVE555_PATH
 exec_prefix=\${prefix}
 libdir=\${exec_prefix}/lib
@@ -129,7 +127,7 @@ Description: Multimedia streaming libraries
 Version: $LIVE555_VERSION
 Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
 Libs: -L\${libdir} $L555_LIBS
-EOF
+PC
           echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
 
       - name: Bootstrap
