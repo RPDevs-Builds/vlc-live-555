@@ -2,9 +2,6 @@ name: VLC Builder
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Universal Cross-Platform Matrix Release Engine"]
-    types: [completed]
 
 jobs:
   build-vlc:
