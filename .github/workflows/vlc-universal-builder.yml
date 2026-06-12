@@ -8,19 +8,17 @@ on:
 jobs:
   build-vlc:
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ${{ matrix.os }}
+    runs-on: [self-hosted, vlc-builder]
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: linux-x64
-            os: ubuntu-latest
             live555_suffix: linux-64bit
             host: x86_64-linux-gnu
             track: dev
             vlc_ref: master
           - target: linux-x64
-            os: ubuntu-latest
             live555_suffix: linux-64bit
             host: x86_64-linux-gnu
             track: stable
@@ -55,21 +53,6 @@ jobs:
           git remote add origin https://github.com/videolan/vlc.git
           git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
           git checkout FETCH_HEAD
-
-      - name: Provision Build Environment (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git build-essential pkg-config libtool automake autoconf gettext \
-            flex bison lua5.2 liblua5.2-dev libmad0-dev libavcodec-dev \
-            libavformat-dev libswscale-dev libpostproc-dev liba52-0.7.4-dev \
-            libmpeg2-4-dev libvorbis-dev libogg-dev libtheora-dev libshout3-dev \
-            libspeex-dev libtwolame-dev libx264-dev libva-dev libdrm-dev \
-            libxcb1-dev libxcb-shm0-dev libxcb-xv0-dev libxcb-keysyms1-dev \
-            libxcb-randr0-dev libxcb-composite0-dev libxcb-render0-dev \
-            libxcb-image0-dev libxcb-util0-dev libxcb-xkb-dev libxkbcommon-x11-dev \
-            libasound2-dev libpulse-dev libdbus-1-dev libidn11-dev
 
       - name: Extract Versions and Synthesize Live555 Pkg-Config
         id: meta

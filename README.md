@@ -36,14 +36,14 @@ The release engine currently produces verified artifacts for:
 ## 🛠️ Usage
 
 ### 1. Use Pre-compiled Binaries
-You can find pre-compiled binaries directly in the repository under the `./compiled/` directory, or download them from the [GitHub Releases](https://github.com/Dick-s-Vault/vlc-live-555/releases) page.
+You can find pre-compiled binaries directly in the repository under the `./compiled/` directory, or download them from the [GitHub Releases](https://github.com/RPDevs-Builds/vlc-live-555/releases) page.
 
 ### 2. Local Build Instructions
 If you wish to build the source manually on your own machine:
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/Dick-s-Vault/vlc-live-555.git
+    git clone https://github.com/RPDevs-Builds/vlc-live-555.git
     cd vlc-live-555
     ```
 
