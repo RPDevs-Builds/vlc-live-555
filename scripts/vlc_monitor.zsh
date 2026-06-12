@@ -3,7 +3,7 @@
 # VLC-Live-555 Build Fleet Monitor (Ultra-Robust Zsh Version)
 # Requirements: gh, jq
 
-# Colors
+# Colors (Prompt expansions used with print -P)
 GREEN='%F{green}'
 RED='%F{red}'
 YELLOW='%F{yellow}'
@@ -25,86 +25,89 @@ fetch_status() {
 
     local id=$(echo $run_data | jq -r '.[0].databaseId')
     local r_status=$(echo $run_data | jq -r '.[0].status')
-    local r_conc=$(echo $run_data | jq -r '.[0].conclusion')
+    local conclusion=$(echo $run_data | jq -r '.[0].conclusion')
     local title=$(echo $run_data | jq -r '.[0].displayTitle' | cut -c 1-30)
+
+    local jobs_data=$(gh run view --repo RPDevs-Builds/vlc-live-555 $id --json jobs 2>/dev/null)
     
-    if [[ "$r_status" == "in_progress" || "$r_status" == "queued" ]]; then
-        local jobs_data=$(gh run view --repo RPDevs-Builds/vlc-live-555 $id --json jobs 2>/dev/null)
-        
-        # Platform Matrix Logic
-        local p_linux_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - dev)") | "\(.status)|\(.conclusion)"')
-        local p_linux_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - stable)") | "\(.status)|\(.conclusion)"')
-        local p_arm_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - dev)") | "\(.status)|\(.conclusion)"')
-        local p_arm_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - stable)") | "\(.status)|\(.conclusion)"')
-        local p_win_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - dev)") | "\(.status)|\(.conclusion)"')
-        local p_win_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - stable)") | "\(.status)|\(.conclusion)"')
-        local p_mac_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - dev)") | "\(.status)|\(.conclusion)"')
-        local p_mac_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - stable)") | "\(.status)|\(.conclusion)"')
-        local p_pi_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - dev)") | "\(.status)|\(.conclusion)"')
-        local p_pi_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - stable)") | "\(.status)|\(.conclusion)"')
+    # Platform Matrix Logic
+    local p_linux_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - dev)") | "\(.status)|\(.conclusion)"')
+    local p_linux_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - stable)") | "\(.status)|\(.conclusion)"')
+    local p_arm_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - dev)") | "\(.status)|\(.conclusion)"')
+    local p_arm_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - stable)") | "\(.status)|\(.conclusion)"')
+    local p_win_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - dev)") | "\(.status)|\(.conclusion)"')
+    local p_win_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - stable)") | "\(.status)|\(.conclusion)"')
+    local p_mac_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - dev)") | "\(.status)|\(.conclusion)"')
+    local p_mac_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - stable)") | "\(.status)|\(.conclusion)"')
+    local p_pi_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - dev)") | "\(.status)|\(.conclusion)"')
+    local p_pi_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - stable)") | "\(.status)|\(.conclusion)"')
 
-        local current_step=$(echo $jobs_data | jq -r '.jobs[] | select(.name != "setup-matrix") | .steps[] | select(.status != "completed") | .name' | head -n 1)
-        [[ -z "$current_step" || "$current_step" == "null" ]] && current_step="Initializing..."
-        
-        echo "VLC-Live-555|🔄|$current_step|$p_linux_dev|$p_linux_stable|$p_arm_dev|$p_arm_stable|$p_win_dev|$p_win_stable|$p_mac_dev|$p_mac_stable|$p_pi_dev|$p_pi_stable|$title"
-    else
-        [[ "$r_conc" == "success" ]] && local i="✅" || local i="❌"
-        echo "VLC-Live-555|$i|$title|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|completed|$r_conc|$title"
-    fi
-}
+    format_job() {
+        local info=$1
+        [[ -z "$info" || "$info" == "|" ]] && echo "·" && return
+        local s=$(echo $info | cut -d'|' -f1)
+        local c=$(echo $info | cut -d'|' -f2)
+        if [[ "$s" == "completed" ]]; then
+            [[ "$c" == "success" ]] && echo "${GREEN}●${NC}" || echo "${RED}●${NC}"
+        elif [[ "$s" == "in_progress" ]]; then
+            echo "${BLUE}◑${NC}"
+        else
+            echo "${YELLOW}◌${NC}"
+        fi
+    }
 
-format_job() {
-    local s=$(echo $1 | cut -d'|' -f1)
-    local c=$(echo $1 | cut -d'|' -f2)
-    if [[ "$s" == "completed" ]]; then
-        [[ "$c" == "success" ]] && echo "${GREEN}●${NC}" || echo "${RED}●${NC}"
-    elif [[ "$s" == "in_progress" ]]; then
-        echo "${BLUE}▶${NC}"
-    elif [[ "$s" == "queued" ]]; then
-        echo "${YELLOW}○${NC}"
-    else
-        echo "·"
-    fi
+    local m_ld=$(format_job "$p_linux_dev")
+    local m_ls=$(format_job "$p_linux_stable")
+    local m_ad=$(format_job "$p_arm_dev")
+    local m_as=$(format_job "$p_arm_stable")
+    local m_wd=$(format_job "$p_win_dev")
+    local m_ws=$(format_job "$p_win_stable")
+    local m_md=$(format_job "$p_mac_dev")
+    local m_ms=$(format_job "$p_mac_stable")
+    local m_pd=$(format_job "$p_pi_dev")
+    local m_ps=$(format_job "$p_pi_stable")
+
+    # Step Logic
+    local current_step=$(echo $jobs_data | jq -r '.jobs[] | select(.name != "setup-matrix") | .steps[] | select(.status != "completed") | .name' | head -n 1)
+    [[ "$current_step" == "null" || -z "$current_step" ]] && current_step=$(echo $jobs_data | jq -r '.jobs[] | select(.name != "setup-matrix") | .steps[-1].name' | head -n 1)
+    [[ "$current_step" == "null" ]] && current_step="Ready"
+
+    # Stat Icon
+    local icon="🔄"
+    [[ "$r_status" == "completed" && "$conclusion" == "success" ]] && icon="✅"
+    [[ "$r_status" == "completed" && "$conclusion" == "failure" ]] && icon="❌"
+    [[ "$r_status" == "queued" ]] && icon="⏳"
+
+    echo "VLC|$icon|$m_ld $m_ls|$m_ad $m_as|$m_wd $m_ws|$m_md $m_ms|$m_pd $m_ps|$current_step|$title"
 }
 
 while true; do
     clear
-    echo "${BOLD}${CYAN}=== VLC-Live-555 Universal Build Fleet Monitor ===${NC}${REG}"
-    echo "Time: $(date '+%Y-%m-%d %H:%M:%S') | Refresh: ${refresh_interval}s\n"
+    print -P "${BOLD}======================================================================================================${NC}"
+    print -P "🚢 ${BOLD}VLC-LIVE-555 BUILD FLEET MONITOR${NC} - $(date +'%H:%M:%S') | Matrix: D=Dev, S=Stable"
+    print -P "${BOLD}======================================================================================================${NC}"
     
-    printf "%-15s | %-4s | %-12s | %-12s | %-12s | %-12s | %-12s | %-25s\n" "REPO" "STAT" "LINUX" "ARM" "WIN64" "MACOS" "RPI" "ACTIVITY"
-    echo "----------------|------|--------------|--------------|--------------|--------------|--------------|---------------------------"
+    local H_REPO="REPO  "
+    local H_LIN="LINUX  "
+    local H_ARM="ARM    "
+    local H_WIN="WIN64  "
+    local H_MAC="MACOS  "
+    local H_RPI="RPI    "
+    local H_STEP="Active Step         "
     
-    local raw_data=$(fetch_status)
-    local repo=$(echo $raw_data | cut -d'|' -f1)
-    local stat=$(echo $raw_data | cut -d'|' -f2)
-    local act=$(echo $raw_data | cut -d'|' -f3 | cut -c 1-25)
+    print -P "${BOLD}${H_REPO} | Stat | ${H_LIN} | ${H_ARM} | ${H_WIN} | ${H_MAC} | ${H_RPI} | ${H_STEP} | Description${NC}"
+    print -P "------------------------------------------------------------------------------------------------------"
+
+    # Fetch status
+    raw_data=$(fetch_status)
+    IFS='|' read -r repo icon m_l m_a m_w m_m m_p step title <<< "$raw_data"
+
+    print -P "${(r:6:)repo} |  $icon  | $m_l | $m_a | $m_w | $m_m | $m_p | ${(r:20:)step:0:20} | $title"
+
+    print -P "${BOLD}------------------------------------------------------------------------------------------------------${NC}"
+
+    print -P "Status Key: ${GREEN}● Success${NC} | ${RED}● Failure${NC} | ${BLUE}◑ In-Progress${NC} | ${YELLOW}◌ Queued${NC} | · N/A"
+    echo "Auto-refresh in ${refresh_interval}s. Press [ENTER] to refresh now."
     
-    local ld=$(format_job "$(echo $raw_data | cut -d'|' -f4-5)")
-    local ls=$(format_job "$(echo $raw_data | cut -d'|' -f6-7)")
-    local ad=$(format_job "$(echo $raw_data | cut -d'|' -f8-9)")
-    local as=$(format_job "$(echo $raw_data | cut -d'|' -f10-11)")
-    local wd=$(format_job "$(echo $raw_data | cut -d'|' -f12-13)")
-    local ws=$(format_job "$(echo $raw_data | cut -d'|' -f14-15)")
-    local md=$(format_job "$(echo $raw_data | cut -d'|' -f16-17)")
-    local ms=$(format_job "$(echo $raw_data | cut -d'|' -f18-19)")
-    local pd=$(format_job "$(echo $raw_data | cut -d'|' -f20-21)")
-    local ps=$(format_job "$(echo $raw_data | cut -d'|' -f22-23)")
-    local title=$(echo $raw_data | cut -d'|' -f24)
-
-    if [[ "$stat" == "✅" || "$stat" == "❌" ]]; then
-        act=$title
-    fi
-
-    # Format tracks: D=Dev, S=Stable
-    local lin_str="D:$ld S:$ls"
-    local arm_str="D:$ad S:$as"
-    local win_str="D:$wd S:$ws"
-    local mac_str="D:$md S:$ms"
-    local rpi_str="D:$pd S:$ps"
-
-    printf "%-15s | %-4s | %b | %b | %b | %b | %b | %s\n" "$repo" "$stat" "$lin_str" "$arm_str" "$win_str" "$mac_str" "$rpi_str" "$act"
-
-    echo "\n${BOLD}Legend:${NC} ${GREEN}●${NC}=Success  ${RED}●${NC}=Failed  ${BLUE}▶${NC}=Building  ${YELLOW}○${NC}=Queued  ·=No Job"
-    sleep $refresh_interval
+    read -t $refresh_interval
 done
