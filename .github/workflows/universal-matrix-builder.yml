@@ -225,15 +225,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout Repository for Binary Commitment
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+
       - name: Download Aggregated Binary Artifacts
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           path: ./downloaded-payloads
 
-      - name: Assemble Release Assets Archive Tree
+      - name: Assemble Release Assets and Repository Tree
         run: |
           # Structure: ./compiled/<Version>/<OS>/
-          RELEASE_DIR="compiled/${{ needs.sync-upstream.outputs.version }}"
+          VERSION="${{ needs.sync-upstream.outputs.version }}"
+          RELEASE_DIR="compiled/$VERSION"
           mkdir -p "$RELEASE_DIR"
           
           for dir in ./downloaded-payloads/compiled-binaries-*; do
@@ -244,9 +251,21 @@ jobs:
               cp -r "$dir"/* "$OS_DIR/"
               
               # Create tarball for the release attachment
-              tar -czvf "live555-${PLATFORM_TOKEN}-${{ needs.sync-upstream.outputs.version }}.tar.gz" -C "$dir" .
+              tar -czvf "live555-${PLATFORM_TOKEN}-$VERSION.tar.gz" -C "$dir" .
             fi
           done
+
+      - name: Commit and Push Compiled Binaries to Main
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add compiled/
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "build: automated compilation matrix for v${{ needs.sync-upstream.outputs.version }}"
+            git pull origin main --rebase
+            git push origin main
+          fi
 
       - name: Generate Production Release and Attach Assets
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
@@ -260,5 +279,5 @@ jobs:
             
             * **Compiler Standard**: Verified compliance under explicit C++20 configuration directives.
             * **Build Engine Architecture**: Decoupled parallel processing blocks optimized via multi-thread execution.
-            * **Binary Strategy**: Artifact optimization organized under `./compiled/${{ needs.sync-upstream.outputs.version }}/`.
+            * **Binary Repository**: Artifacts committed to the repository under `./compiled/${{ needs.sync-upstream.outputs.version }}/`.
             * **Target Integration**: VLC source tree staged in `./source/vlc/` for future builds.
