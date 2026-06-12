@@ -47,12 +47,11 @@ jobs:
       - name: Prepare VLC Workspace
         run: |
           mkdir -p vlc-workspace
-          rsync -av --exclude '.git' main-repo/source/vlc/ vlc-workspace/
+          rsync -av main-repo/source/vlc/ vlc-workspace/
           cd vlc-workspace
-          git init
-          git remote add origin https://github.com/videolan/vlc.git
+          git remote set-url origin https://github.com/videolan/vlc.git
           git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
-          git checkout FETCH_HEAD
+          git checkout -f FETCH_HEAD
 
       - name: Extract Versions and Synthesize Live555 Pkg-Config
         id: meta
