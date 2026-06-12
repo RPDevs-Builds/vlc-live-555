@@ -1,4 +1,4 @@
-name: Workspace Test
+name: PkgConfig Test
 
 on:
   push:
@@ -16,26 +16,28 @@ jobs:
         with:
           path: main-repo
 
-      - name: Configure Target Variables
-        id: target-vars
+      - name: Extract Versions and Synthesize Live555 Pkg-Config
+        id: meta
         run: |
-          echo "live555_suffix=linux-64bit" >> $GITHUB_OUTPUT
-          echo "vlc_ref=master" >> $GITHUB_OUTPUT
+          LIVE555_VERSION="v2026.06.12"
+          LIVE555_PATH="/tmp/live555"
+          L555_LIBS="-lliveMedia"
 
-      - name: Resolve VLC Source Reference
-        id: vlc-source
-        working-directory: main-repo
-        run: |
-          echo "resolved_ref=master" >> $GITHUB_OUTPUT
+          echo "vlc_version=master" >> $GITHUB_OUTPUT
+          echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
+          
+          mkdir -p /tmp/pkgconfig
+          cat <<PC > /tmp/pkgconfig/live555.pc
+prefix=$LIVE555_PATH
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
 
-      - name: Prepare VLC Workspace
-        run: |
-          mkdir -p vlc-workspace
-          if [ -d "main-repo/source/vlc" ]; then
-            echo "Caching vlc"
-          fi
-          cd vlc-workspace
-          git init
-          git remote add origin https://github.com/videolan/vlc.git
-          git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
-          git checkout -f FETCH_HEAD
+Name: live555
+Description: Multimedia streaming libraries
+Version: $LIVE555_VERSION
+Cflags: -I\${includedir}/liveMedia
+Libs: -L\${libdir} $L555_LIBS
+PC
+          echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
+          cat /tmp/pkgconfig/live555.pc
