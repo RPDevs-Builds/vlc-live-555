@@ -23,6 +23,21 @@ jobs:
             host: x86_64-linux-gnu
             track: stable
             vlc_ref: latest_tag
+          - target: armlinux
+            live555_suffix: armlinux
+            host: arm-linux-gnueabi
+            track: stable
+            vlc_ref: latest_tag
+          - target: raspberrypi
+            live555_suffix: raspberrypi
+            host: arm-linux-gnueabihf
+            track: stable
+            vlc_ref: latest_tag
+          - target: win64
+            live555_suffix: mingw
+            host: x86_64-w64-mingw32
+            track: stable
+            vlc_ref: latest_tag
 
     steps:
       - name: Checkout Primary Repository
