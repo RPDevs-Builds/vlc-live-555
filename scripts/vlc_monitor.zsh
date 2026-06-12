@@ -1,9 +1,9 @@
 #!/bin/zsh
 
-# VLC-Live-555 Build Fleet Monitor (Ultra-Robust Zsh Version)
+# VLC-Live-555 Build Fleet Monitor (Pivot Layout)
 # Requirements: gh, jq
 
-# Colors (Prompt expansions used with print -P)
+# Colors
 GREEN='%F{green}'
 RED='%F{red}'
 YELLOW='%F{yellow}'
@@ -15,99 +15,108 @@ REG='%b'
 
 refresh_interval=15
 
-fetch_status() {
-    local run_data=$(gh run list --repo RPDevs-Builds/vlc-live-555 --workflow=vlc-matrix-builder.yml --limit 1 --json databaseId,status,conclusion,displayTitle,createdAt,headBranch 2>/dev/null)
-    
-    if [[ -z "$run_data" || "$run_data" == "[]" ]]; then
-        echo "VLC-Live-555|⚪|N/A|· · · ·|N/A|N/A"
+format_job() {
+    local info=$1
+    [[ -z "$info" || "$info" == "|" || "$info" == "·|·" ]] && echo "·" && return
+    local s=$(echo $info | cut -d'|' -f1)
+    local c=$(echo $info | cut -d'|' -f2)
+    if [[ "$s" == "completed" ]]; then
+        [[ "$c" == "success" ]] && echo "${GREEN}●${NC}" || echo "${RED}●${NC}"
+    elif [[ "$s" == "in_progress" ]]; then
+        echo "${BLUE}◑${NC}"
+    elif [[ "$s" == "queued" ]]; then
+        echo "${YELLOW}◌${NC}"
+    else
+        echo "·"
+    fi
+}
+
+get_job_status() {
+    local jobs_json="$1"
+    local job_name="$2"
+    if [[ -z "$jobs_json" || "$jobs_json" == "null" ]]; then
+        echo "·|·"
         return
     fi
+    local status=$(echo "$jobs_json" | jq -r --arg n "$job_name" '.jobs[] | select(.name == $n) | "\(.status)|\(.conclusion)"' 2>/dev/null)
+    [[ -z "$status" ]] && echo "·|·" || echo "$status"
+}
 
-    local id=$(echo $run_data | jq -r '.[0].databaseId')
-    local r_status=$(echo $run_data | jq -r '.[0].status')
-    local conclusion=$(echo $run_data | jq -r '.[0].conclusion')
-    local title=$(echo $run_data | jq -r '.[0].displayTitle' | cut -c 1-30)
+get_active_step() {
+    local jobs_json="$1"
+    if [[ -z "$jobs_json" || "$jobs_json" == "null" ]]; then
+        echo "N/A"
+        return
+    fi
+    local step=$(echo "$jobs_json" | jq -r '.jobs[] | select(.name != "setup-matrix" and .name != "Sync Upstream & Tag Lifecycle") | .steps[] | select(.status != "completed") | .name' 2>/dev/null | head -n 1)
+    [[ -z "$step" || "$step" == "null" ]] && step=$(echo "$jobs_json" | jq -r '.jobs[] | select(.name != "setup-matrix" and .name != "Sync Upstream & Tag Lifecycle") | .steps[-1].name' 2>/dev/null | head -n 1)
+    [[ -z "$step" || "$step" == "null" ]] && step="Ready"
+    echo "$step"
+}
 
-    local jobs_data=$(gh run view --repo RPDevs-Builds/vlc-live-555 $id --json jobs 2>/dev/null)
+fetch_and_display() {
+    # Fetch VLC Data
+    local vlc_run=$(gh run list --repo RPDevs-Builds/vlc-live-555 --workflow=vlc-matrix-builder.yml --limit 1 --json databaseId 2>/dev/null)
+    local vlc_id=$(echo $vlc_run | jq -r '.[0].databaseId' 2>/dev/null)
+    local vlc_jobs=""
+    local vlc_step="N/A"
+    if [[ "$vlc_id" != "null" && -n "$vlc_id" ]]; then
+        vlc_jobs=$(gh run view --repo RPDevs-Builds/vlc-live-555 $vlc_id --json jobs 2>/dev/null)
+        vlc_step=$(get_active_step "$vlc_jobs")
+    fi
+
+    # Fetch Live555 Data
+    local l555_run=$(gh run list --repo RPDevs-Builds/vlc-live-555 --workflow=universal-matrix-builder.yml --limit 1 --json databaseId 2>/dev/null)
+    local l555_id=$(echo $l555_run | jq -r '.[0].databaseId' 2>/dev/null)
+    local l555_jobs=""
+    local l555_step="N/A"
+    if [[ "$l555_id" != "null" && -n "$l555_id" ]]; then
+        l555_jobs=$(gh run view --repo RPDevs-Builds/vlc-live-555 $l555_id --json jobs 2>/dev/null)
+        l555_step=$(get_active_step "$l555_jobs")
+    fi
+
+    # OS Arrays: "Name|Live555 Job Name|VLC Dev Job Name|VLC Stable Job Name"
+    local os_list=(
+        "Linux x64|Compile (linux-64bit)|Build VLC (linux-x64 - dev)|Build VLC (linux-x64 - stable)"
+        "ARM Linux|Compile (armlinux)|Build VLC (armlinux - dev)|Build VLC (armlinux - stable)"
+        "Raspberry Pi|Compile (raspberrypi)|Build VLC (raspberrypi - dev)|Build VLC (raspberrypi - stable)"
+        "Windows x64|Compile (mingw)|Build VLC (win64 - dev)|Build VLC (win64 - stable)"
+        "macOS x64|Compile (macosx-no-openssl)|Build VLC (macos-x64 - dev)|Build VLC (macos-x64 - stable)"
+    )
+
+    for entry in "${os_list[@]}"; do
+        IFS='|' read -r os l_name vd_name vs_name <<< "$entry"
+        
+        local l_stat=$(get_job_status "$l555_jobs" "$l_name")
+        local vd_stat=$(get_job_status "$vlc_jobs" "$vd_name")
+        local vs_stat=$(get_job_status "$vlc_jobs" "$vs_name")
+
+        local f_l=$(format_job "$l_stat")
+        local f_vd=$(format_job "$vd_stat")
+        local f_vs=$(format_job "$vs_stat")
+
+        print -P "${(r:14:)os} |    $f_l    |      $f_vs     |    $f_vd   "
+    done
     
-    # Platform Matrix Logic
-    local p_linux_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - dev)") | "\(.status)|\(.conclusion)"')
-    local p_linux_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (linux-x64 - stable)") | "\(.status)|\(.conclusion)"')
-    local p_arm_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - dev)") | "\(.status)|\(.conclusion)"')
-    local p_arm_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (armlinux - stable)") | "\(.status)|\(.conclusion)"')
-    local p_win_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - dev)") | "\(.status)|\(.conclusion)"')
-    local p_win_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (win64 - stable)") | "\(.status)|\(.conclusion)"')
-    local p_mac_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - dev)") | "\(.status)|\(.conclusion)"')
-    local p_mac_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (macos-x64 - stable)") | "\(.status)|\(.conclusion)"')
-    local p_pi_dev=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - dev)") | "\(.status)|\(.conclusion)"')
-    local p_pi_stable=$(echo $jobs_data | jq -r '.jobs[] | select(.name == "Build VLC (raspberrypi - stable)") | "\(.status)|\(.conclusion)"')
-
-    format_job() {
-        local info=$1
-        [[ -z "$info" || "$info" == "|" ]] && echo "·" && return
-        local s=$(echo $info | cut -d'|' -f1)
-        local c=$(echo $info | cut -d'|' -f2)
-        if [[ "$s" == "completed" ]]; then
-            [[ "$c" == "success" ]] && echo "${GREEN}●${NC}" || echo "${RED}●${NC}"
-        elif [[ "$s" == "in_progress" ]]; then
-            echo "${BLUE}◑${NC}"
-        else
-            echo "${YELLOW}◌${NC}"
-        fi
-    }
-
-    local m_ld=$(format_job "$p_linux_dev")
-    local m_ls=$(format_job "$p_linux_stable")
-    local m_ad=$(format_job "$p_arm_dev")
-    local m_as=$(format_job "$p_arm_stable")
-    local m_wd=$(format_job "$p_win_dev")
-    local m_ws=$(format_job "$p_win_stable")
-    local m_md=$(format_job "$p_mac_dev")
-    local m_ms=$(format_job "$p_mac_stable")
-    local m_pd=$(format_job "$p_pi_dev")
-    local m_ps=$(format_job "$p_pi_stable")
-
-    # Step Logic
-    local current_step=$(echo $jobs_data | jq -r '.jobs[] | select(.name != "setup-matrix") | .steps[] | select(.status != "completed") | .name' | head -n 1)
-    [[ "$current_step" == "null" || -z "$current_step" ]] && current_step=$(echo $jobs_data | jq -r '.jobs[] | select(.name != "setup-matrix") | .steps[-1].name' | head -n 1)
-    [[ "$current_step" == "null" ]] && current_step="Ready"
-
-    # Stat Icon
-    local icon="🔄"
-    [[ "$r_status" == "completed" && "$conclusion" == "success" ]] && icon="✅"
-    [[ "$r_status" == "completed" && "$conclusion" == "failure" ]] && icon="❌"
-    [[ "$r_status" == "queued" ]] && icon="⏳"
-
-    echo "VLC|$icon|$m_ld $m_ls|$m_ad $m_as|$m_wd $m_ws|$m_md $m_ms|$m_pd $m_ps|$current_step|$title"
+    echo ""
+    print -P "${BOLD}Active Steps:${NC}"
+    print -P "Live555: ${CYAN}${l555_step:0:45}${NC}"
+    print -P "VLC:     ${CYAN}${vlc_step:0:45}${NC}"
 }
 
 while true; do
     clear
-    print -P "${BOLD}======================================================================================================${NC}"
-    print -P "🚢 ${BOLD}VLC-LIVE-555 BUILD FLEET MONITOR${NC} - $(date +'%H:%M:%S') | Matrix: D=Dev, S=Stable"
-    print -P "${BOLD}======================================================================================================${NC}"
+    print -P "${BOLD}======================================================${NC}"
+    print -P "🚢 ${BOLD}VLC & LIVE555 MATRIX MONITOR${NC} - $(date +'%H:%M:%S')"
+    print -P "${BOLD}======================================================${NC}"
+    print -P "${BOLD}${(r:14:)OS TARGET} | Live555 | VLC (Stable) | VLC (Dev)${NC}"
+    print -P "------------------------------------------------------"
     
-    local H_REPO="REPO  "
-    local H_LIN="LINUX  "
-    local H_ARM="ARM    "
-    local H_WIN="WIN64  "
-    local H_MAC="MACOS  "
-    local H_RPI="RPI    "
-    local H_STEP="Active Step         "
-    
-    print -P "${BOLD}${H_REPO} | Stat | ${H_LIN} | ${H_ARM} | ${H_WIN} | ${H_MAC} | ${H_RPI} | ${H_STEP} | Description${NC}"
-    print -P "------------------------------------------------------------------------------------------------------"
+    fetch_and_display
 
-    # Fetch status
-    raw_data=$(fetch_status)
-    IFS='|' read -r repo icon m_l m_a m_w m_m m_p step title <<< "$raw_data"
-
-    print -P "${(r:6:)repo} |  $icon  | $m_l | $m_a | $m_w | $m_m | $m_p | ${(r:20:)step:0:20} | $title"
-
-    print -P "${BOLD}------------------------------------------------------------------------------------------------------${NC}"
-
-    print -P "Status Key: ${GREEN}● Success${NC} | ${RED}● Failure${NC} | ${BLUE}◑ In-Progress${NC} | ${YELLOW}◌ Queued${NC} | · N/A"
-    echo "Auto-refresh in ${refresh_interval}s. Press [ENTER] to refresh now."
+    print -P "${BOLD}------------------------------------------------------${NC}"
+    print -P "Key: ${GREEN}● Success${NC} | ${RED}● Failed${NC} | ${BLUE}◑ Active${NC} | ${YELLOW}◌ Queued${NC} | · N/A"
+    echo -n "Refreshing in ${refresh_interval}s. Press [ENTER] to refresh now."
     
     read -t $refresh_interval
 done
