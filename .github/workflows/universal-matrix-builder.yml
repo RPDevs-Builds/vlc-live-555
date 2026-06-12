@@ -1,6 +1,8 @@
 name: Universal Cross-Platform Matrix Release Engine
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -19,7 +21,7 @@ permissions:
 jobs:
   sync-upstream:
     name: Sync Upstream & Tag Lifecycle
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write # Granted exclusively for pushing the source baseline and release tags
     outputs:
@@ -55,7 +57,7 @@ jobs:
           fi
 
       - name: Mirror Clean Source Trees (Live555 & VLC)
-        if: steps.changelog.outputs.CHANGED == 'true' || github.event_name == 'workflow_dispatch'
+        if: steps.changelog.outputs.CHANGED == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: |
           # Process Live555 Upstream
           mkdir -p /tmp/live555-source
@@ -101,41 +103,41 @@ jobs:
         include:
           # Core Linux Matrix Targets
           - target: linux
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: linux
             output_name: linux
           - target: linux-64bit
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: linux-64bit
             output_name: linux-64bit
           - target: linux-with-shared-libraries
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: linux-with-shared-libraries
             output_name: linux-with-shared-libraries
 
           # Cross-Compiled Embedded Deployments
           - target: armlinux
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: armlinux
             output_name: armlinux
           - target: raspberrypi
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: raspberrypi
             output_name: raspberrypi
 
           # BSD UNIX Matrix Targets
           - target: freebsd
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: freebsd-no-openssl
             output_name: freebsd
           - target: openbsd
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: openbsd
             output_name: openbsd
 
           # Windows Cross-Compiler Target
           - target: mingw
-            os: ubuntu-latest
+            os: ubuntu-22.04
             suffix: mingw
             output_name: mingw
 
@@ -223,7 +225,7 @@ jobs:
     needs: [sync-upstream, build-matrix]
     if: needs.sync-upstream.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
     name: Package and Publish Universal GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
