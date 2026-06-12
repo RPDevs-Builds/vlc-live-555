@@ -38,8 +38,8 @@ get_job_status() {
         echo "·|·"
         return
     fi
-    local status=$(echo "$jobs_json" | jq -r --arg n "$job_name" '.jobs[] | select(.name == $n) | "\(.status)|\(.conclusion)"' 2>/dev/null)
-    [[ -z "$status" ]] && echo "·|·" || echo "$status"
+    local job_info=$(echo "$jobs_json" | jq -r --arg n "$job_name" '.jobs[] | select(.name == $n) | "\(.status)|\(.conclusion)"' 2>/dev/null)
+    [[ -z "$job_info" ]] && echo "·|·" || echo "$job_info"
 }
 
 get_active_step() {
@@ -81,7 +81,7 @@ fetch_and_display() {
         "ARM Linux|Compile (armlinux)|Build VLC (armlinux - dev)|Build VLC (armlinux - stable)"
         "Raspberry Pi|Compile (raspberrypi)|Build VLC (raspberrypi - dev)|Build VLC (raspberrypi - stable)"
         "Windows x64|Compile (mingw)|Build VLC (win64 - dev)|Build VLC (win64 - stable)"
-        "macOS x64|Compile (macosx-no-openssl)|Build VLC (macos-x64 - dev)|Build VLC (macos-x64 - stable)"
+        "macOS x64|Compile (macosx-bigsur)|Build VLC (macos-x64 - dev)|Build VLC (macos-x64 - stable)"
     )
 
     for entry in "${os_list[@]}"; do
@@ -109,7 +109,13 @@ while true; do
     print -P "${BOLD}======================================================${NC}"
     print -P "🚢 ${BOLD}VLC & LIVE555 MATRIX MONITOR${NC} - $(date +'%H:%M:%S')"
     print -P "${BOLD}======================================================${NC}"
-    print -P "${BOLD}${(r:14:)OS TARGET} | Live555 | VLC (Stable) | VLC (Dev)${NC}"
+    
+    local H_OS="OS TARGET     "
+    local H_L5="Live555"
+    local H_VS="VLC (Stable)"
+    local H_VD="VLC (Dev)"
+    
+    print -P "${BOLD}${H_OS} | ${H_L5} | ${H_VS} | ${H_VD}${NC}"
     print -P "------------------------------------------------------"
     
     fetch_and_display
