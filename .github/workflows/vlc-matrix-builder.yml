@@ -25,5 +25,56 @@ jobs:
             vlc_ref: latest_tag
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout Primary Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: main-repo
+
+      - name: Resolve VLC Source Reference
+        id: vlc-source
+        working-directory: main-repo
+        run: |
+          if [[ "${{ matrix.vlc_ref }}" == "latest_tag" ]]; then
+            cd source/vlc
+            git fetch --tags
+            LATEST_TAG=$(git tag -l "3.0.*" | sort -V | tail -n 1)
+            if [ -z "$LATEST_TAG" ]; then LATEST_TAG=$(git tag -l | sort -V | tail -n 1); fi
+            echo "resolved_ref=$LATEST_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "resolved_ref=${{ matrix.vlc_ref }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare VLC Workspace
+        run: |
+          mkdir -p vlc-workspace
+          rsync -av --exclude '.git' main-repo/source/vlc/ vlc-workspace/
+          cd vlc-workspace
+          git init
+          git remote add origin https://github.com/videolan/vlc.git
+          git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
+          git checkout FETCH_HEAD
+
+      - name: Extract Versions and Synthesize Live555 Pkg-Config
+        id: meta
+        run: |
+          VLC_VERSION=$(grep "AC_INIT" vlc-workspace/configure.ac | head -n 1 | cut -d'[' -f3 | cut -d']' -f1)
+          if [ -z "$VLC_VERSION" ]; then VLC_VERSION="${{ steps.vlc-source.outputs.resolved_ref }}"; fi
+          LIVE555_VERSION=$(ls main-repo/compiled/ | sort -r | head -n 1)
+          LIVE555_PATH="$(pwd)/main-repo/compiled/$LIVE555_VERSION/${{ matrix.live555_suffix }}"
+          echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
+          echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
+          mkdir -p /tmp/pkgconfig
+          cat <<EOF > /tmp/pkgconfig/live555.pc
+prefix=$LIVE555_PATH
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+Name: live555
+Description: Multimedia streaming libraries
+Version: $LIVE555_VERSION
+Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
+Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
+EOF
+          echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
+
 
