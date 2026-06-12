@@ -6,7 +6,17 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-vlc:
+    name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            track: dev
+          - target: linux-x64
+            track: stable
     steps:
-      - run: echo "Hello"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
