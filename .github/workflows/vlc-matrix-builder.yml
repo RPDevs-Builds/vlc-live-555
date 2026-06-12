@@ -2,40 +2,18 @@ name: VLC Builder Final
 
 on:
   workflow_dispatch:
-    inputs:
-      track_input:
-        description: 'VLC Track to build (dev, stable, or both)'
-        required: false
-        default: 'both'
   push:
     branches: [main]
 
 jobs:
-  setup-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - id: set-matrix
-        run: |
-          TRACK_INPUT="${{ github.event.inputs.track_input }}"
-          EVENT_NAME="${{ github.event_name }}"
-          
-          if [ "$EVENT_NAME" = "push" ] || [ "$TRACK_INPUT" = "both" ] || [ -z "$TRACK_INPUT" ]; then
-            TRACKS='["dev", "stable"]'
-          else
-            TRACKS="[\"$TRACK_INPUT\"]"
-          fi
-          
-          echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": $TRACKS}" >> $GITHUB_OUTPUT
-
   build-vlc:
-    needs: setup-matrix
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
     runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || 'vlc-builder' }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
+      matrix:
+        target: [linux-x64, armlinux, raspberrypi, win64, macos-x64]
+        track: [dev, stable]
 
     steps:
       - name: Checkout Primary Repository
