@@ -86,9 +86,17 @@ jobs:
       - name: Prepare VLC Workspace
         run: |
           mkdir -p vlc-workspace
-          rsync -av main-repo/source/vlc/ vlc-workspace/
+          # If main-repo/source/vlc exists, use it as a cache/baseline
+          if [ -d "main-repo/source/vlc" ]; then
+            rsync -av main-repo/source/vlc/ vlc-workspace/
+          fi
           cd vlc-workspace
-          git remote set-url origin https://github.com/videolan/vlc.git
+          if [ ! -d ".git" ]; then
+            git init
+            git remote add origin https://github.com/videolan/vlc.git
+          else
+            git remote set-url origin https://github.com/videolan/vlc.git
+          fi
           git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
           git checkout -f FETCH_HEAD
 
@@ -99,18 +107,29 @@ jobs:
           if [ -z "$VLC_VERSION" ]; then VLC_VERSION="${{ steps.vlc-source.outputs.resolved_ref }}"; fi
           LIVE555_VERSION=$(ls main-repo/compiled/ | sort -r | head -n 1)
           LIVE555_PATH="$(pwd)/main-repo/compiled/$LIVE555_VERSION/${{ steps.target-vars.outputs.live555_suffix }}"
+          
+          # Check if Live555 was built with OpenSSL
+          L555_CONFIG="main-repo/source/live555/config.${{ steps.target-vars.outputs.live555_suffix }}"
+          L555_LIBS="-lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment"
+          if grep -q "lssl" "$L555_CONFIG"; then
+            L555_LIBS="$L555_LIBS -lssl -lcrypto"
+          fi
+
           echo "vlc_version=$VLC_VERSION" >> $GITHUB_OUTPUT
           echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
           mkdir -p /tmp/pkgconfig
-          echo "prefix=$LIVE555_PATH" > /tmp/pkgconfig/live555.pc
-          echo "exec_prefix=\${prefix}" >> /tmp/pkgconfig/live555.pc
-          echo "libdir=\${exec_prefix}/lib" >> /tmp/pkgconfig/live555.pc
-          echo "includedir=\${prefix}/include" >> /tmp/pkgconfig/live555.pc
-          echo "Name: live555" >> /tmp/pkgconfig/live555.pc
-          echo "Description: Multimedia streaming libraries" >> /tmp/pkgconfig/live555.pc
-          echo "Version: $LIVE555_VERSION" >> /tmp/pkgconfig/live555.pc
-          echo "Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment" >> /tmp/pkgconfig/live555.pc
-          echo "Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment" >> /tmp/pkgconfig/live555.pc
+          cat <<EOF > /tmp/pkgconfig/live555.pc
+prefix=$LIVE555_PATH
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: live555
+Description: Multimedia streaming libraries
+Version: $LIVE555_VERSION
+Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
+Libs: -L\${libdir} $L555_LIBS
+EOF
           echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
 
       - name: Bootstrap
