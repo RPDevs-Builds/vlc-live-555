@@ -2,18 +2,40 @@ name: VLC Builder Final
 
 on:
   workflow_dispatch:
+    inputs:
+      track_input:
+        description: 'VLC Track to build (dev, stable, or both)'
+        required: false
+        default: 'both'
   push:
     branches: [main]
 
 jobs:
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          TRACK_INPUT="${{ github.event.inputs.track_input }}"
+          EVENT_NAME="${{ github.event_name }}"
+          
+          if [ "$EVENT_NAME" = "push" ] || [ "$TRACK_INPUT" = "both" ] || [ -z "$TRACK_INPUT" ]; then
+            TRACKS='["dev", "stable"]'
+          else
+            TRACKS="[\"$TRACK_INPUT\"]"
+          fi
+          
+          echo "matrix={\"target\": [\"linux-x64\", \"armlinux\", \"raspberrypi\", \"win64\", \"macos-x64\"], \"track\": $TRACKS}" >> $GITHUB_OUTPUT
+
   build-vlc:
+    needs: setup-matrix
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || 'vlc-builder' }}
+    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || fromJSON('["self-hosted", "vlc-builder"]') }}
     strategy:
       fail-fast: false
-      matrix:
-        target: [linux-x64, armlinux, raspberrypi, win64, macos-x64]
-        track: [dev, stable]
+      matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Checkout Primary Repository
@@ -109,18 +131,9 @@ jobs:
           echo "live555_version=$LIVE555_VERSION" >> $GITHUB_OUTPUT
           
           mkdir -p /tmp/pkgconfig
-          cat <<PC > /tmp/pkgconfig/live555.pc
-prefix=$LIVE555_PATH
-exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
-includedir=\${prefix}/include
-
-Name: live555
-Description: Multimedia streaming libraries
-Version: $LIVE555_VERSION
-Cflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment
-Libs: -L\${libdir} $L555_LIBS
-PC
+          printf "prefix=%s\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: live555\nDescription: Multimedia streaming libraries\nVersion: %s\nCflags: -I\${includedir}/liveMedia -I\${includedir}/groupsock -I\${includedir}/BasicUsageEnvironment -I\${includedir}/UsageEnvironment\nLibs: -L\${libdir} %s\n" \
+            "$LIVE555_PATH" "$LIVE555_VERSION" "$L555_LIBS" > /tmp/pkgconfig/live555.pc
+          
           echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
 
       - name: Bootstrap
