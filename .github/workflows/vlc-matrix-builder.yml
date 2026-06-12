@@ -75,5 +75,39 @@ jobs:
           echo "Libs: -L\${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment" >> /tmp/pkgconfig/live555.pc
           echo "PKG_CONFIG_PATH=/tmp/pkgconfig" >> $GITHUB_ENV
 
+      - name: Bootstrap
+        working-directory: vlc-workspace
+        run: ./bootstrap
+
+      - name: Configure
+        working-directory: vlc-workspace
+        run: |
+          ./configure \
+            --prefix=$(pwd)/install \
+            --host=${{ matrix.host }} \
+            --enable-live555 \
+            --disable-qt \
+            --disable-skins2 \
+            --disable-nls \
+            --disable-vlc \
+            --disable-vlc-wrapper \
+            --disable-lua
+
+      - name: Compile
+        working-directory: vlc-workspace
+        run: make -j$(nproc 2>/dev/null || echo 2)
+
+      - name: Extract Artifacts
+        working-directory: vlc-workspace
+        run: make install
+
+      - name: Upload
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: vlc-${{ steps.meta.outputs.vlc_version }}-live555-${{ steps.meta.outputs.live555_version }}-${{ matrix.target }}
+          path: ./vlc-workspace/install/
+          retention-days: 7
+
+
 
 
