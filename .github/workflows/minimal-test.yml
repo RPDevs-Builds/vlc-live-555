@@ -1,4 +1,4 @@
-name: Minimal Test
+name: Matrix Test
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || 'ubuntu-latest' }}
+    strategy:
+      matrix:
+        target: [linux-x64, macos-x64]
     steps:
-      - run: echo "Hello World"
+      - run: echo "Target is ${{ matrix.target }}"
