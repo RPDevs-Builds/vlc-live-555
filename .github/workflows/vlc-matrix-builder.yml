@@ -103,8 +103,8 @@ jobs:
             git init
             git remote add origin https://github.com/videolan/vlc.git
           fi
-          git fetch origin main --depth 1
-          git checkout -f main
+          git fetch origin --depth 1
+          git checkout -f origin/main
 
       - name: Extract Versions and Synthesize Live555 Pkg-Config
         id: meta
