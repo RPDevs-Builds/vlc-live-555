@@ -90,15 +90,7 @@ jobs:
         working-directory: main-repo
         run: |
           VLC_REF="${{ steps.target-vars.outputs.vlc_ref }}"
-          if [ "$VLC_REF" = "latest_tag" ]; then
-            cd source/vlc
-            git fetch --tags
-            LATEST_TAG=$(git tag -l "3.0.*" | sort -V | tail -n 1)
-            if [ -z "$LATEST_TAG" ]; then LATEST_TAG=$(git tag -l | sort -V | tail -n 1); fi
-            echo "resolved_ref=$LATEST_TAG" >> $GITHUB_OUTPUT
-          else
-            echo "resolved_ref=$VLC_REF" >> $GITHUB_OUTPUT
-          fi
+          echo "resolved_ref=main" >> $GITHUB_OUTPUT
 
       - name: Prepare VLC Workspace
         run: |
