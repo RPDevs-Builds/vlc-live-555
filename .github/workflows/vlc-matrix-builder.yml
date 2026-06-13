@@ -106,7 +106,7 @@ jobs:
             git remote set-url origin https://github.com/videolan/vlc.git
           fi
           git fetch origin ${{ steps.vlc-source.outputs.resolved_ref }} --depth 1
-          git checkout -f origin/${{ steps.vlc-source.outputs.resolved_ref }}
+          git checkout -b ${{ steps.vlc-source.outputs.resolved_ref }} --track origin/${{ steps.vlc-source.outputs.resolved_ref }} || git checkout -f origin/${{ steps.vlc-source.outputs.resolved_ref }}
 
       - name: Extract Versions and Synthesize Live555 Pkg-Config
         id: meta
