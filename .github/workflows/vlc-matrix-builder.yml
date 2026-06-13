@@ -155,11 +155,12 @@ jobs:
             --disable-nls \
             --disable-vlc \
             --disable-vlc-wrapper \
-            --disable-lua
+            --disable-lua \
+            ${VLC_CONFIGURE_FLAGS:-}
 
       - name: Compile
         working-directory: vlc-workspace
-        run: make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 2)
+        run: make -j${MAKE_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 2)}
 
       - name: Extract Artifacts
         working-directory: vlc-workspace
