@@ -1,0 +1,12 @@
+services:
+  vlc-builder:
+    build: .
+    image: vlc-builder:latest
+    container_name: vlc-builder
+    restart: always
+    environment:
+      - RUNNER_NAME=vlc-builder
+      - REPO_URL=https://github.com/RPDevs-Builds/vlc-live-555
+      - ACCESS_TOKEN=${GITHUB_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

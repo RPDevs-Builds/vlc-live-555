@@ -1,85 +1,40 @@
-# Live555 Universal Mirror & Matrix Release Engine
+# VLC & Live555 Automated Build Engine
 
-This repository is a modernized, autonomous mirror of the official **Live555 Streaming Media** libraries. It combines the high-performance C++ source code from Live Networks, Inc. with a hardened CI/CD pipeline capable of delivering verified binaries across 11+ target platforms.
+## Overview
+This repository automates the cross-compilation and packaging of [Live555](https://www.live555.com/) and [VLC Media Player](https://www.videolan.org/vlc/) for a wide array of platforms and architectures.
 
-## 🚀 Key Features
+## Architecture
+We utilize a dual-track CI/CD pipeline:
+1.  **Live555 Matrix Builder**: Tracks upstream releases, compiles static libraries (`.a`) targeting diverse architectures, and archives raw binaries.
+2.  **VLC Matrix Builder**: Cross-compiles VLC, linking dynamically to the pre-compiled Live555 static libraries. It generates both raw binary tarballs and platform-native installers.
 
-*   **Autonomous Upstream Tracking**: Automatically checks for official Live555 releases every 6 hours.
-*   **Universal Release Matrix**: Compiles and packages binaries for a wide range of architectures and operating systems.
-*   **Versioned Binary Repository**: Compiled artifacts are automatically committed to the repository under `./compiled/<Version>/<OS>/` for immediate use.
-*   **Staged VLC Integration**: The VLC source tree is maintained in `./source/vlc/` as a target for future builds with native Live555 support.
-*   **Hardened Build System**: 
-    *   **C++20 Ready**: Automatically injects modern C++ standard flags required by the latest Live555 source.
-    *   **High-Reliability Fallbacks**: Gracefully handles platform-specific dependency issues (e.g., OpenSSL availability).
-*   **Supply Chain Security**: All CI/CD components (GitHub Actions) are pinned to verified, immutable commit SHAs.
+## Binary Artifact Structure
+All compiled artifacts (both raw binaries and native installers) are committed to the repository and attached to the GitHub Release page using the following hierarchical convention:
 
-## 📦 Project Structure
+```text
+compiled/
+└── <OS>/              # (e.g., linux, mingw, macosx-bigsur)
+    ├── live555/
+    │   └── <Version>/ # Raw Live555 binaries and installers
+    └── vlc/
+        └── <Version>/ # Raw VLC binaries and native installers
+```
 
-| Directory | Description |
-| :--- | :--- |
-| **`./source/live555/`** | The latest mirrored source code from upstream. |
-| **`./source/vlc/`** | Staged VLC source tree for integration builds. |
-| **`./compiled/`** | Versioned and platform-specific binaries and libraries. |
+## Build Guide
+### 1. Automated Pipeline
+The build pipeline is triggered automatically via:
+- **Schedule**: Every 6 hours to check for upstream Live555 changes.
+- **Push**: Any commit to the `main` branch triggers a full build of VLC.
+- **Manual**: Trigger a build via GitHub Actions "Workflow Dispatch" for specific tracks (`dev`, `stable`, or `both`).
 
-## 📦 Supported Release Targets
+### 2. Self-Hosted Runner Infrastructure
+To handle heavy compilation tasks, we use a custom Docker-based GitHub Actions runner. The infrastructure configuration is located under `./github-runners/`.
 
-The release engine currently produces verified artifacts for:
+#### Setting up a local runner:
+1. Ensure `docker` and `docker-compose` are installed.
+2. Navigate to `./github-runners/`.
+3. Run `docker-compose up -d` to spin up the registered self-hosted runner.
+4. The runner is pre-configured with the necessary cross-compilation toolchains (`mingw-w64`, `gcc-arm-linux-gnueabi`, etc.).
 
-| Platform | Architecture/Variant | Build Method |
-| :--- | :--- | :--- |
-| **Linux** | Generic, x64, Shared Libraries | Native Toolchain |
-| **Embedded** | ARM (gnueabi), Raspberry Pi | Cross-Compilation |
-| **BSD** | FreeBSD, OpenBSD | Ported Toolchain |
-| **Apple** | macOS (Big Sur+), iOS | Darwin Native |
-| **Windows** | x86_64 | MinGW-w64 Cross-Build |
-
-## 🛠️ Usage
-
-### 1. Use Pre-compiled Binaries
-You can find pre-compiled binaries directly in the repository under the `./compiled/` directory, or download them from the [GitHub Releases](https://github.com/RPDevs-Builds/vlc-live-555/releases) page.
-
-### 2. Local Build Instructions
-If you wish to build the source manually on your own machine:
-
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/RPDevs-Builds/vlc-live-555.git
-    cd vlc-live-555
-    ```
-
-2.  **Configure for Your Platform**:
-    ```bash
-    cd source/live555
-    ./genMakefiles <platform-suffix>
-    # Example: ./genMakefiles linux
-    ```
-
-3.  **Inject C++20 Support** (Required):
-    The latest Live555 source uses `std::atomic_flag::test()`, which requires C++20.
-    ```bash
-    sed -i 's/^CPLUSPLUS_FLAGS.*/& -std=c++20/' config.<platform-suffix>
-    ```
-
-4.  **Compile**:
-    ```bash
-    make -j$(nproc)
-    ```
-
-## 🤖 CI/CD Pipeline
-
-The core logic resides in `.github/workflows/universal-matrix-builder.yml`. It handles:
-1.  **Upstream Check**: Compares the MD5 of `changelog.txt` against the tracked version.
-2.  **Source Mirroring**: Synchronizes Live555 and VLC source trees into `./source/`.
-3.  **Matrix Compilation**: Parallel execution of 11+ build jobs.
-4.  **Automated Commitment**: Commits the resulting binaries back to the `main` branch.
-5.  **Automated Release**: Publishes a unified GitHub Release with all artifacts.
-
-## 🔗 Official Documentation
-
-For core library documentation, API references, and build instructions for other exotic platforms, please visit the official Live555 website:
-
-*   **Home Page**: [http://www.live555.com/liveMedia/](http://www.live555.com/liveMedia/)
-*   **FAQ**: [http://live555.com/liveMedia/faq.html](http://live555.com/liveMedia/faq.html)
-
----
-*Note: This repository is a community-maintained mirror. Core source code remains the property of Live Networks, Inc. Unofficial versions are not supported by the upstream maintainers.*
+## Adding Features
+To enable new VLC modules or features, modify the `configure` block in `.github/workflows/vlc-matrix-builder.yml`. Ensure new dependencies are pre-baked into the `vlc-builder` Docker image used by the self-hosted runners.
