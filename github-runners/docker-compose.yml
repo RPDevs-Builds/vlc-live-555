@@ -8,5 +8,9 @@ services:
       - RUNNER_NAME=vlc-builder
       - REPO_URL=https://github.com/RPDevs-Builds/vlc-live-555
       - ACCESS_TOKEN=${GITHUB_TOKEN}
+      - MAKE_JOBS=${MAKE_JOBS}
+      - CCACHE_DIR=${CCACHE_DIR}
+      - VLC_CONFIGURE_FLAGS=${VLC_CONFIGURE_FLAGS}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/vlc-ccache:/home/runner/.cache/ccache
