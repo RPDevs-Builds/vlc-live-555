@@ -108,12 +108,21 @@ This script uses the GitHub API to forcefully update the `.github/workflows/buil
 A real-time dashboard that uses parallel background `gh run list` calls to provide a matrix view of the entire organization's build health.
 
 ---
-
 ## 5. Lessons Learned & Heuristics
 
-- **Pre-bake Dependencies**: Avoid `sudo apt install` during workflow runs on self-hosted runners. This prevents "no new privileges" errors and significantly reduces build time.
-- **Explicit Platform Flags**: Kodi's `configure` script often fails to auto-detect cross-compile targets. Always provide `--with-platform` and `--host` explicitly.
-- **Version Alignment**: Keep the Dockerized runner version synced with GitHub's latest (e.g., `2.335.1`) to avoid startup delays due to self-updates.
+### 5.1 CI/CD Stability
+- **Tag Propagation Latency**: When triggering builds based on Git tags, race conditions are common where CI runners check out the repository before the tag has propagated through the remote index. Always execute `git fetch --tags` or use branch-based (`main`) references for stable source checkouts in high-frequency CI pipelines.
+- **Cache Invalidation**: When modifying core compiler flags or toolchain dependencies, explicitly invalidate the CI/CD compiler cache by appending a version suffix to the `actions/cache` key (e.g., `matrix-${{ matrix.target }}-ccache-${{ needs.sync-upstream.outputs.version }}-v2`).
+- **Rate Limit Resilience**: For high-frequency CI polling, avoid synchronous API calls. Use event-driven triggers (webhooks) or implement exponential backoff strategies to prevent API rate-limit throttling (HTTP 403).
+
+### 5.2 Environment Parity
+- **Base OS Pinning**: To ensure predictable binary linking and avoid GLIBC version mismatches (e.g., `__isoc23_sscanf`), explicitly pin the runner OS base image in all matrix workflows (e.g., `ubuntu-22.04`). Relying on `latest` aliases exposes build stability to upstream platform updates.
+- **Pre-bake Dependencies**: Avoid `sudo apt install` or persistent runtime package installations in self-hosted Docker runners. Pre-bake all required toolchains into the custom Docker images to improve reproducibility and reduce build time.
+- **Environment-Driven Configuration**: Externalize build-time tunables (parallel jobs, feature flags) into a centralized `.env` file and inject these into workflow environments. This ensures consistency across local development and CI runner environments without duplicating logic.
+
+### 5.3 Artifact Management
+- **Hierarchical Structuring**: Standardize build output directories into a logical hierarchy (e.g., `./compiled/<OS>/<software>/<version>/`). This drastically simplifies automated binary aggregation, repository commits, and release asset mapping.
+- **Hybrid Distribution**: For comprehensive binary releases, provide both raw binary tarballs and platform-native installers (e.g., `.msi`, `.dmg`, `.deb`). Use standardized directory structures to ensure both types can be packaged and pushed to the release page seamlessly.
 ---
 
 ## 6. Build Workflow Breakdown (`build.yml`)
