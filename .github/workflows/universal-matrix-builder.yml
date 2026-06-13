@@ -242,20 +242,19 @@ jobs:
 
       - name: Assemble Release Assets and Repository Tree
         run: |
-          # Structure: ./compiled/<Version>/<OS>/
           VERSION="${{ needs.sync-upstream.outputs.version }}"
-          RELEASE_DIR="compiled/$VERSION"
-          mkdir -p "$RELEASE_DIR"
           
           for dir in ./downloaded-payloads/compiled-binaries-*; do
             if [ -d "$dir" ]; then
               PLATFORM_TOKEN=$(basename "$dir" | sed 's/compiled-binaries-//')
-              OS_DIR="$RELEASE_DIR/$PLATFORM_TOKEN"
+              OS_DIR="compiled/$PLATFORM_TOKEN/live555/$VERSION"
               mkdir -p "$OS_DIR"
               cp -r "$dir"/* "$OS_DIR/"
               
               # Create tarball for the release attachment
-              tar -czvf "live555-${PLATFORM_TOKEN}-$VERSION.tar.gz" -C "$dir" .
+              TARBALL_NAME="live555-${PLATFORM_TOKEN}-$VERSION.tar.gz"
+              tar -czvf "$OS_DIR/$TARBALL_NAME" -C "$dir" .
+              cp "$OS_DIR/$TARBALL_NAME" .
             fi
           done
 
