@@ -36,5 +36,11 @@ To handle heavy compilation tasks, we use a custom Docker-based GitHub Actions r
 3. Run `docker-compose up -d` to spin up the registered self-hosted runner.
 4. The runner is pre-configured with the necessary cross-compilation toolchains (`mingw-w64`, `gcc-arm-linux-gnueabi`, etc.).
 
-## Adding Features
-To enable new VLC modules or features, modify the `configure` block in `.github/workflows/vlc-matrix-builder.yml`. Ensure new dependencies are pre-baked into the `vlc-builder` Docker image used by the self-hosted runners.
+## Feature Guide: Hardware Acceleration
+To ensure the best playback performance on Linux using our builds, please enable hardware acceleration manually:
+1. Open **Tools** > **Preferences**.
+2. Switch to the **Input / Codecs** tab.
+3. Under **Hardware-accelerated decoding**, select **VA-API** (for Intel/AMD) or the appropriate option for your GPU.
+4. Click **Save** and restart VLC.
+*Note: Ensure your system has the appropriate drivers (e.g., `intel-media-va-driver`) installed.*
+
