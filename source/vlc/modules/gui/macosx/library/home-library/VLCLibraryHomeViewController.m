@@ -27,7 +27,6 @@
 
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryModel.h"
-#import "library/VLCLibrarySegment.h"
 #import "library/VLCLibraryTableCellView.h"
 #import "library/VLCLibraryUIUnits.h"
 #import "library/VLCLibraryWindow.h"
@@ -37,6 +36,8 @@
 
 #import "library/home-library/VLCLibraryHomeViewStackViewController.h"
 #import "library/home-library/VLCLibraryHomeViewVideoContainerViewDataSource.h"
+
+#import "library/search-library/VLCLibrarySearchViewController.h"
 
 #import "library/video-library/VLCLibraryVideoDataSource.h"
 #import "library/video-library/VLCLibraryVideoTableViewDelegate.h"
@@ -52,6 +53,8 @@
     NSMutableSet<NSString *> *_ongoingLongLoadingNotifications;
     NSArray<NSLayoutConstraint *> *_internalPlaceholderImageViewSizeConstraints;
 }
+@property (readwrite, nullable, nonatomic) VLCLibrarySearchViewController *searchViewController;
+@property (readwrite) BOOL isShowingSearchOverlay;
 @end
 
 @implementation VLCLibraryHomeViewController
@@ -95,9 +98,20 @@
                                        name:finishedNotification
                                      object:nil];
         }
+
+        [notificationCenter addObserver:self
+                               selector:@selector(librarySearchFieldDidChange:)
+                                   name:NSControlTextDidChangeNotification
+                                 object:nil];
     }
 
     return self;
+}
+
+- (void)dealloc
+{
+    [_searchViewController dismissFromContainer];
+    _searchViewController = nil;
 }
 
 - (void)setupPropertiesFromLibraryWindow:(VLCLibraryWindow *)libraryWindow
@@ -155,6 +169,8 @@
 {
     if (VLCMain.sharedInstance.libraryController.libraryModel.numberOfVideoMedia == 0) { // empty library
         [self presentPlaceholderHomeLibraryView];
+    } else if (self.isShowingSearchOverlay) {
+        [self presentSearchOverlay];
     } else {
         [self presentHomeLibraryView];
     }
@@ -162,6 +178,12 @@
 
 - (void)presentHomeView
 {
+    // If the search field has text from a previous session, present search overlay
+    NSString * const searchText = self.libraryWindow.librarySearchField.stringValue;
+    if (searchText.length > 0) {
+        [self showSearchOverlayForQuery:searchText];
+        return;
+    }
     [self updatePresentedView];
 }
 
@@ -179,6 +201,13 @@
     [self.stackViewController reloadData];
 }
 
+- (void)presentSearchOverlay
+{
+    [self.searchViewController presentInContainer:self.libraryTargetView];
+    self.isShowingSearchOverlay = YES;
+    [self.libraryWindow updateToolbarDisplayFlags];
+}
+
 - (void)libraryModelUpdated:(NSNotification *)aNotification
 {
     NSParameterAssert(aNotification);
@@ -190,6 +219,7 @@
     const BOOL emptyLibraryViewPresent = [targetViewSubViews containsObject:self.emptyLibraryView];
     const BOOL homeLibraryViewPresent = [targetViewSubViews containsObject:self.homeLibraryView];
     if (self.libraryWindow.librarySegmentType == VLCLibraryHomeSegmentType &&
+        !self.isShowingSearchOverlay &&
         ((videoCount == 0 && !emptyLibraryViewPresent) ||
          (videoCount > 0 && !homeLibraryViewPresent) ||
          (audioCount == 0 && !emptyLibraryViewPresent) ||
@@ -198,6 +228,57 @@
 
         [self updatePresentedView];
     }
+}
+
+#pragma mark - Search overlay
+
+- (VLCLibrarySearchViewController *)searchViewController
+{
+    if (_searchViewController == nil) {
+        _searchViewController = [[VLCLibrarySearchViewController alloc] initWithLibraryWindow:self.libraryWindow];
+    }
+    return _searchViewController;
+}
+
+- (void)librarySearchFieldDidChange:(NSNotification *)aNotification
+{
+    NSParameterAssert(aNotification);
+
+    NSSearchField * const searchField = self.libraryWindow.librarySearchField;
+    if (aNotification.object != searchField && aNotification.object != searchField.currentEditor) {
+        return;
+    }
+
+    NSString * const searchString = searchField.stringValue ?: @"";
+
+    if (searchString.length == 0) {
+        [self hideSearchOverlay];
+    } else {
+        [self showSearchOverlayForQuery:searchString];
+    }
+}
+
+- (void)showSearchOverlayForQuery:(NSString *)query
+{
+    NSParameterAssert(query && query.length > 0);
+    if (!self.isShowingSearchOverlay) {
+        [self presentSearchOverlay];
+    }
+    [self.searchViewController searchForString:query];
+}
+
+- (void)hideSearchOverlay
+{
+    if (!self.isShowingSearchOverlay) {
+        return;
+    }
+    [self.searchViewController clearSearch];
+    [self.searchViewController dismissFromContainer];
+    self.isShowingSearchOverlay = NO;
+    [self.libraryWindow updateToolbarDisplayFlags];
+
+    // Re-present the home content (or placeholder) in the target view.
+    [self updatePresentedView];
 }
 
 - (void)libraryModelLongLoadStarted:(NSNotification *)notification
@@ -233,6 +314,37 @@
 - (void)disconnect
 {
     [self.stackViewController disconnectContainers];
+}
+
+#pragma mark - VLCLibraryDynamicToolbarFlagsCapable
+
+- (VLCLibraryWindowToolbarDisplayFlags)toolbarDisplayFlags
+{
+    if (self.isShowingSearchOverlay) {
+        return VLCLibraryWindowToolbarDisplayFlagLibrarySearchBar |
+               VLCLibraryWindowToolbarDisplayFlagToggleViewModeSegmentButton;
+    }
+    return VLCLibraryWindowToolbarDisplayFlagLibrarySearchBar;
+}
+
+#pragma mark - VLCLibraryDynamicViewModeCapable
+
+- (VLCLibraryViewModeSegment)viewMode
+{
+    VLCLibraryWindowPersistentPreferences * const prefs =
+        VLCLibraryWindowPersistentPreferences.sharedInstance;
+    return self.isShowingSearchOverlay ? prefs.searchLibraryViewMode : prefs.homeLibraryViewMode;
+}
+
+- (void)setViewMode:(VLCLibraryViewModeSegment)viewMode
+{
+    VLCLibraryWindowPersistentPreferences * const prefs =
+        VLCLibraryWindowPersistentPreferences.sharedInstance;
+    if (self.isShowingSearchOverlay) {
+        prefs.searchLibraryViewMode = viewMode;
+    } else {
+        prefs.homeLibraryViewMode = viewMode;
+    }
 }
 
 @end

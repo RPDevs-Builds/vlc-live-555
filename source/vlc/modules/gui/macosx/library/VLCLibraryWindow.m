@@ -24,6 +24,7 @@
 
 #import "VLCLibraryDataTypes.h"
 
+#import "extensions/NSAnimationContext+VLCAdditions.h"
 #import "extensions/NSColor+VLCAdditions.h"
 #import "extensions/NSImage+VLCAdditions.h"
 #import "extensions/NSFont+VLCAdditions.h"
@@ -53,6 +54,9 @@
 #import "library/VLCLibraryWindowSidebarRootViewController.h"
 #import "library/VLCLibraryWindowSplitViewController.h"
 #import "library/VLCLibraryWindowToolbarDelegate.h"
+
+#import "library/VLCLibraryDynamicToolbarFlagsCapable.h"
+#import "library/VLCLibraryDynamicViewModeCapable.h"
 
 #import "library/groups-library/VLCLibraryGroupsViewController.h"
 
@@ -230,9 +234,50 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)updateGridVsListViewModeSegmentedControl
 {
-    _currentSelectedViewModeSegment =
-        [VLCLibrarySegment segmentWithSegmentType:self.librarySegmentType].viewMode;
+    _currentSelectedViewModeSegment = [self currentViewMode];
     _gridVsListSegmentedControl.selectedSegment = _currentSelectedViewModeSegment;
+}
+
+- (NSInteger)currentViewMode
+{
+    if ([self.librarySegmentViewController conformsToProtocol:@protocol(VLCLibraryDynamicViewModeCapable)]) {
+        id<VLCLibraryDynamicViewModeCapable> const capableViewController =
+            (id<VLCLibraryDynamicViewModeCapable>)self.librarySegmentViewController;
+        return capableViewController.viewMode;
+    }
+    return [VLCLibrarySegment segmentWithSegmentType:self.librarySegmentType].viewMode;
+}
+
+- (void)setCurrentViewMode:(NSInteger)viewMode
+{
+    if ([self.librarySegmentViewController conformsToProtocol:@protocol(VLCLibraryDynamicViewModeCapable)]) {
+        id<VLCLibraryDynamicViewModeCapable> const capableViewController =
+            (id<VLCLibraryDynamicViewModeCapable>)self.librarySegmentViewController;
+        capableViewController.viewMode = (VLCLibraryViewModeSegment)viewMode;
+    } else {
+        [VLCLibrarySegment segmentWithSegmentType:self.librarySegmentType].viewMode = viewMode;
+    }
+}
+
+- (void)updateToolbarDisplayFlags
+{
+    NSParameterAssert([self.librarySegmentViewController conformsToProtocol:@protocol(VLCLibraryDynamicToolbarFlagsCapable)]);
+    id<VLCLibraryDynamicToolbarFlagsCapable> const capableViewController =
+        (id<VLCLibraryDynamicToolbarFlagsCapable>)self.librarySegmentViewController;
+    [self.toolbarDelegate applyVisiblityFlags:capableViewController.toolbarDisplayFlags];
+}
+
+- (void)applyToolbarDisplayFlagsForSegment:(VLCLibrarySegment *)segment
+{
+    VLCLibraryWindowToolbarDisplayFlags flags;
+    if ([self.librarySegmentViewController conformsToProtocol:@protocol(VLCLibraryDynamicToolbarFlagsCapable)]) {
+        id<VLCLibraryDynamicToolbarFlagsCapable> const capableViewController =
+            (id<VLCLibraryDynamicToolbarFlagsCapable>)self.librarySegmentViewController;
+        flags = capableViewController.toolbarDisplayFlags;
+    } else {
+        flags = segment.toolbarDisplayFlags;
+    }
+    [self.toolbarDelegate applyVisiblityFlags:flags];
 }
 
 - (void)setViewForSelectedSegment
@@ -244,10 +289,11 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)applySegmentView:(VLCLibrarySegment *)segment
 {
-    [self.toolbarDelegate applyVisiblityFlags:segment.toolbarDisplayFlags];
+    self.librarySearchField.placeholderString = segment.searchFieldPlaceholder;
     if (![self.librarySegmentViewController isKindOfClass:segment.libraryViewControllerClass]) {
         _librarySegmentViewController = [segment newLibraryViewController];
     }
+    [self applyToolbarDisplayFlagsForSegment:segment];
     [segment presentLibraryViewUsingController:self.librarySegmentViewController];
     [self invalidateRestorableState];
 }
@@ -270,7 +316,7 @@ static int ShowController(vlc_object_t * __unused p_this,
     }
 
     _currentSelectedViewModeSegment = _gridVsListSegmentedControl.selectedSegment;
-    [VLCLibrarySegment segmentWithSegmentType:self.librarySegmentType].viewMode = _currentSelectedViewModeSegment;
+    [self setCurrentViewMode:_currentSelectedViewModeSegment];
     [self setViewForSelectedSegment];
 }
 
@@ -373,6 +419,10 @@ static int ShowController(vlc_object_t * __unused p_this,
                                                            userInfo:nil
                                                             repeats:NO];
     
+    if (self.librarySegmentType == VLCLibraryHomeSegmentType) {
+        return;
+    }
+
     // Trigger completions
     NSText * const fieldEditor = self.librarySearchField.currentEditor;
     if (fieldEditor) {
@@ -382,6 +432,10 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)updateFilterString
 {
+    if (self.librarySegmentType == VLCLibraryHomeSegmentType) {
+        return;
+    }
+
     [VLCMain.sharedInstance.libraryController filterByString:_librarySearchField.stringValue];
 }
 
@@ -501,9 +555,9 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)hideControlsBar
 {
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
+     [NSAnimationContext runAnimationRespectingPreferencesWithDuration:VLCLibraryUIUnits.controlsFadeAnimationDuration
+                                                               changes:^(NSAnimationContext * const context) {
         context.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
-        context.duration = VLCLibraryUIUnits.controlsFadeAnimationDuration;
         self.controlsBar.bottomBarView.animator.alphaValue = 0;
     } completionHandler:^{
         self.controlsBar.bottomBarView.hidden = self.controlsBar.bottomBarView.alphaValue == 0;
@@ -519,9 +573,10 @@ static int ShowController(vlc_object_t * __unused p_this,
 - (void)showControlsBar
 {
     self.controlsBar.bottomBarView.hidden = NO;
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
+
+    [NSAnimationContext runAnimationRespectingPreferencesWithDuration:VLCLibraryUIUnits.controlsFadeAnimationDuration
+                                                              changes:^(NSAnimationContext * const context) {
         context.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseIn];
-        context.duration = VLCLibraryUIUnits.controlsFadeAnimationDuration;
         self.controlsBar.bottomBarView.animator.alphaValue = 1;
     } completionHandler:nil];
 }
@@ -660,10 +715,11 @@ static int ShowController(vlc_object_t * __unused p_this,
     self.libraryTargetView.subviews = views;
     [self.loadingOverlayView applyConstraintsToFillSuperview];
 
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
-        context.duration = 0.5;
+    [NSAnimationContext runAnimationRespectingPreferencesWithDuration:0.5
+                                                              changes:^(NSAnimationContext * const context) {
         self.loadingOverlayView.animator.alphaValue = 1.0;
     } completionHandler:nil];
+
     [self.loadingOverlayView.indicator startAnimation:self];
 
 }
@@ -679,8 +735,8 @@ static int ShowController(vlc_object_t * __unused p_this,
     self.loadingOverlayView.wantsLayer = YES;
     self.loadingOverlayView.alphaValue = 1.0;
 
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
-        context.duration = 1.0;
+    [NSAnimationContext runAnimationRespectingPreferencesWithDuration:1.0
+                                                              changes:^(NSAnimationContext * const context) {
         self.loadingOverlayView.animator.alphaValue = 0.0;
     } completionHandler:^{
         NSMutableArray * const mutableSubviews = self.libraryTargetView.subviews.mutableCopy;

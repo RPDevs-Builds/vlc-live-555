@@ -31,6 +31,8 @@ T.ItemDelegate {
 
     // Properties
 
+    required property Item view
+
     property real pictureWidth: VLCStyle.colWidth(1)
     property real pictureHeight: pictureWidth
     property int titleTopMargin: VLCStyle.gridItemTitle_topMargin
@@ -76,7 +78,7 @@ T.ItemDelegate {
 
     signal playClicked
     signal addToPlaylistClicked
-    signal itemClicked(int modifier)
+    signal itemClicked(int modifier, bool select)
     signal itemDoubleClicked(int modifier)
     signal contextMenuButtonClicked(Item menuParent, point globalMousePos)
 
@@ -193,7 +195,7 @@ T.ItemDelegate {
             onActiveChanged: {
                 if (dragItem) {
                     if (active && !selected) {
-                        root.itemClicked(root._modifiersOnLastPress)
+                        root.itemClicked(root._modifiersOnLastPress, true)
                     }
 
                     if (active)
@@ -219,9 +221,9 @@ T.ItemDelegate {
                 // FIXME: The signals are messed up in this item.
                 //        Right click does not fire itemClicked?
                 if (button === Qt.RightButton)
-                    contextMenuButtonClicked(picture, parent.mapToGlobal(eventPoint.position.x, eventPoint.position.y));
+                    contextMenuButtonClicked(picture, eventPoint.globalPosition);
                 else
-                    root.itemClicked(point.modifiers);
+                    root.itemClicked(point.modifiers, true);
             }
 
             onDoubleTapped: (eventPoint, button) => {
@@ -240,18 +242,21 @@ T.ItemDelegate {
             }
         }
 
-        TapHandler {
-            acceptedDevices: PointerDevice.TouchScreen
+        DelegateTouchTapHandler {
+            delegate: root
 
-            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
-
-            onTapped: (eventPoint, button) => {
-                root.itemClicked(Qt.NoModifier)
+            onSingleTapped: (eventPoint, button) => {
+                // initial action is handled in `DelegateTouchTapHandler`
+                root.itemClicked(Qt.NoModifier, false)
                 root.itemDoubleClicked(Qt.NoModifier)
             }
 
-            onLongPressed: {
-                contextMenuButtonClicked(picture, parent.mapToGlobal(point.position.x, point.position.y));
+            onDoubleTapped: (eventPoint, button) => {
+                root.playClicked()
+            }
+
+            onContextMenuRequested: (index, globalPoint) => {
+                root.contextMenuButtonClicked(picture ?? null, globalPoint)
             }
         }
     }
@@ -299,7 +304,7 @@ T.ItemDelegate {
             onPlayIconClicked: (point) => {
                 // emulate a mouse click before delivering the play signal as to select the item
                 // this helps in updating the selection and restore of initial index in the parent views
-                root.itemClicked(point.modifiers)
+                root.itemClicked(point.modifiers, true)
                 root.playClicked()
             }
 

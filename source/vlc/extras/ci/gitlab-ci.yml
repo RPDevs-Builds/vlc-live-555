@@ -26,10 +26,10 @@ variables:
     VLC_WIN_LLVM_MSVCRT_IMAGE: registry.videolan.org/vlc-debian-llvm-msvcrt:20260331112916
     VLC_WIN_LLVM_UCRT_IMAGE: registry.videolan.org/vlc-debian-llvm-ucrt:20260331112916
     VLC_DEBIAN_IMAGE: registry.videolan.org/vlc-debian-unstable:20260121072258
-    VLC_ANDROID_IMAGE: registry.videolan.org/vlc-debian-android:20260120134731
-    VLC_SNAP_IMAGE: registry.videolan.org/vlc-ubuntu-snap:20260312133043
+    VLC_ANDROID_IMAGE: registry.videolan.org/vlc-debian-android:20260611083443
+    VLC_SNAP_IMAGE: registry.videolan.org/vlc-ubuntu-snap:20260611225331
     VLC_RASPBIAN_IMAGE: registry.videolan.org/vlc-ubuntu-raspberry:20260120134731
-    VLC_WASM_EMSCRIPTEN: registry.videolan.org/vlc-debian-wasm-emscripten:20260120134731
+    VLC_WASM_EMSCRIPTEN: registry.videolan.org/vlc-debian-wasm-emscripten:20260617104340
 
 .variables-debian: &variables-debian
         HOST_ARCH: x86_64
@@ -357,8 +357,6 @@ debian-meson:
             echo -e "\e[0Ksection_start:$(date +%s):build_tools_section\r\e[0KTools build"
             # Build tools
             ( cd extras/tools && ./bootstrap && make -j$NCPU --output-sync=recurse )
-            # Build meson from extras/tool explicitly
-            ( cd extras/tools && make -j$NCPU .buildmeson )
             export PATH="$(pwd)/extras/tools/build/bin:$PATH"
             echo -e "\e[0Ksection_end:$(date +%s):build_tools_section\r\e[0K"
         - |
@@ -626,7 +624,7 @@ xros-arm64:
         name: $VLC_ANDROID_IMAGE
     script: |
         git clone https://code.videolan.org/videolan/libvlcjni.git
-        (cd libvlcjni && git checkout b39434016d07928498b915e4164a02a6a3f2f695)
+        (cd libvlcjni && git checkout e0a8a3df7c15b0c54e7651e2ea1623ba5f64c7ea)
         if [ -n "$VLC_PREBUILT_CONTRIBS_URL" ]; then
           CONTRIB_FLAGS="--with-prebuilt-contribs"
         elif [ "${CI_COMMIT_BRANCH}" = "${CI_DEFAULT_BRANCH}" -a "${CI_PROJECT_PATH}" = "videolan/vlc" ]; then

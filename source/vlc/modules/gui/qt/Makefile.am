@@ -125,7 +125,6 @@ libqt_plugin_la_SOURCES = \
 	dialogs/fingerprint/fingerprintdialog.hpp \
 	dialogs/firstrun/firstrunwizard.cpp dialogs/firstrun/firstrunwizard.hpp \
 	dialogs/gototime/gototime.cpp dialogs/gototime/gototime.hpp \
-	dialogs/help/aboutmodel.cpp \
 	dialogs/help/aboutmodel.hpp \
 	dialogs/help/help.cpp dialogs/help/help.hpp \
 	dialogs/mediainfo/info_panels.cpp dialogs/mediainfo/info_panels.hpp \
@@ -793,9 +792,9 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/active_indicator.svg \
 	pixmaps/icons/add.svg \
 	pixmaps/icons/album_cover.svg \
-	pixmaps/icons/aspect_ratio.svg \
+	pixmaps/icons/ic_aspect_ratio.svg \
 	pixmaps/icons/atob.svg \
-	pixmaps/icons/audiosub.svg \
+	pixmaps/icons/ic_audiosub.svg \
 	pixmaps/icons/back.svg \
 	pixmaps/icons/ic_fluent_bookmark.svg \
 	pixmaps/icons/breadcrumb_prev.svg \
@@ -843,9 +842,9 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/podcast.svg \
 	pixmaps/icons/ic_fluent_previous.svg \
 	pixmaps/icons/profile_new.svg \
-	pixmaps/icons/record.svg \
+	pixmaps/icons/ic_fluent_record.svg \
 	pixmaps/icons/remove.svg \
-	pixmaps/icons/renderer.svg \
+	pixmaps/icons/ic_fluent_cast.svg \
 	pixmaps/icons/ic_fluent_arrow_repeat_all.svg \
 	pixmaps/icons/ic_fluent_arrow_repeat_1.svg \
 	pixmaps/icons/ic_fluent_rewind.svg \
@@ -905,7 +904,7 @@ libqt_plugin_la_RES = \
 	pixmaps/menu/preferences.svg \
 	pixmaps/menu/ic_fluent_previous.svg \
 	pixmaps/menu/profile_new.svg \
-	pixmaps/menu/record.svg \
+	pixmaps/menu/ic_fluent_record.svg \
 	pixmaps/menu/remove.svg \
 	pixmaps/menu/ic_fluent_arrow_repeat_all.svg \
 	pixmaps/menu/repeat_off.svg \
@@ -1122,6 +1121,7 @@ libqml_module_player_a_CPPFLAGS = $(libqt_plugin_la_CPPFLAGS)
 libqml_module_player_a_QML = \
 	player/qml/ControlBar.qml \
 	player/qml/PlaybackSpeed.qml \
+	player/qml/LyricsFlickable.qml \
 	player/qml/MiniPlayer.qml \
 	player/qml/PIPPlayer.qml \
 	player/qml/Player.qml \
@@ -1241,7 +1241,8 @@ libqml_module_util_a_QML = \
 	util/qml/NativeMenu.qml \
 	util/qml/FadeControllerStateGroup.qml \
 	util/qml/GridSizeHelper.qml \
-	util/qml/DelayedBehavior.qml
+	util/qml/DelayedBehavior.qml \
+	util/qml/DelegateTouchTapHandler.qml
 libqml_module_util_a_Singleton_QML = \
 	util/qml/Helpers.qml
 nodist_libqml_module_util_a_SOURCES = util_qmlassets.cpp

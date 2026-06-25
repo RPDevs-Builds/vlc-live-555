@@ -77,6 +77,29 @@ private:
     input_item_t *p_item;
 };
 
+class TimedText
+{
+    Q_GADGET
+    QML_VALUE_TYPE(timedText)
+
+    Q_PROPERTY(QString text READ text CONSTANT FINAL)
+    Q_PROPERTY(VLCTime time READ time CONSTANT FINAL)
+
+public:
+    TimedText() = default;
+    TimedText(QString text, VLCTime time)
+        : m_text(std::move(text))
+        , m_time(time)
+    { }
+
+    QString text() const { return m_text; }
+    VLCTime time() const { return m_time; }
+
+private:
+    QString m_text;
+    VLCTime m_time;
+};
+
 class PlayerControllerPrivate;
 class PlayerController : public QObject
 {
@@ -147,6 +170,10 @@ public:
     Q_PROPERTY(int subtitleDelayMS READ getSubtitleDelayMS WRITE setSubtitleDelayMS NOTIFY subtitleDelayChanged FINAL)
     Q_PROPERTY(int secondarySubtitleDelayMS READ getSecondarySubtitleDelayMS WRITE setSecondarySubtitleDelayMS NOTIFY secondarySubtitleDelayChanged FINAL)
     Q_PROPERTY(float subtitleFPS READ getSubtitleFPS WRITE setSubtitleFPS NOTIFY subtitleFPSChanged FINAL)
+    Q_PROPERTY(TimedText currentLyric READ getCurrentLyric NOTIFY currentLyricChanged FINAL)
+    Q_PROPERTY(bool hasLyrics READ hasLyrics NOTIFY hasLyricsChanged FINAL)
+    Q_PROPERTY(QList<TimedText> syltLyrics READ getSyltLyrics NOTIFY syltLyricsChanged FINAL)
+    Q_PROPERTY(int currentLyricIndex READ getCurrentLyricIndex NOTIFY currentLyricIndexChanged FINAL)
 
     //title/chapters/menu
     Q_PROPERTY(TitleListModel* titles READ getTitles CONSTANT FINAL)
@@ -213,7 +240,7 @@ public slots:
 
     void jumpFwd();
     void jumpBwd();
-    void jumpToTime( VLCTime i_time );
+    void jumpTime( VLCTime i_time );
     void jumpToPos( double );
     void frameNext();
 
@@ -401,6 +428,10 @@ public slots:
     QString getArtist() const;
     QString getAlbum() const;
     QUrl getArtwork() const;
+    TimedText getCurrentLyric() const;
+    bool hasLyrics() const;
+    QList<TimedText> getSyltLyrics() const;
+    int getCurrentLyricIndex() const;
 
     //Renderer
     RendererManager* getRendererManager();
@@ -480,6 +511,10 @@ signals:
     void statisticsUpdated( const input_stats_t& stats );
     void infoChanged( input_item_t* );
     void currentMetaChanged( input_item_t* );
+    void currentLyricChanged();
+    void hasLyricsChanged( bool );
+    void syltLyricsChanged();
+    void currentLyricIndexChanged( int );
     void metaChanged( input_item_t *);
     void artChanged( QString ); /* current item art ( same as item == NULL ) */
     void artChanged( input_item_t * );

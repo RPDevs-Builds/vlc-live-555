@@ -20,7 +20,7 @@
  *****************************************************************************/
 #include <vlc_bits.h>
 
-static inline uint8_t *hxxx_ep3b_to_rbsp( uint8_t *p, uint8_t *end, unsigned *pi_prev, size_t i_count )
+static inline const uint8_t *hxxx_ep3b_to_rbsp( const uint8_t *p, const uint8_t *end, unsigned *pi_prev, size_t i_count )
 {
     for( size_t i=0; i<i_count; i++ )
     {
@@ -81,7 +81,7 @@ static void hxxx_bsfw_ep3b_ctx_init( struct hxxx_bsfw_ep3b_ctx_s *ctx )
 
 static size_t hxxx_bsfw_byte_forward_ep3b( bs_t *s, size_t i_count )
 {
-    struct hxxx_bsfw_ep3b_ctx_s *ctx = (struct hxxx_bsfw_ep3b_ctx_s *) s->p_priv;
+    struct hxxx_bsfw_ep3b_ctx_s *ctx = s->p_priv;
     if( s->p == NULL )
     {
         s->p = s->p_start;
@@ -92,14 +92,14 @@ static size_t hxxx_bsfw_byte_forward_ep3b( bs_t *s, size_t i_count )
     if( s->p >= s->p_end )
         return 0;
 
-    s->p = hxxx_ep3b_to_rbsp( s->p, s->p_end, &ctx->i_prev, i_count );
+    s->p = (uint8_t*) hxxx_ep3b_to_rbsp( s->p, s->p_end, &ctx->i_prev, i_count );
     ctx->i_bytepos += i_count;
     return i_count;
 }
 
 static size_t hxxx_bsfw_byte_pos_ep3b( const bs_t *s )
 {
-    struct hxxx_bsfw_ep3b_ctx_s *ctx = (struct hxxx_bsfw_ep3b_ctx_s *) s->p_priv;
+    struct hxxx_bsfw_ep3b_ctx_s *ctx = s->p_priv;
     return ctx->i_bytepos;
 }
 

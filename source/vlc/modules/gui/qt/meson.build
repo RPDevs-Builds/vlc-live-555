@@ -232,7 +232,6 @@ qt_plugin_sources = files(
     'dialogs/firstrun/firstrunwizard.hpp',
     'dialogs/gototime/gototime.cpp',
     'dialogs/gototime/gototime.hpp',
-    'dialogs/help/aboutmodel.cpp',
     'dialogs/help/aboutmodel.hpp',
     'dialogs/help/help.cpp',
     'dialogs/help/help.hpp',
@@ -720,6 +719,7 @@ qml_modules += {
    'sources': files(
        'player/qml/ControlBar.qml',
        'player/qml/PlaybackSpeed.qml',
+       'player/qml/LyricsFlickable.qml',
        'player/qml/MiniPlayer.qml',
        'player/qml/PIPPlayer.qml',
        'player/qml/Player.qml',
@@ -833,7 +833,8 @@ qml_modules += {
         'util/qml/GridSizeHelper.qml',
         'util/qml/NativeMenu.qml',
         'util/qml/FadeControllerStateGroup.qml',
-        'util/qml/DelayedBehavior.qml'
+        'util/qml/DelayedBehavior.qml',
+        'util/qml/DelegateTouchTapHandler.qml'
     ),
     'singletons': files(
         'util/qml/Helpers.qml',

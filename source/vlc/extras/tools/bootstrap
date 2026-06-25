@@ -24,6 +24,7 @@ MIN_LIBTOOL=2.4
 MIN_M4=1.4.16
 MIN_MESON=1.10.0
 MIN_NASM=2.15
+MIN_NINJA=1.13.0
 
 export LC_ALL=
 FOUND=
@@ -112,6 +113,22 @@ do
     shift
 done
 
+check() {
+if ! $1 --version >/dev/null 2>&1 && ! $1 -version >/dev/null 2>&1
+then
+    echo "$1 not found"
+    NEEDED="$NEEDED $1"
+else
+    # found, need to check version ?
+    if [ -z "$2" ];then
+        FOUND="$FOUND $1"
+    else
+        gotver=`$1 --version | head -1 | grep -o '[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' | head -1`
+        check_version $1 $gotver $2
+    fi
+fi
+}
+
 check_tar() {
 if ! tar PcJ /dev/null >/dev/null 2>&1 && ! tar PcJf /dev/null /dev/null 2>&1
 then
@@ -152,39 +169,35 @@ fi
 }
 
 check_ninja() {
-if ! ninja --version >/dev/null 2>&1
+# with GNU make 4.4 we should use ninja 1.13.x and above
+# otherwise we must use the patched version from kitware
+
+isgnu=$(make -v | head -1 | cut -d ' ' -f 1)
+if [ "$isgnu" = "GNU" ];
 then
-    echo "ninja not found"
-    NEEDED="$NEEDED ninja"
+    gotver=$(make -v | head -1 | cut -d ' ' -f 3)
+    gotmajor=$(echo $gotver|cut -d. -f1)
+    gotminor=$(echo $gotver|cut -d. -f2)
+fi
+if [ 4 -lt $gotmajor ] ||
+   [ 4 -eq $gotmajor ] && [ 4 -le $gotminor ];
+then
+    # GNU Make 4.4+
+    check ninja $1
 else
-    jobserver=`ninja --version | head -1 | grep .jobserver`
-    if [ -z "$jobserver" ]; then
-        echo "ninja missing jobserver support"
+    if ! ninja --version >/dev/null 2>&1
+    then
+        echo "ninja not found"
         NEEDED="$NEEDED ninja"
     else
-        # found, need to check version ?
-        if [ -z "$1" ];then
-            FOUND="$FOUND ninja"
+        jobserver=$(ninja --version | head -1 | grep .jobserver)
+        if [ -z "$jobserver" ]; then
+            echo "ninja missing jobserver support"
+            NEEDED="$NEEDED ninja"
         else
-            gotver=`ninja --version | head -1 | sed s/'.* '//`
-            check_version ninja $gotver $1
+            # check the known working jobserver kitware version
+            check ninja 1.11.1
         fi
-    fi
-fi
-}
-
-check() {
-if ! $1 --version >/dev/null 2>&1 && ! $1 -version >/dev/null 2>&1
-then
-    echo "$1 not found"
-    NEEDED="$NEEDED $1"
-else
-    # found, need to check version ?
-    if [ -z "$2" ];then
-        FOUND="$FOUND $1"
-    else
-        gotver=`$1 --version | head -1 | grep -o '[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' | head -1`
-        check_version $1 $gotver $2
     fi
 fi
 }
@@ -222,7 +235,7 @@ check_nasm $MIN_NASM
 check gettext
 check help2man
 check meson $MIN_MESON
-check_ninja
+check_ninja $MIN_NINJA
 check gperf
 
 DEPS_ONLY="help2man"

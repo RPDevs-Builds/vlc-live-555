@@ -36,7 +36,7 @@ OPENGL_VOUT_COMMONSOURCES = \
 
 # Convenience library for OpenGL components -- OpenGL only
 libvlc_opengl_la_SOURCES = $(OPENGL_COMMONSOURCES)
-libvlc_opengl_la_CFLAGS = $(OPENGL_COMMONCFLAGS)
+libvlc_opengl_la_CFLAGS = $(OPENGL_COMMONCFLAGS) $(GL_CFLAGS)
 libvlc_opengl_la_CPPFLAGS =
 libvlc_opengl_la_LIBADD = $(OPENGL_COMMONLIBS) $(LIBM)
 libvlc_opengl_la_LDFLAGS = -static -no-undefined
@@ -52,43 +52,38 @@ libvlc_opengles_la_LIBADD = $(OPENGL_COMMONLIBS) $(LIBM)
 libvlc_opengles_la_LDFLAGS = -static -no-undefined
 
 libvlc_opengles_la_CFLAGS += $(GLES2_CFLAGS)
-libvlc_opengles_la_LIBADD += $(GLES2_LIBS)
 if HAVE_GLES2
 noinst_LTLIBRARIES += libvlc_opengles.la
 endif
 
-libglinterop_sw_plugin_la_SOURCES = video_output/opengl/interop_sw.c
-libglinterop_sw_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
+# Plugins that adapt to either backend link against $(GL_PLUGIN_LIBADD)
+# and build with $(GL_PLUGIN_CFLAGS), and are registered under
+# HAVE_GL_OR_GLES2. These are GL filters/interops that run inside the
+# current context and call GL through the provider's function table, so
+# they need only the common convenience library, not the GL/GLES2 link
+# libraries.
 if HAVE_GL
-vout_PLUGINS += libglinterop_sw_plugin.la
+GL_PLUGIN_LIBADD = libvlc_opengl.la
+GL_PLUGIN_CFLAGS = $(GL_CFLAGS)
 else
 if HAVE_GLES2
-vout_PLUGINS += libglinterop_sw_plugin.la
-libglinterop_sw_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2
+GL_PLUGIN_LIBADD = libvlc_opengles.la
+GL_PLUGIN_CFLAGS = $(GLES2_CFLAGS) -DUSE_OPENGL_ES2=1
 endif
 endif
 
-
-if HAVE_OSX
+libglinterop_sw_plugin_la_SOURCES = video_output/opengl/interop_sw.c
+libglinterop_sw_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(GL_PLUGIN_CFLAGS)
+libglinterop_sw_plugin_la_LIBADD = $(GL_PLUGIN_LIBADD)
+if HAVE_GL_OR_GLES2
 vout_PLUGINS += libglinterop_sw_plugin.la
-libglinterop_sw_plugin_la_LIBADD = libvlc_opengl.la
-endif
-if HAVE_IOS_OR_TVOS
-vout_PLUGINS += libglinterop_sw_plugin.la
-libglinterop_sw_plugin_la_LIBADD = libvlc_opengles.la
-libglinterop_sw_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2
-endif
-
-if HAVE_ANDROID
-libglinterop_sw_plugin_la_LIBADD = libvlc_opengles.la
-libglinterop_sw_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2
 endif
 
 ### OpenGL ###
 libgles2_plugin_la_SOURCES = video_output/opengl/display.c \
     $(OPENGL_VOUT_COMMONSOURCES)
 libgles2_plugin_la_CFLAGS = $(AM_CFLAGS) $(GLES2_CFLAGS) -DUSE_OPENGL_ES2
-libgles2_plugin_la_LIBADD = libvlc_opengles.la
+libgles2_plugin_la_LIBADD = libvlc_opengles.la $(GLES2_LIBS)
 libgles2_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(vout_RPATH)
 if HAVE_GLES2
 vout_PLUGINS += libgles2_plugin.la
@@ -103,93 +98,32 @@ if HAVE_GL
 vout_PLUGINS += libgl_plugin.la
 endif # HAVE_GL
 
-if HAVE_OSX
-vout_PLUGINS += libgl_plugin.la
-libvlc_opengl_la_CPPFLAGS += -DGL_SILENCE_DEPRECATION
-libgl_plugin_la_CPPFLAGS += -DGL_SILENCE_DEPRECATION
-endif
-
 libglfilter_draw_plugin_la_SOURCES = video_output/opengl/filter_draw.c
 libglfilter_draw_plugin_la_LDFLAGS = $(AM_LDFLAGS)
-if HAVE_GL
-libglfilter_draw_plugin_la_LIBADD = libvlc_opengl.la $(GL_LIBS)
+libglfilter_draw_plugin_la_LIBADD = $(GL_PLUGIN_LIBADD)
+libglfilter_draw_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_PLUGIN_CFLAGS)
+if HAVE_GL_OR_GLES2
 vout_PLUGINS += libglfilter_draw_plugin.la
-endif
-
-if HAVE_OSX
-vout_PLUGINS += libglfilter_draw_plugin.la
-libglfilter_draw_plugin_la_LIBADD = libvlc_opengl.la
-endif
-if HAVE_IOS_OR_TVOS
-vout_PLUGINS += libglfilter_draw_plugin.la
-libglfilter_draw_plugin_la_LIBADD = libvlc_opengles.la $(GLES2_LIBS)
-libglfilter_draw_plugin_la_CFLAGS = -DUSE_OPENGL_ES2=1
-endif
-
-if !HAVE_GL
-if HAVE_GLES2
-libglfilter_draw_plugin_la_LIBADD = libvlc_opengles.la $(GLES2_LIBS)
-libglfilter_draw_plugin_la_CFLAGS = -DUSE_OPENGL_ES2=1
-vout_PLUGINS += libglfilter_draw_plugin.la
-endif
 endif
 
 libglfilter_mock_plugin_la_SOURCES = video_output/opengl/filter_mock.c
-libglfilter_mock_plugin_la_LIBADD = $(LIBM)
+libglfilter_mock_plugin_la_LIBADD = $(LIBM) $(GL_PLUGIN_LIBADD)
+libglfilter_mock_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_PLUGIN_CFLAGS)
 # NOTE: we need $(vout_RPATH) here to properly generate a shared object
 #       when building dynamic plugins.
 libglfilter_mock_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(vout_RPATH)
-if HAVE_GL
-libglfilter_mock_plugin_la_LIBADD += libvlc_opengl.la $(GL_LIBS)
+if HAVE_GL_OR_GLES2
 noinst_PLUGINS += libglfilter_mock_plugin.la
-endif
-
-if HAVE_IOS_OR_TVOS
-libglfilter_mock_plugin_la_LIBADD += libvlc_opengles.la $(GLES2_LIBS)
-libglfilter_mock_plugin_la_CFLAGS = -DUSE_OPENGL_ES2=1
-noinst_PLUGINS += libglfilter_mock_plugin.la
-endif
-
-if HAVE_OSX
-libglfilter_mock_plugin_la_LIBADD += libvlc_opengl.la
-noinst_PLUGINS += libglfilter_mock_plugin.la
-endif
-
-if !HAVE_GL
-if HAVE_GLES2
-libglfilter_mock_plugin_la_LIBADD += libvlc_opengles.la $(GLES2_LIBS)
-libglfilter_mock_plugin_la_CFLAGS = -DUSE_OPENGL_ES2=1
-noinst_PLUGINS += libglfilter_mock_plugin.la
-endif
 endif
 
 if HAVE_LIBPLACEBO
 if HAVE_LIBPLACEBO_GL
 
 libpl_scale_plugin_la_SOURCES = video_output/opengl/pl_scale.c
-libpl_scale_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(LIBPLACEBO_CFLAGS)
-libpl_scale_plugin_la_LIBADD = $(LIBPLACEBO_LIBS)
-if HAVE_GL
-libpl_scale_plugin_la_LIBADD += libvlc_opengl.la
+libpl_scale_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(LIBPLACEBO_CFLAGS) $(GL_PLUGIN_CFLAGS)
+libpl_scale_plugin_la_LIBADD = $(LIBPLACEBO_LIBS) $(GL_PLUGIN_LIBADD)
+if HAVE_GL_OR_GLES2
 video_filter_PLUGINS += libpl_scale_plugin.la
-endif
-
-if HAVE_OSX
-video_filter_PLUGINS += libpl_scale_plugin.la
-libpl_scale_plugin_la_LIBADD += libvlc_opengl.la
-endif
-if HAVE_IOS_OR_TVOS
-video_filter_PLUGINS += libpl_scale_plugin.la
-libpl_scale_plugin_la_LIBADD += libvlc_opengles.la
-libpl_scale_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2=1
-endif
-
-if !HAVE_GL
-if HAVE_GLES2
-libpl_scale_plugin_la_LIBADD += libvlc_opengles.la
-libpl_scale_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2=1
-video_filter_PLUGINS += libpl_scale_plugin.la
-endif
 endif
 
 endif
@@ -222,23 +156,18 @@ libegl_pbuffer_filter_plugin_la_LIBADD = $(EGL_LIBS)
 
 if !HAVE_EMSCRIPTEN
 if HAVE_EGL
-if HAVE_GL
-libegl_pbuffer_filter_plugin_la_LIBADD += libvlc_opengl.la $(GL_LIBS)
+if HAVE_GL_OR_GLES2
+libegl_pbuffer_filter_plugin_la_LIBADD += $(GL_PLUGIN_LIBADD)
+libegl_pbuffer_filter_plugin_la_CPPFLAGS += $(GL_PLUGIN_CFLAGS)
 vout_PLUGINS += libegl_pbuffer_filter_plugin.la
-else
-if HAVE_GLES2
-libegl_pbuffer_filter_plugin_la_LIBADD += libvlc_opengles.la $(GLES2_LIBS)
-libegl_pbuffer_filter_plugin_la_CPPFLAGS += -DUSE_OPENGL_ES2=1
-vout_PLUGINS += libegl_pbuffer_filter_plugin.la
-endif
 endif
 endif
 endif
 
 libegl_surfacetexture_plugin_la_SOURCES = video_filter/egl_surfacetexture.c
 libegl_surfacetexture_plugin_la_CFLAGS = $(AM_CFLAGS) $(EGL_CFLAGS) -DUSE_OPENGL_ES2
-libegl_surfacetexture_plugin_la_LIBADD = $(EGL_LIBS) \
-	libandroid_utils.la libvlc_opengles.la
+libegl_surfacetexture_plugin_la_LIBADD = $(EGL_LIBS) $(GLES2_LIBS) \
+	libandroid_utils.la
 
 if HAVE_ANDROID
 if HAVE_EGL

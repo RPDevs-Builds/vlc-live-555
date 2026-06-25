@@ -328,6 +328,11 @@ MainCtx::~MainCtx()
         settings->setValue( "grouping", m_grouping );
     
         settings->setValue( "color-scheme-index", m_colorScheme->currentIndex() );
+
+        settings->setValue( "album-sections", m_albumSections );
+
+        settings->setValue( "lyrics-mode", m_lyricsMode );
+
         /* Save the stackCentralW sizes */
         settings->endGroup();
     }
@@ -482,6 +487,8 @@ void MainCtx::loadFromSettingsImpl(const bool callSignals)
 
     loadFromSettings(m_albumSections, "MainWindow/album-sections", true, &MainCtx::albumSectionsChanged);
 
+    loadFromSettings(m_lyricsMode, "MainWindow/lyrics-mode", true, &MainCtx::lyricsModeChanged);
+
     const auto colorSchemeIndex = getSettings()->value( "MainWindow/color-scheme-index", 0 ).toInt();
     m_colorScheme->setCurrentIndex(colorSchemeIndex);
 
@@ -578,7 +585,10 @@ void MainCtx::incrementIntfUserScaleFactor(bool increment)
 
 void MainCtx::setIntfUserScaleFactor(double newValue)
 {
-    m_intfUserScaleFactor = qBound(getMinIntfUserScaleFactor(), newValue, getMaxIntfUserScaleFactor());
+    const auto value = qBound(getMinIntfUserScaleFactor(), newValue, getMaxIntfUserScaleFactor());
+    if (qFuzzyCompare(value, m_intfUserScaleFactor))
+        return;
+    m_intfUserScaleFactor = value;
     updateIntfScaleFactor();
 }
 
@@ -745,6 +755,15 @@ void MainCtx::setAlbumSections(bool enabled)
 
     m_albumSections = enabled;
     emit albumSectionsChanged(enabled);
+}
+
+void MainCtx::setLyricsMode(bool enabled)
+{
+    if (m_lyricsMode == enabled)
+        return;
+
+    m_lyricsMode = enabled;
+    emit lyricsModeChanged(enabled);
 }
 
 void MainCtx::setInterfaceAlwaysOnTop( bool on_top )
@@ -1066,7 +1085,11 @@ void MainCtx::setAttachedToolTip(QObject *toolTip)
     assert(engine->objectOwnership(toolTip) == QQmlEngine::ObjectOwnership::JavaScriptOwnership);
 
     // Dynamic internal property:
+#if QT_VERSION < QT_VERSION_CHECK(6, 12, 0)
     static const char* const name = "_q_QQuickToolTip";
+#else
+    static const char* const name = "_q_shared_QQuickToolTip";
+#endif
 
     if (const auto obj = engine->property(name).value<QObject *>())
     {
@@ -1081,15 +1104,20 @@ void MainCtx::setAttachedToolTip(QObject *toolTip)
     // Check if the attached tooltip is actually the
     // one that is set
 #ifndef NDEBUG
-    QQmlComponent component(engine);
-    component.setData(QByteArrayLiteral("import QtQuick; import QtQuick.Controls; Item { }"), {});
-    QObject* const obj = component.create();
-    assert(obj);
-    // Consider disabling setting of custom attached
-    // tooltip if the following assertion fails:
-    if (QQmlProperty::read(obj, QStringLiteral("ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() != toolTip)
-        qmlWarning(obj) << "Could not set self as custom ToolTip!";
-    obj->deleteLater();
+    QMetaObject::invokeMethod(toolTip, [toolTip]() {
+        const auto engine = qmlEngine(toolTip);
+        if (Q_UNLIKELY(!engine)) // Very unlikely, if not impossible
+            return;
+        QQmlComponent component(engine);
+        component.setData(QByteArrayLiteral("import QtQuick; import QtQuick.Controls; Item { }"), {});
+        QObject* const obj = component.create();
+        assert(obj);
+        // Consider disabling setting of custom attached
+        // tooltip if the following assertion fails:
+        if (QQmlProperty::read(obj, QStringLiteral("ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() != toolTip)
+            qmlWarning(obj) << "Could not set self as custom ToolTip!";
+        obj->deleteLater();
+    }, Qt::QueuedConnection);
 #endif
 }
 

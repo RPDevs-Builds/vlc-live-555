@@ -131,6 +131,8 @@ class MainCtx : public QObject
     Q_PROPERTY(VideoSurfaceProvider* videoSurfaceProvider READ getVideoSurfaceProvider WRITE setVideoSurfaceProvider NOTIFY hasEmbededVideoChanged FINAL)
     Q_PROPERTY(int mouseHideTimeout READ mouseHideTimeout NOTIFY mouseHideTimeoutChanged FINAL)
     Q_PROPERTY(bool albumSections READ albumSections WRITE setAlbumSections NOTIFY albumSectionsChanged FINAL)
+    Q_PROPERTY(bool lyricsMode READ lyricsMode WRITE setLyricsMode NOTIFY lyricsModeChanged FINAL)
+    Q_PROPERTY(bool usingTouch READ usingTouch NOTIFY usingTouchChanged FINAL)
     Q_PROPERTY(CSDButtonModel *csdButtonModel READ csdButtonModel CONSTANT FINAL)
     Q_PROPERTY(MainInterfaceModes mainInterfaceModes READ getMainInterfaceModes NOTIFY mainInterfaceModesChanged FINAL)
     Q_PROPERTY(MainInterfaceMode effectiveMainInterfaceMode READ getEffectiveMainInterfaceMode NOTIFY mainInterfaceModesChanged FINAL)
@@ -228,7 +230,7 @@ public:
     inline bool isHideAfterCreation() const { return b_hideAfterCreation; }
     inline bool isShowRemainingTime() const  { return m_showRemainingTime; }
     inline double getIntfScaleFactor() const { return m_intfScaleFactor; }
-    inline double getIntfUserScaleFactor() const { return m_intfUserScaleFactor; }
+    Q_INVOKABLE inline double getIntfUserScaleFactor() const { return m_intfUserScaleFactor; }
     inline int CSDBorderSize() const { return 10; }
     inline double getMinIntfUserScaleFactor() const { return MIN_INTF_USER_SCALE_FACTOR; }
     inline double getMaxIntfUserScaleFactor() const { return MAX_INTF_USER_SCALE_FACTOR; }
@@ -237,6 +239,7 @@ public:
     inline bool hasGridView() const { return m_gridView; }
     inline Grouping grouping() const { return m_grouping; }
     inline bool albumSections() const { return m_albumSections; }
+    inline bool lyricsMode() const { return m_lyricsMode; }
     inline ColorSchemeModel* getColorScheme() const { return m_colorScheme; }
     bool hasVLM() const;
     bool useClientSideDecoration() const;
@@ -277,6 +280,8 @@ public:
     void setVideoSurfaceProvider(VideoSurfaceProvider* videoSurfaceProvider);
 
     int mouseHideTimeout() const { return m_mouseHideTimeout; }
+
+    bool usingTouch() const { return m_usingTouch; }
 
     Q_INVOKABLE bool backdropBlurRequested() const { return var_InheritBool(p_intf, "qt-backdrop-blur"); }
 
@@ -362,6 +367,14 @@ public:
     Q_INVOKABLE virtual bool platformHandlesResizeWithCSD() const { return false; };
     Q_INVOKABLE virtual bool platformHandlesTitleBarButtonsWithCSD() const { return false; };
     Q_INVOKABLE virtual bool platformHandlesShadowsWithCSD() const { return false; };
+
+    void setUsingTouch(bool touch)
+    {
+        if (m_usingTouch == touch)
+            return;
+        m_usingTouch = touch;
+        usingTouchChanged();
+    }
 
     /**
      * @brief ask for the application to terminate
@@ -478,6 +491,10 @@ protected:
 
     bool m_albumSections = true;
 
+    bool m_lyricsMode = true;
+
+    bool m_usingTouch = false;
+
     OsType m_osName;
     int m_osVersion;
 
@@ -509,6 +526,7 @@ public slots:
     void setGridView( bool );
     void setGrouping( Grouping );
     void setAlbumSections( bool );
+    void setLyricsMode( bool );
     void incrementIntfUserScaleFactor( bool increment);
     void setIntfUserScaleFactor( double );
     void setHasToolbarMenu( bool );
@@ -561,6 +579,7 @@ signals:
     void hasGridListModeChanged( bool );
     void groupingChanged( Grouping );
     void albumSectionsChanged( bool );
+    void lyricsModeChanged( bool );
     void colorSchemeChanged( QString );
     void useClientSideDecorationChanged();
     void hasToolbarMenuChanged();
@@ -603,6 +622,8 @@ signals:
     void artistAlbumsWidthFactorChanged( double );
 
     void mainInterfaceModesChanged(MainInterfaceModes);
+
+    void usingTouchChanged();
 
 private:
     void loadPrefs(bool callSignals);

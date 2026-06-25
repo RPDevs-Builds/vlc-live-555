@@ -50,6 +50,8 @@
 
 #import "library/playlist-library/VLCLibraryPlaylistViewController.h"
 
+#import "library/search-library/VLCLibrarySearchViewController.h"
+
 #import "library/video-library/VLCLibraryVideoViewController.h"
 
 #import <vlc_modules.h>
@@ -95,6 +97,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
 @interface VLCLibrarySegment ()
 
 @property NSString *internalDisplayString;
+@property (nullable) NSString *internalSearchFieldPlaceholder;
 @property NSImage *internalDisplayImage;
 @property (nullable) Class internalLibraryViewControllerClass;
 @property (nullable) NSArray<NSTreeNode *> *internalChildNodes;
@@ -143,6 +146,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryHomeSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Home");
+        self.internalSearchFieldPlaceholder = _NS("Search the library");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"house"
                                                   accessibilityDescription:@"Home icon"];
@@ -157,12 +161,6 @@ NSArray<NSString *> *defaultBookmarkedLocations()
         };
         self.internalLibraryViewPresenter = ^(VLCLibraryAbstractSegmentViewController * const controller) {
             [(VLCLibraryHomeViewController *)controller presentHomeView];
-        };
-        self.internalSaveViewModePreference = ^(const NSInteger viewMode) {
-            VLCLibraryWindowPersistentPreferences.sharedInstance.homeLibraryViewMode = viewMode;
-        };
-        self.internalGetViewModePreference = ^{
-            return VLCLibraryWindowPersistentPreferences.sharedInstance.homeLibraryViewMode;
         };
     }
     return self;
@@ -182,6 +180,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryFavoritesSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Favorites");
+        self.internalSearchFieldPlaceholder = _NS("Search your favorites");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"heart"
                                                   accessibilityDescription:@"Favorites icon"];
@@ -225,6 +224,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryMoviesVideoSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Movies");
+        self.internalSearchFieldPlaceholder = _NS("Search your movies");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"film"
                                                   accessibilityDescription:@"Movies icon"];
@@ -260,6 +260,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryShowsVideoSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Shows");
+        self.internalSearchFieldPlaceholder = _NS("Search your shows");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"tv"
                                                   accessibilityDescription:@"Shows icon"];
@@ -299,6 +300,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryVideoSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Videos");
+        self.internalSearchFieldPlaceholder = _NS("Search your videos");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"film.stack"
                                                   accessibilityDescription:@"Video icon"];
@@ -344,6 +346,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryArtistsMusicSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Artists");
+        self.internalSearchFieldPlaceholder = _NS("Search your artists");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"music.mic"
                                                   accessibilityDescription:@"Music artists icon"];
@@ -383,6 +386,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryAlbumsMusicSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Albums");
+        self.internalSearchFieldPlaceholder = _NS("Search your albums");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"square.stack"
                                                   accessibilityDescription:@"Music albums icon"];
@@ -422,6 +426,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibrarySongsMusicSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Songs");
+        self.internalSearchFieldPlaceholder = _NS("Search your songs");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"music.note"
                                                   accessibilityDescription:@"Music songs icon"];
@@ -461,6 +466,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryGenresMusicSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Genres");
+        self.internalSearchFieldPlaceholder = _NS("Search your genres");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"guitars"
                                                   accessibilityDescription:@"Music genres icon"];
@@ -500,6 +506,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryMusicSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Music");
+        self.internalSearchFieldPlaceholder = _NS("Search your music");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"music.note"
                                                   accessibilityDescription:@"Music icon"];
@@ -541,6 +548,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryPlaylistsMusicOnlyPlaylistsSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Music playlists");
+        self.internalSearchFieldPlaceholder = _NS("Search your music playlists");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"music.note.list"
                                                   accessibilityDescription:@"Music playlists icon"];
@@ -580,6 +588,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryPlaylistsVideoOnlyPlaylistsSubSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Video playlists");
+        self.internalSearchFieldPlaceholder = _NS("Search your video playlists");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"list.and.film"
                                                   accessibilityDescription:@"Video playlists icon"];
@@ -619,6 +628,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryPlaylistsSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Playlists");
+        self.internalSearchFieldPlaceholder = _NS("Search your playlists");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"list.triangle"
                                                   accessibilityDescription:@"Playlists icon"];
@@ -667,6 +677,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithRepresentedObject:group];
     if (self) {
         self.internalDisplayString = group.displayString;
+        self.internalSearchFieldPlaceholder = _NS("Search this group");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"play.rectangle"
                                                   accessibilityDescription:@"Group icon"];
@@ -706,6 +717,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryGroupsSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Groups");
+        self.internalSearchFieldPlaceholder = _NS("Search your groups");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"rectangle.3.group"
                                                   accessibilityDescription:@"Groups icon"];
@@ -766,6 +778,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithRepresentedObject:descriptor];
     if (self) {
         self.internalDisplayString = descriptor.name;
+        self.internalSearchFieldPlaceholder = _NS("Search this location");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage =
                 [NSImage imageWithSystemSymbolName:@"folder"
@@ -805,6 +818,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryBrowseSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Browse");
+        self.internalSearchFieldPlaceholder = _NS("Search this location");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage = [NSImage imageWithSystemSymbolName:@"folder"
                                                   accessibilityDescription:@"Browse icon"];
@@ -876,6 +890,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
     self = [super initWithSegmentType:VLCLibraryStreamsSegmentType];
     if (self) {
         self.internalDisplayString = _NS("Streams");
+        self.internalSearchFieldPlaceholder = _NS("Search your streams");
         if (@available(macOS 11.0, *)) {
             self.internalDisplayImage =
                 [NSImage imageWithSystemSymbolName:@"antenna.radiowaves.left.and.right"
@@ -903,7 +918,6 @@ NSArray<NSString *> *defaultBookmarkedLocations()
 }
 
 @end
-
 
 // MARK: - VLCLibrarySegment
 
@@ -1047,6 +1061,11 @@ NSArray<NSString *> *defaultBookmarkedLocations()
 - (NSString *)displayString
 {
     return self.internalDisplayString;
+}
+
+- (nullable NSString *)searchFieldPlaceholder
+{
+    return self.internalSearchFieldPlaceholder;
 }
 
 - (NSImage *)displayImage

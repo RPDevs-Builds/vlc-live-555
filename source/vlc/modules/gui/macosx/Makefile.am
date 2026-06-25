@@ -98,6 +98,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/coreinteraction/VLCHotkeysController.m \
 	gui/macosx/coreinteraction/VLCVideoFilterHelper.h \
 	gui/macosx/coreinteraction/VLCVideoFilterHelper.m \
+	gui/macosx/extensions/NSAnimationContext+VLCAdditions.h \
+	gui/macosx/extensions/NSAnimationContext+VLCAdditions.m \
 	gui/macosx/extensions/NSArray+VLCAdditions.h \
 	gui/macosx/extensions/NSArray+VLCAdditions.m \
 	gui/macosx/extensions/NSGradient+VLCAdditions.h \
@@ -116,6 +118,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/extensions/NSMenuItem+VLCAdditions.m \
 	gui/macosx/extensions/NSScreen+VLCAdditions.h \
 	gui/macosx/extensions/NSScreen+VLCAdditions.m \
+	gui/macosx/extensions/NSScrollView+VLCAdditions.h \
+	gui/macosx/extensions/NSScrollView+VLCAdditions.m \
 	gui/macosx/extensions/NSString+Helpers.h \
 	gui/macosx/extensions/NSString+Helpers.m \
 	gui/macosx/extensions/NSView+VLCAdditions.h \
@@ -174,6 +178,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryDataSource.h \
 	gui/macosx/library/VLCLibraryDataTypes.h \
 	gui/macosx/library/VLCLibraryDataTypes.m \
+	gui/macosx/library/VLCLibraryDynamicToolbarFlagsCapable.h \
+	gui/macosx/library/VLCLibraryDynamicViewModeCapable.h \
 	gui/macosx/library/VLCLibraryNameCache.h \
 	gui/macosx/library/VLCLibraryNameCache.m \
 	gui/macosx/library/VLCLibraryGroupHeaderDelegate.h \
@@ -331,6 +337,14 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistDataSource.m \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistViewController.h \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistViewController.m \
+	gui/macosx/library/VLCLibrarySectionedTableViewDelegate.h \
+	gui/macosx/library/VLCLibrarySectionedTableViewDelegate.m \
+	gui/macosx/library/search-library/VLCLibrarySearchDataSource.h \
+	gui/macosx/library/search-library/VLCLibrarySearchDataSource.m \
+	gui/macosx/library/search-library/VLCLibrarySearchProvider.h \
+	gui/macosx/library/search-library/VLCLibrarySearchProvider.m \
+	gui/macosx/library/search-library/VLCLibrarySearchViewController.h \
+	gui/macosx/library/search-library/VLCLibrarySearchViewController.m \
 	gui/macosx/main/CompatibilityFixes.h \
 	gui/macosx/main/CompatibilityFixes.m \
 	gui/macosx/main/VLCApplication.h \

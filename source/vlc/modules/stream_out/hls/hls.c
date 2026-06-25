@@ -24,6 +24,7 @@
 #include <vlc_common.h>
 
 #include <vlc_block.h>
+#include <vlc_boxes.h>
 #include <vlc_configuration.h>
 #include <vlc_frame.h>
 #include <vlc_httpd.h>
@@ -41,6 +42,8 @@
 #include "segments.h"
 #include "storage.h"
 #include "variant_maps.h"
+
+#include "mux/mp4/libmp4mux.h"
 
 typedef struct
 {
@@ -72,6 +75,8 @@ typedef struct hls_playlist
     sout_mux_t *mux;
     /** Every ES muxed in this playlist. */
     struct vlc_list tracks;
+    /** Number of VIDEO_ES tracks currently muxed. */
+    unsigned video_track_count;
 
     hls_block_chain_t muxed_output;
 
@@ -93,6 +98,14 @@ typedef struct hls_playlist
      */
     struct hls_storage *manifest;
     httpd_url_t *http_manifest;
+
+    /**
+     * Media initialization section as in RFC 8216 section 3.3.
+     */
+    struct hls_storage *init_section;
+    char *init_section_url;
+    httpd_url_t *http_init_section;
+    block_t *init_buff;
 
     bool ended;
 
@@ -430,6 +443,9 @@ GeneratePlaylistManifest(const hls_playlist_t *playlist,
     MANIFEST_ADD_TAG("#EXT-X-MEDIA-SEQUENCE:%u",
                      (first_seg == NULL) ? 0u : first_seg->id);
 
+    if (playlist->init_section != NULL)
+        MANIFEST_ADD_TAG("#EXT-X-MAP:URI=\"%s\"", playlist->init_section_url);
+
     const hls_segment_t *segment;
     hls_segment_queue_Foreach_const(&playlist->segments, segment)
     {
@@ -480,45 +496,95 @@ static int UpdatePlaylistManifest(hls_playlist_t *playlist)
     return VLC_SUCCESS;
 }
 
-static hls_block_chain_t ExtractCommonSegment(hls_block_chain_t *muxed_output,
-                                              vlc_tick_t max_segment_length)
-{
-    hls_block_chain_t segment = {.begin = muxed_output->begin};
 
-    vlc_tick_t gop_length = 0;
+/* A point where the segment can legally end. */
+typedef struct
+{
+    block_t *last;
+    vlc_tick_t length;
+} hls_cut_t;
+
+static hls_cut_t CutTsSegment(hls_block_chain_t *muxed_output,
+                              vlc_tick_t max_length)
+{
+    hls_cut_t iframe_cut = {0};
+
     block_t *prev = NULL;
-    block_t *segment_end = NULL;
+    vlc_tick_t total = 0;
     for (block_t *it = muxed_output->begin; it != NULL; it = it->p_next)
     {
-        if (it->i_flags & BLOCK_FLAG_HEADER)
-        {
-            segment_end = prev;
-            segment.length += gop_length;
-            gop_length = 0;
-        }
-        if (segment.length + gop_length + it->i_length > max_segment_length)
-        {
-            if (segment_end == NULL)
-            {
-                segment_end = prev;
-                segment.length += gop_length;
-                gop_length = 0;
-            }
+        if (prev != NULL && (it->i_flags & BLOCK_FLAG_HEADER))
+            iframe_cut = (hls_cut_t){.last = prev, .length = total};
+
+        if (total + it->i_length > max_length)
             break;
-        }
-        gop_length += it->i_length;
+
+        total += it->i_length;
         prev = it;
     }
 
-    if (segment_end != NULL)
+    return iframe_cut.last ? iframe_cut
+                           : (hls_cut_t){.last = prev, .length = total};
+}
+
+static hls_cut_t CutMP4Segment(hls_block_chain_t *muxed_output,
+                               vlc_tick_t max_length)
+{
+    hls_cut_t iframe_cut = {0};
+    hls_cut_t moof_cut = {0};
+
+    block_t *prev = NULL;
+    vlc_tick_t total = 0;
+    for (block_t *it = muxed_output->begin; it != NULL; it = it->p_next)
     {
-        muxed_output->begin = segment_end->p_next;
-        segment_end->p_next = NULL;
+        if (prev != NULL && (it->i_flags & MP4_MUX_BLOCK_FLAG_SYNC))
+            iframe_cut = (hls_cut_t){.last = prev, .length = total};
+        if (prev != NULL && (it->i_flags & MP4_MUX_BLOCK_FLAG_BOUNDARY))
+            moof_cut = (hls_cut_t){.last = prev, .length = total};
+
+        if (total + it->i_length > max_length)
+            break;
+
+        total += it->i_length;
+        prev = it;
+    }
+
+    /* Prioritize iframe alignment cuts, align on the MP4 MOOF box otherwise,
+     * and cut anywhere worst case. */
+    return iframe_cut.last ? iframe_cut
+           : moof_cut.last ? moof_cut
+           : (hls_cut_t){.last = prev, .length = total};
+}
+
+static hls_block_chain_t ExtractAVSegment(enum hls_playlist_type type,
+                                          hls_block_chain_t *muxed_output,
+                                          vlc_tick_t max_length)
+{
+    hls_block_chain_t segment = {.begin = muxed_output->begin};
+
+    hls_cut_t cut;
+    switch (type) {
+        case HLS_PLAYLIST_TYPE_TS:
+            cut = CutTsSegment(muxed_output, max_length);
+            break;
+        case HLS_PLAYLIST_TYPE_MP4:
+            cut = CutMP4Segment(muxed_output, max_length);
+            break;
+        case HLS_PLAYLIST_TYPE_WEBVTT:
+            vlc_assert_unreachable();
+    }
+
+    if (cut.last != NULL)
+    {
+        segment.length = cut.length;
+        muxed_output->begin = cut.last->p_next;
+        cut.last->p_next = NULL;
         muxed_output->length -= segment.length;
     }
     else
     {
-        segment.length = gop_length;
+        /* Nothing usable to cut on: emit whatever we hold as a single segment. */
+        segment.length = cut.length;
         hls_block_chain_Reset(muxed_output);
     }
     return segment;
@@ -547,26 +613,119 @@ static hls_block_chain_t ExtractSubtitleSegment(hls_block_chain_t *muxed_output,
     return segment;
 }
 
+/* The fragmented MP4 muxer emits bare moof+mdat fragments. To comply with
+ * CMAF, we need to prepend styp+sidx  here, once per segment, since only the
+ * segmenter knows segments boundaries. */
+static void PrependSegmentBoxes(hls_block_chain_t *segment,
+                                vlc_tick_t earliest_pts,
+                                size_t referenced_size)
+{
+    if (segment->begin == NULL)
+        return;
+
+    /* The stream output refuses overly-large segments. */
+    assert(referenced_size <= 0x7FFFFFFF);
+    assert(segment->length <= UINT32_MAX);
+
+#define HLS_STYP_SIZE 24
+    bo_t styp;
+    if (!bo_init(&styp, HLS_STYP_SIZE))
+        return;
+    bo_add_32be(&styp, HLS_STYP_SIZE);
+    bo_add_fourcc(&styp, "styp");
+    bo_add_fourcc(&styp, "msdh"); /* major brand */
+    bo_add_32be(&styp, 0);        /* minor version */
+    bo_add_fourcc(&styp, "msdh"); /* compatible brand */
+    bo_add_fourcc(&styp, "msix"); /* compatible brand */
+
+#define HLS_SIDX_SIZE 52
+    bo_t sidx;
+    if (!bo_init(&sidx, HLS_SIDX_SIZE))
+    {
+        bo_deinit(&styp);
+        return;
+    }
+    bo_add_32be(&sidx, HLS_SIDX_SIZE);
+    bo_add_fourcc(&sidx, "sidx");
+    bo_add_32be(&sidx, 1u << 24);                 /* version 1, flags 0 */
+    bo_add_32be(&sidx, 1);                        /* reference_id (first track) */
+    bo_add_32be(&sidx, CLOCK_FREQ);               /* timescale */
+    bo_add_64be(&sidx, earliest_pts);             /* earliest_presentation_time */
+    bo_add_64be(&sidx, 0);                        /* first_offset */
+    bo_add_16be(&sidx, 0);                        /* reserved */
+    bo_add_16be(&sidx, 1);                        /* reference_count */
+    bo_add_32be(&sidx, (uint32_t)referenced_size);/* reference_type(0) | referenced_size */
+    bo_add_32be(&sidx, (uint32_t)segment->length);/* subsegment_duration */
+    bo_add_32be(&sidx, 0x80000000);               /* starts_with_SAP=1, SAP_type=0 */
+
+    styp.b->i_flags |= segment->begin->i_flags &
+                       (MP4_MUX_BLOCK_FLAG_SYNC | MP4_MUX_BLOCK_FLAG_BOUNDARY);
+
+    styp.b->p_next = sidx.b;
+    sidx.b->p_next = segment->begin;
+    segment->begin = styp.b;
+}
+
 static hls_block_chain_t ExtractSegment(hls_playlist_t *playlist)
 {
     const vlc_tick_t seglen = playlist->config->segment_length;
-    if (playlist->type == HLS_PLAYLIST_TYPE_WEBVTT)
-        return ExtractSubtitleSegment(&playlist->muxed_output, seglen);
-    return ExtractCommonSegment(&playlist->muxed_output, seglen);
+    switch (playlist->type)
+    {
+        case HLS_PLAYLIST_TYPE_WEBVTT:
+            return ExtractSubtitleSegment(&playlist->muxed_output, seglen);
+        case HLS_PLAYLIST_TYPE_MP4:
+        case HLS_PLAYLIST_TYPE_TS:
+            return ExtractAVSegment(
+                playlist->type, &playlist->muxed_output, seglen);
+    }
+    vlc_assert_unreachable();
 }
 
-static bool IsSegmentSelfDecodable(const hls_block_chain_t *segment)
+static bool IsSegmentSelfDecodable(const hls_block_chain_t *segment,
+                                   const hls_playlist_t *playlist)
 {
     if (segment->begin == NULL)
         return false;
 
-    return segment->begin->i_flags & BLOCK_FLAG_HEADER;
+    if (playlist->video_track_count == 0)
+        return true;
+
+    const uint32_t flags = segment->begin->i_flags;
+    switch (playlist->type)
+    {
+        case HLS_PLAYLIST_TYPE_TS:
+            return (flags & BLOCK_FLAG_HEADER) != 0;
+        case HLS_PLAYLIST_TYPE_MP4:
+            return (flags & MP4_MUX_BLOCK_FLAG_SYNC) != 0;
+        case HLS_PLAYLIST_TYPE_WEBVTT:
+            break; /* No video track: handled by the early return above. */
+    }
+    vlc_assert_unreachable();
 }
+
+/* Arbitrary segment size maximum. Beyond this, we consider the sement unusable for
+ * streaming. */
+#define HLS_SEGMENT_MAX_SIZE ((size_t)1 << 30) /* 1 GiB */
 
 static int ExtractAndAddSegment(hls_playlist_t *playlist,
                                 sout_stream_sys_t *sys)
 {
     hls_block_chain_t segment = ExtractSegment(playlist);
+
+    size_t segment_size;
+    block_ChainProperties(segment.begin, NULL, &segment_size, NULL);
+    if (segment_size > HLS_SEGMENT_MAX_SIZE)
+    {
+        vlc_error(playlist->logger,
+                  "Segment too large (%zu bytes): the input bitrate is too high "
+                  "for the configured segment length",
+                  segment_size);
+        block_ChainRelease(segment.begin);
+        return VLC_EGENERIC;
+    }
+
+    if (playlist->type == HLS_PLAYLIST_TYPE_MP4)
+        PrependSegmentBoxes(&segment, playlist->muxed_duration, segment_size);
 
     if (hls_config_IsMemStorageEnabled(&sys->config) &&
         hls_segment_queue_IsAtMaxCapacity(&playlist->segments))
@@ -577,7 +736,7 @@ static int ExtractAndAddSegment(hls_playlist_t *playlist,
             hls_storage_GetSize(to_be_removed->storage);
     }
 
-    const bool self_decodable = IsSegmentSelfDecodable(&segment);
+    const bool self_decodable = IsSegmentSelfDecodable(&segment, playlist);
     const vlc_tick_t length = segment.length;
     const int status = hls_segment_queue_NewSegment(
         &playlist->segments, segment.begin, segment.length);
@@ -630,6 +789,94 @@ static bool IsSegmentReady(enum hls_playlist_type type,
     return buffer->length >= seglen;
 }
 
+static void ReplaceInitSection(hls_playlist_t *playlist, block_t *content)
+{
+    const char *section_name =
+        playlist->init_section_url + strlen(playlist->config->base_url) + 1;
+    const struct hls_storage_config storage_config = {
+        .name = section_name,
+        .mime = "video/mp4",
+    };
+    struct hls_storage *init;
+    const int status = hls_storage_FromBlocks(
+        content, &storage_config, playlist->config, &init);
+    if (status != 0)
+    {
+        vlc_error(playlist->logger,
+                  "Failed to generate init section: %s",
+                  vlc_strerror(-status));
+        return;
+    }
+
+    if (playlist->http_init_section != NULL)
+    {
+        httpd_UrlCatch(playlist->http_init_section,
+                       HTTPD_MSG_GET,
+                       HTTPCallback,
+                       (httpd_callback_sys_t *)init);
+    }
+
+    if (playlist->init_section != NULL)
+        hls_storage_Destroy(playlist->init_section);
+    playlist->init_section = init;
+}
+
+static block_t *block_ChainExtractInitSection(block_t *chain, block_t **init_section)
+{
+    block_t *last_header = NULL;
+    block_t *it = chain;
+    while (it != NULL && it->i_flags & BLOCK_FLAG_HEADER)
+    {
+        last_header = it;
+        it = it->p_next;
+    }
+
+    if (last_header != NULL)
+    {
+        last_header->p_next = NULL;
+        *init_section = chain;
+    }
+    else
+        *init_section = NULL;
+    return it;
+}
+
+static block_t *PlaylistExtractInitSection(hls_playlist_t *playlist,
+                                           block_t *blocks)
+{
+    block_t *init;
+    blocks = block_ChainExtractInitSection(blocks, &init);
+    if (init != NULL)
+        block_ChainAppend(&playlist->init_buff, init);
+    else if (playlist->init_buff != NULL)
+    {
+        ReplaceInitSection(playlist, playlist->init_buff);
+        playlist->init_buff = NULL;
+    }
+
+    return blocks;
+}
+
+static void PlaylistWriteMuxedOutput(hls_playlist_t *playlist,
+                                     block_t *blocks,
+                                     vlc_tick_t output_duration)
+{
+    if (playlist->type == HLS_PLAYLIST_TYPE_MP4)
+        blocks = PlaylistExtractInitSection(playlist, blocks);
+
+    if (blocks == NULL)
+        return;
+
+    block_ChainLastAppend(&playlist->muxed_output.end, blocks);
+    playlist->muxed_output.length += output_duration;
+
+    for (block_t *it = blocks; it != NULL; it = it->p_next)
+    {
+        if (it->i_flags & BLOCK_FLAG_HEADER)
+            playlist->muxed_output.last_header = it;
+    }
+}
+
 static ssize_t AccessOutWrite(sout_access_out_t *access, block_t *block)
 {
     sout_stream_sys_t *sys = access->p_sys;
@@ -659,12 +906,7 @@ static ssize_t AccessOutWrite(sout_access_out_t *access, block_t *block)
     {
         /* Append the muxed output to the playlist tied to this access call. */
         if (it->access == access)
-        {
-            block_ChainLastAppend(&it->muxed_output.end, block);
-            it->muxed_output.length += length;
-            if (block->i_flags & BLOCK_FLAG_HEADER)
-                it->muxed_output.last_header = block;
-        }
+            PlaylistWriteMuxedOutput(it, block, length);
 
         if (!IsSegmentReady(
                 it->type, &it->muxed_output, sys->config.segment_length))
@@ -714,16 +956,25 @@ static sout_access_out_t *CreateAccessOut(sout_stream_t *stream)
     return access;
 }
 
-static inline char *FormatPlaylistManifestURL(const hls_playlist_t *playlist)
+static inline char *FormatPlaylistURL(const hls_playlist_t *playlist,
+                                      const char *file_type)
 {
     char *url;
     const int status = asprintf(&url,
-                                "%s/playlist-%u-index.m3u8",
+                                "%s/playlist-%u-%s",
                                 playlist->config->base_url,
-                                playlist->id);
+                                playlist->id,
+                                file_type);
     if (unlikely(status == -1))
         return NULL;
     return url;
+}
+
+static sout_mux_t *CreateFMP4Muxer(sout_access_out_t *access,
+                                   const struct hls_config *config)
+{
+    VLC_UNUSED(config);
+    return sout_MuxNew(access, "mp4frag");
 }
 
 static sout_mux_t *CreatePlaylistMuxer(sout_access_out_t *access,
@@ -734,6 +985,8 @@ static sout_mux_t *CreatePlaylistMuxer(sout_access_out_t *access,
     {
         case HLS_PLAYLIST_TYPE_TS:
             return sout_MuxNew(access, "ts{use-key-frames}");
+        case HLS_PLAYLIST_TYPE_MP4:
+            return CreateFMP4Muxer(access, config);
         case HLS_PLAYLIST_TYPE_WEBVTT:
             return CreateSubtitleSegmenter(access, config);
     }
@@ -762,10 +1015,15 @@ static hls_playlist_t *CreatePlaylist(sout_stream_t *stream,
     playlist->config = &sys->config;
     playlist->ended = false;
     playlist->muxed_duration = 0;
+    playlist->video_track_count = 0;
 
-    playlist->url = FormatPlaylistManifestURL(playlist);
+    playlist->url = FormatPlaylistURL(playlist, "manifest.m3u8");
     if (unlikely(playlist->url == NULL))
         goto url_err;
+
+    playlist->init_section_url = FormatPlaylistURL(playlist, "init.mp4");
+    if (unlikely(playlist->init_section_url == NULL))
+        goto init_section_url_err;
 
     playlist->name = playlist->url + strlen(sys->config.base_url) + 1;
 
@@ -784,15 +1042,26 @@ static hls_playlist_t *CreatePlaylist(sout_stream_t *stream,
     hls_block_chain_Reset(&playlist->muxed_output);
 
     playlist->manifest = NULL;
+    playlist->init_section = NULL;
     if (sys->http_host != NULL)
     {
         playlist->http_manifest =
             httpd_UrlNew(sys->http_host, playlist->url, NULL, NULL);
         if (playlist->http_manifest == NULL)
             goto manifest_err;
+
+        playlist->http_init_section = httpd_UrlNew(
+            sys->http_host, playlist->init_section_url, NULL, NULL);
+        if (playlist->http_init_section == NULL)
+            goto init_section_err;
     }
     else
+    {
         playlist->http_manifest = NULL;
+        playlist->http_init_section = NULL;
+    }
+    playlist->init_buff = NULL;
+
 
     if (UpdatePlaylistManifest(playlist) != VLC_SUCCESS)
         goto error;
@@ -803,12 +1072,17 @@ static hls_playlist_t *CreatePlaylist(sout_stream_t *stream,
 
     return playlist;
 error:
+    if (playlist->http_init_section != NULL)
+        httpd_UrlDelete(playlist->http_init_section);
+init_section_err:
     if (playlist->http_manifest != NULL)
         httpd_UrlDelete(playlist->http_manifest);
 manifest_err:
     hls_segment_queue_Clear(&playlist->segments);
     vlc_LogDestroy(playlist->logger);
 log_err:
+    free(playlist->init_section_url);
+init_section_url_err:
     free(playlist->url);
 url_err:
     sout_MuxDelete(playlist->mux);
@@ -827,17 +1101,24 @@ static void DeletePlaylist(hls_playlist_t *playlist)
 
     if (playlist->http_manifest != NULL)
         httpd_UrlDelete(playlist->http_manifest);
+    if (playlist->http_init_section != NULL)
+        httpd_UrlDelete(playlist->http_init_section);
 
     if (playlist->manifest != NULL)
         hls_storage_Destroy(playlist->manifest);
+    if (playlist->init_section != NULL)
+        hls_storage_Destroy(playlist->init_section);
 
     block_ChainRelease(playlist->muxed_output.begin);
+    if (playlist->init_buff != NULL)
+        block_ChainRelease(playlist->init_buff);
     hls_segment_queue_Clear(&playlist->segments);
 
     vlc_list_remove(&playlist->node);
 
     vlc_LogDestroy(playlist->logger);
     free(playlist->url);
+    free(playlist->init_section_url);
 
     free(playlist);
 }
@@ -873,14 +1154,14 @@ Add(sout_stream_t *stream, const es_format_t *fmt, const char *es_id)
     {
         playlist = map->playlist_ref;
         if (playlist == NULL)
-            playlist = AddPlaylist(stream, HLS_PLAYLIST_TYPE_TS, &sys->variant_playlists);
+            playlist = AddPlaylist(stream, sys->config.preferred_type, &sys->variant_playlists);
     }
     else if (fmt->i_cat == SPU_ES)
         playlist = AddPlaylist(
             stream, HLS_PLAYLIST_TYPE_WEBVTT, &sys->media_playlists);
     else
         playlist =
-            AddPlaylist(stream, HLS_PLAYLIST_TYPE_TS, &sys->media_playlists);
+            AddPlaylist(stream, sys->config.preferred_type, &sys->media_playlists);
 
     if (playlist == NULL)
         return NULL;
@@ -896,6 +1177,9 @@ Add(sout_stream_t *stream, const es_format_t *fmt, const char *es_id)
     track->input = input;
     track->es_id = es_id;
     track->playlist_ref = playlist;
+
+    if (fmt->i_cat == VIDEO_ES)
+        ++playlist->video_track_count;
 
     vlc_list_append(&track->node, &playlist->tracks);
 
@@ -938,6 +1222,9 @@ static void Del(sout_stream_t *stream, void *id)
 {
     sout_stream_sys_t *sys = stream->p_sys;
     hls_track_t *track = id;
+
+    if (track->input->fmt.i_cat == VIDEO_ES)
+        --track->playlist_ref->video_track_count;
 
     sout_MuxDeleteStream(track->playlist_ref->mux, track->input);
     vlc_list_remove(&track->node);
@@ -1057,15 +1344,18 @@ static int Open(vlc_object_t *this)
         return VLC_ENOMEM;
     stream->p_sys = sys;
 
-    static const char *const options[] = {"base-url",
-                                          "host-http",
-                                          "max-memory",
-                                          "num-seg",
-                                          "out-dir",
-                                          "pace",
-                                          "seg-len",
-                                          "variants",
-                                          NULL};
+    static const char *const options[] = {
+        "base-url",
+        "host-http",
+        "max-memory",
+        "num-seg",
+        "out-dir",
+        "pace",
+        "seg-len",
+        "variants",
+        "seg-type",
+        NULL,
+    };
     config_ChainParse(stream, SOUT_CFG_PREFIX, options, stream->p_cfg);
 
     sys->config.base_url = var_GetString(stream, SOUT_CFG_PREFIX "base-url");
@@ -1081,6 +1371,17 @@ static int Open(vlc_object_t *this)
 
     int status = VLC_EINVAL;
 
+    char *seg_type = var_GetNonEmptyString(stream, SOUT_CFG_PREFIX "seg-type");
+    status = hls_playlist_type_FromString(seg_type, &sys->config.preferred_type);
+    free(seg_type);
+
+    if (status != VLC_SUCCESS || sys->config.preferred_type == HLS_PLAYLIST_TYPE_WEBVTT)
+    {
+        msg_Err(stream, "Invalid segment type");
+        status = VLC_ENOENT;
+        goto variant_error;
+    }
+
     vlc_vector_init(&sys->variant_stream_maps);
     char *variants = var_GetNonEmptyString(stream, SOUT_CFG_PREFIX "variants");
     if (variants == NULL)
@@ -1088,6 +1389,7 @@ static int Open(vlc_object_t *this)
         msg_Err(stream,
                 "At least one variant mapping needs to be specified with the "
                 "\"" SOUT_CFG_PREFIX "variants\" option");
+        status = VLC_EINVAL;
         goto variant_error;
     }
     status = hls_variant_maps_Parse(variants, &sys->variant_stream_maps);
@@ -1185,6 +1487,17 @@ variant_error:
 #define SEGLEN_LONGTEXT N_("Length of segments in seconds")
 #define SEGLEN_TEXT N_("Segment length (sec)")
 
+#define SEGTYPE_LONGTEXT N_("Specifies the segments container")
+#define SEGTYPE_TEXT N_("Segment muxed format")
+static const char *const SEGMENT_TYPE_LIST[] = {
+    "ts",
+    "fmp4",
+};
+static const char *const SEGMENT_TYPE_TEXT[] = {
+    "MPEG TS",
+    "Fragmented MP4",
+};
+
 vlc_module_begin()
     set_shortname("HLS")
     set_description(N_("HLS stream output"))
@@ -1194,6 +1507,9 @@ vlc_module_begin()
 
     add_string(SOUT_CFG_PREFIX "variants", NULL, VARIANTS_TEXT, VARIANTS_LONGTEXT)
 
+    add_string(SOUT_CFG_PREFIX "seg-type", SEGMENT_TYPE_LIST[0], SEGTYPE_TEXT, SEGTYPE_LONGTEXT)
+        change_string_list( SEGMENT_TYPE_LIST, SEGMENT_TYPE_TEXT )
+
     add_string(SOUT_CFG_PREFIX "base-url", "", BASEURL_TEXT, BASEURL_TEXT)
     add_bool(SOUT_CFG_PREFIX "host-http", false, HOSTHTTP_TEXT, HOSTHTTP_LONGTEXT)
     add_integer(SOUT_CFG_PREFIX "max-memory", 20000, MAXMEMORY_TEXT, MAXMEMORY_LONGTEXT)
@@ -1201,6 +1517,7 @@ vlc_module_begin()
     add_string(SOUT_CFG_PREFIX "out-dir", NULL, OUTDIR_TEXT, OUTDIR_LONGTEXT)
     add_bool(SOUT_CFG_PREFIX "pace", false, PACE_TEXT, PACE_LONGTEXT)
     add_integer(SOUT_CFG_PREFIX "seg-len", 4, SEGLEN_TEXT, SEGLEN_LONGTEXT)
+        change_integer_range(1, 60)
 
     set_callback(Open)
 vlc_module_end()

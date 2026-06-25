@@ -75,7 +75,7 @@ static int ControlPopEarly(input_thread_t *input, int *type,
 static void       ControlRelease( int i_type, const input_control_param_t *p_param );
 static bool       ControlIsSeekRequest( int i_type );
 static bool       Control( input_thread_t *, int, input_control_param_t );
-static void       ControlPause( input_thread_t *, vlc_tick_t );
+static void       ControlPause(input_thread_t *, vlc_tick_t, bool);
 
 static int  UpdateTitleSeekpointFromDemux( input_thread_t * );
 static void UpdateGenericFromDemux( input_thread_t * );
@@ -275,6 +275,7 @@ input_thread_t * input_Create( vlc_object_t *p_parent, input_item_t *p_item,
     priv->is_running = false;
     priv->is_stopped = false;
     priv->b_recording = false;
+    priv->b_pause_after_buffering = false;
     priv->rate = 1.f;
     TAB_INIT( priv->i_attachment, priv->attachment );
     priv->p_sout   = NULL;
@@ -644,7 +645,7 @@ static void MainLoop( input_thread_t *p_input, bool b_interactive )
     vlc_tick_t i_last_seek_mdate = 0;
 
     if( b_interactive && var_InheritBool( p_input, "start-paused" ) )
-        ControlPause( p_input, vlc_tick_now() );
+        ControlPause(p_input, vlc_tick_now(), true);
 
     bool eof_signaled = false;
 
@@ -1716,8 +1717,22 @@ static void ControlRelease( int i_type, const input_control_param_t *p_param )
     }
 }
 
-/* Pause input */
-static void ControlPause( input_thread_t *p_input, vlc_tick_t i_control_date )
+/* Pause input.
+ *
+ * can_defer tells whether the pause may be deferred until buffering
+ * completes. It must be false for any caller that really needs es_out
+ * to be paused right away.
+ *
+ * The only such caller is the frame-by-frame handling. A frame step is
+ * implemented as "pause the output, then release exactly one picture at a
+ * time".
+ *
+ * TODO: at some point, we must also be able to remove this special case
+ *       for frame-by-frame, but the deferred pause implementation would
+ *       break frame-by-frame without this.
+ */
+static void ControlPause(input_thread_t *p_input, vlc_tick_t i_control_date,
+                         bool can_defer)
 {
     int i_state = PAUSE_S;
 
@@ -1731,6 +1746,23 @@ static void ControlPause( input_thread_t *p_input, vlc_tick_t i_control_date )
             return;
         }
     }
+
+    /* Check if in buffering state, and if so, deferred the pasue
+     * instead of trying to pause the media playback right away, since
+     * the playback and the clocks are not even configured yet.
+     *
+     * We must avoid switching to PAUSE_S here, so that we keep the
+     * property that PAUSE_S implies es_out is paused. We'll handle the
+     * pause as soon as buffering is done. */
+    if (can_defer &&
+        input_priv(p_input)->master->b_can_pause &&
+        es_out_GetBuffering(input_priv(p_input)->p_es_out))
+    {
+        input_priv(p_input)->b_pause_after_buffering = true;
+        return;
+    }
+
+    input_priv(p_input)->b_pause_after_buffering = false;
 
     /* */
     if( es_out_SetPauseState( input_priv(p_input)->p_es_out,
@@ -1758,6 +1790,8 @@ static void ControlUnpause( input_thread_t *p_input, vlc_tick_t i_control_date )
             return;
         }
     }
+
+    input_priv(p_input)->b_pause_after_buffering = false;
 
     /* Switch to play */
     input_ChangeState( p_input, PLAYING_S, i_control_date );
@@ -2122,7 +2156,7 @@ static bool Control( input_thread_t *p_input,
                 case PAUSE_S:
                     if( priv->i_state == PLAYING_S )
                     {
-                        ControlPause( p_input, i_control_date );
+                        ControlPause(p_input, i_control_date, true);
                         b_force_update = true;
                     }
                     break;
@@ -2441,7 +2475,7 @@ static bool Control( input_thread_t *p_input,
             }
             else if( priv->i_state == PLAYING_S )
             {
-                ControlPause( p_input, i_control_date );
+                ControlPause(p_input, i_control_date, false);
                 input_SendEvent(p_input, &(struct vlc_input_event) {
                     .type = INPUT_EVENT_FRAME_NEXT_STATUS,
                     .frame_next_status = -EAGAIN,
@@ -2482,7 +2516,7 @@ static bool Control( input_thread_t *p_input,
             }
             else if( priv->i_state == PLAYING_S )
             {
-                ControlPause( p_input, i_control_date );
+                ControlPause(p_input, i_control_date, false);
                 input_SendEvent(p_input, &(struct vlc_input_event) {
                     .type = INPUT_EVENT_FRAME_PREVIOUS_STATUS,
                     .frame_next_status = -EAGAIN,

@@ -174,7 +174,7 @@ T.Control {
                 }
 
                 if (button === Qt.RightButton)
-                    delegate.rightClick(delegate, delegate.rowModel, parent.mapToGlobal(eventPoint.position.x, eventPoint.position.y))
+                    delegate.rightClick(delegate, delegate.rowModel, eventPoint.globalPosition)
             }
 
             onDoubleTapped: (point, button) => {
@@ -191,18 +191,20 @@ T.Control {
             }
         }
 
-        TapHandler {
-            acceptedDevices: PointerDevice.TouchScreen
+        DelegateTouchTapHandler {
+            delegate: delegate
 
-            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
-
-            onTapped: (eventPoint, button) => {
-                delegate.selectAndFocus(Qt.NoModifier, Qt.MouseFocusReason)
+            onSingleTapped: (eventPoint, button) => {
+                // initial action is handled in `DelegateTouchTapHandler`
                 delegate.itemDoubleClicked(delegate.index, delegate.rowModel)
             }
 
-            onLongPressed: {
-                delegate.rightClick(delegate, delegate.rowModel, parent.mapToGlobal(point.position.x, point.position.y))
+            onDoubleTapped: (eventPoint, button) => {
+                MainCtx.requestShowPlayerView()
+            }
+
+            onContextMenuRequested: (index, globalPoint) => {
+                delegate.rightClick(delegate, delegate.rowModel, globalPoint)
             }
         }
     }

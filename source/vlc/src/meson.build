@@ -26,6 +26,13 @@ fourcc = custom_target('fourcc_tables.h',
                         command: [fourcc_gen])
 
 
+meson_build_config = custom_target('build_config.c',
+    command: [find_program('../buildsystem/gen-build-config.py'),
+              meson.build_options().replace('\'"\'"\'', '\\\'')],
+    capture: true,
+    output: 'build_config.c',
+)
+
 #
 # libvlccore dependencies
 #
@@ -296,6 +303,8 @@ libvlccore_sources_base = files(
     'misc/rcu.c',
     'misc/tracer.c',
 )
+
+libvlccore_sources_base += meson_build_config
 
 libvlccore_sout_sources = [
     'stream_output/sap.c',

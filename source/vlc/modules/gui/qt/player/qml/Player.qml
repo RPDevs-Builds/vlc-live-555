@@ -20,6 +20,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQml.Models
 import QtQuick.Window
+import QtQuick.Templates as T
 
 import VLC.MainInterface
 import VLC.Style
@@ -186,6 +187,59 @@ FocusScope {
         property real topPadding: (anchors.top === parent.top) ? topBar.height : 0
         property real bottomPadding: (anchors.bottom === parent.bottom) ? controlBar.height : 0
 
+        component TouchDragHandler : DragHandler {
+            id: touchDragHandler
+
+            acceptedDevices: PointerDevice.TouchScreen
+
+            minimumPointCount: 1
+            maximumPointCount: 1
+
+            target: null
+
+            dragThreshold: VLCStyle.margin_normal
+
+            property vector2d lastActiveTranslation
+
+            // TODO: Use `createComponent()` and load directly from module instead, since
+            //       it is pointless to keep the `QQmlComponent` around for this object.
+            readonly property Component wheelToVLCConverterComponent: Component { WheelToVLCConverter { } }
+
+            property WheelToVLCConverter wheelToVLCConverter
+
+            // We synthesize wheel event with pixel delta. It is a to-do to handle
+            // touch properly with precision adjustment, like on Android:
+            onActiveTranslationChanged: {
+                if (active) {
+                    console.assert(wheelToVLCConverter)
+
+                    const delta = Qt.point(activeTranslation.x - lastActiveTranslation.x,
+                                           activeTranslation.y - lastActiveTranslation.y)
+
+                    // WheelToVLCConverter can not handle sole pixel delta now, so we also
+                    // use angle delta. This is similar to wheel events on some platforms:
+                    wheelToVLCConverter.customWheelEvent(delta,
+                                                         delta,
+                                                         Qt.NoButton,
+                                                         Qt.NoModifier,
+                                                         true)
+
+                    lastActiveTranslation = activeTranslation
+                }
+            }
+
+            onActiveChanged: {
+                if (active) {
+                    if (!wheelToVLCConverter) {
+                        wheelToVLCConverter = wheelToVLCConverterComponent.createObject(touchDragHandler)
+                        wheelToVLCConverter.vlcWheelKey.connect(MainCtx, MainCtx.sendVLCHotkey)
+                    }
+                } else {
+                    lastActiveTranslation = Qt.vector2d(0, 0)
+                }
+            }
+        }
+
         Component {
             id: videoComponent
 
@@ -233,6 +287,10 @@ FocusScope {
                             && !playerToolbarVisibilityFSM.isVisible
                             && !interactiveAutoHideTimer.running
                         value: Qt.BlankCursor
+                    }
+
+                    TouchDragHandler {
+
                     }
                 }
 
@@ -292,11 +350,26 @@ FocusScope {
                 property real topPadding: playerSpecializationLoader.topPadding
                 property real bottomPadding: playerSpecializationLoader.bottomPadding
 
+                // Whether the full lyrics view is active
+                readonly property bool lyricsMode: MainCtx.lyricsMode
+                readonly property bool lyricsLayoutActive: lyricsMode
+                                                        && Player.hasLyrics
+                                                        && centerContent.width > VLCStyle.colWidth(6)
+
+                // Reset sync when entering lyrics mode
+                onLyricsModeChanged: {
+                    if (lyricsMode && lyricsLoader.item)
+                        lyricsLoader.item.lyricsSyncToPlayback = true
+                }
+
                 // background image
                 Widgets.DualKawaseBlur {
                     id: blurredBackground
 
-                    radius: 3
+                    // Six pass is free here since we release the intermediate layers
+                    // through unsetting `live` (see `liveTimer`):
+                    mode: Widgets.DualKawaseBlur.Mode.SixPass
+                    radius: 2
 
                     live: false
 
@@ -385,13 +458,117 @@ FocusScope {
                         wheelToVlc.qmlWheelEvent(wheel)
                     }
 
+                    TouchDragHandler {
+                        wheelToVLCConverter: wheelToVlc
+                    }
+
                     WheelToVLCConverter {
                         id: wheelToVlc
 
                         onVlcWheelKey: (key) => MainCtx.sendVLCHotkey(key)
                     }
 
+                    // ── Two-panel lyrics layout ────────────────────────
+                    Item {
+                        id: leftSideParent
+
+                        visible: (opacity > 0.0) || (width > 0.0)
+
+                        opacity: (lyricsLoader.item ? 1.0 : 0.0)
+
+                        Behavior on opacity {
+                            id: opacityBehavior
+
+                            enabled: false
+
+                            NumberAnimation {
+                                duration: VLCStyle.duration_long
+
+                                easing.type: Easing.InOutSine
+                            }
+
+                            Component.onCompleted: {
+                                // The animation should not be used at initialization:
+                                Qt.callLater(() => { opacityBehavior.enabled = true })
+                            }
+                        }
+
+                        anchors.top: parent.top
+                        anchors.topMargin: VLCStyle.margin_large
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+
+                        width: lyricsLoader.item ? (parent.width * 0.6) : 0.0
+
+                        Behavior on width {
+                            id: widthBehavior
+
+                            enabled: false
+
+                            NumberAnimation {
+                                duration: VLCStyle.duration_long
+
+                                easing.type: Easing.InOutSine
+                            }
+
+                            Component.onCompleted: {
+                                // The animation should not be used at initialization:
+                                Qt.callLater(() => { widthBehavior.enabled = true })
+                            }
+                        }
+
+                        Loader {
+                            id: lyricsLoader
+
+                            active: audioFocusScope.lyricsLayoutActive
+                            sourceComponent: T.Pane {
+                                // Swallow wheel events so scrolling the lyrics
+                                // does not bubble up to the player and change
+                                // the volume.
+                                wheelEnabled: true
+
+                                // Expose the inner Flickable's sync flag so the
+                                // Loader's `item.lyricsSyncToPlayback` reaches
+                                // through to LyricsFlickable in both directions.
+                                property alias lyricsSyncToPlayback: lyricsFlickable.lyricsSyncToPlayback
+
+                                implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                                                        implicitContentWidth + leftPadding + rightPadding)
+                                implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                                                         implicitContentHeight + topPadding + bottomPadding)
+
+                                contentItem: LyricsFlickable {
+                                    id: lyricsFlickable
+
+                                    onPlayerPositionChangeRequested: (time) => {
+                                        Player.setTime(time)
+                                        lyricsFlickable.lyricsSyncToPlayback = true
+                                    }
+                                }
+                            }
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            height: Math.min(implicitHeight, parent.height)
+                        }
+                    }
+
+                    Item {
+                        id: rightSideParent
+
+                        visible: leftSideParent.visible
+
+                        anchors.top: parent.top
+                        anchors.topMargin: VLCStyle.margin_large
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.left: leftSideParent.right
+                    }
+
                     ColumnLayout {
+                        parent: leftSideParent.visible ? rightSideParent : centerContent
+
                         anchors.centerIn: parent
                         spacing: 0
 
@@ -403,7 +580,6 @@ FocusScope {
                             Layout.alignment: Qt.AlignHCenter
 
                             readonly property real sizeConstant: 2.7182
-
 
                             Image {
                                 id: cover
@@ -527,6 +703,58 @@ FocusScope {
                             }
                         }
 
+                        Widgets.SubtitleLabel {
+                            id: lyricsLabel
+
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: VLCStyle.margin_large
+                            // Pin width and height so the surrounding centered
+                            // column does not shift when the current lyric
+                            // changes between empty / 1 line / 2 lines. Text
+                            // exceeding two lines wraps then elides on line 2.
+                            Layout.preferredWidth: parent.parent.width - VLCStyle.margin_xlarge * 2
+                            Layout.preferredHeight: (lyricsLabelTextMetrics.height * 2) + VLCStyle.margin_xxxsmall
+
+                            visible: false
+
+                            Binding on visible {
+                                delayed: true
+                                when: lyricsLabel.componentCompleted
+
+                                // Stay visible (reserving the 2-line slot) for the
+                                // entire track when it has any lyrics, so the
+                                // layout does not collapse between lyric lines.
+                                value: Player.hasLyrics && !audioFocusScope.lyricsLayoutActive &&
+                                       (centerContent.height > (lyricsLabel.y + lyricsLabel.height))
+                            }
+
+                            property bool componentCompleted: false
+
+                            Component.onCompleted: {
+                                componentCompleted = true
+                            }
+
+                            elide: Text.ElideRight
+
+                            text: Player.currentLyric.text
+                            font.pixelSize: VLCStyle.fontSize_xlarge
+                            font.weight: Font.DemiBold
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.WordWrap
+                            color: centerTheme.fg.primary
+
+                            TextMetrics {
+                                id: lyricsLabelTextMetrics
+                                font: lyricsLabel.font
+                                text: "TEXT"
+                            }
+
+                            Accessible.role: Accessible.StaticText
+                            Accessible.name: qsTr("Lyrics")
+                            Accessible.description: text
+                        }
+
                         Widgets.NavigableRow {
                             id: audioControls
 
@@ -543,7 +771,7 @@ FocusScope {
                             spacing: VLCStyle.margin_xxsmall
                             Navigation.parentItem: rootPlayer
                             Navigation.upItem: topBar
-                            Navigation.downItem: Player.isInteractive ? toggleControlBarButton : controlBar
+                            Navigation.downItem: syncToPlaybackCheckBox
 
                             property bool componentCompleted: false
 
@@ -565,12 +793,67 @@ FocusScope {
                                 description: qsTr("Visualization")
                             }
 
+                            Widgets.IconToolButton {
+                                text: VLCIcons.topbar_music
+                                font.pixelSize: VLCStyle.icon_audioPlayerButton
+                                checked: MainCtx.lyricsMode
+                                onClicked: MainCtx.lyricsMode = !MainCtx.lyricsMode
+                                description: qsTr("Lyrics")
+
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("Toggle lyrics view")
+                            }
+
                             Widgets.IconToolButton{
                                 text: VLCIcons.skip_for
                                 font.pixelSize: VLCStyle.icon_audioPlayerButton
                                 onClicked: Player.jumpFwd()
                                 description: qsTr("Step forward")
                             }
+                        }
+
+                        // "Sync to Playback" checkbox pinned to bottom of right panel
+                        Widgets.CheckBoxExt {
+                            id: syncToPlaybackCheckBox
+
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: VLCStyle.margin_small
+
+                            visible: false
+
+                            Binding on visible {
+                                delayed: true
+                                when: syncToPlaybackCheckBox.componentCompleted
+                                value: audioFocusScope.lyricsLayoutActive &&
+                                       centerContent.height > (syncToPlaybackCheckBox.y + syncToPlaybackCheckBox.height)
+                            }
+
+                            property bool componentCompleted: false
+
+                            Component.onCompleted: {
+                                componentCompleted = true
+                            }
+
+                            text: qsTr("Sync lyrics to playback")
+                            // Use a Binding element rather than an inline binding
+                            // so manual clicks (which write `checked` directly)
+                            // don't permanently break the source-of-truth link.
+                            Binding on checked {
+                                when: lyricsLoader.item
+                                value: lyricsLoader.item ? lyricsLoader.item.lyricsSyncToPlayback : true
+                                restoreMode: Binding.RestoreBindingOrValue
+                            }
+                            onClicked: {
+                                if (lyricsLoader.item)
+                                    lyricsLoader.item.lyricsSyncToPlayback = checked
+                            }
+
+                            Accessible.role: Accessible.CheckBox
+                            Accessible.name: qsTr("Sync lyrics to playback position")
+
+                            Navigation.parentItem: rootPlayer
+                            Navigation.upItem: audioControls
+                            Navigation.downItem: Player.isInteractive ? toggleControlBarButton : controlBar
                         }
                     }
 
@@ -609,6 +892,7 @@ FocusScope {
                             PropertyAction { target: labelVolume; property: "visible"; value: false }
                         }
                     }
+
                 }
             }
         }
