@@ -72,7 +72,7 @@ public:
             fprintf(stderr, "unable to create media %s", url);
             return false;
         }
-        m_mp = libvlc_media_player_new_from_media (m_vlc, m_media);
+        m_mp = libvlc_media_player_new_from_media (m_vlc, m_media, NULL, NULL);
         if (m_mp == NULL) {
             fprintf(stderr, "unable to create media player");
             libvlc_media_release(m_media);
@@ -150,7 +150,7 @@ public:
 
         glBindFramebuffer(GL_FRAMEBUFFER, that->m_fbo[that->m_idx_render]);
 
-        render_cfg->opengl_format = GL_RGBA;
+        render_cfg->u.opengl_format = GL_RGBA;
         render_cfg->full_range = true;
         render_cfg->colorspace = libvlc_video_colorspace_BT709;
         render_cfg->primaries  = libvlc_video_primaries_BT709;

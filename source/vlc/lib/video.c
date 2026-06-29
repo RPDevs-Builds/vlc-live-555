@@ -169,8 +169,8 @@ int libvlc_video_get_size( libvlc_media_player_t *p_mi, unsigned ignored,
 
     if (track)
     {
-        *px = track->video->i_width;
-        *py = track->video->i_height;
+        *px = track->u.video->i_width;
+        *py = track->u.video->i_height;
         ret = 0;
         libvlc_media_track_release(track);
     }
@@ -337,7 +337,7 @@ void libvlc_video_set_video_stereo_mode(libvlc_media_player_t *p_mi,
     free (pp_vouts);
 }
 
-int64_t libvlc_video_get_spu_delay( libvlc_media_player_t *p_mi )
+libvlc_time_t libvlc_video_get_spu_delay( libvlc_media_player_t *p_mi )
 {
     vlc_player_t *player = p_mi->player;
     vlc_player_Lock(player);
@@ -350,7 +350,7 @@ int64_t libvlc_video_get_spu_delay( libvlc_media_player_t *p_mi )
 }
 
 int libvlc_video_set_spu_delay( libvlc_media_player_t *p_mi,
-                                int64_t i_delay )
+                                libvlc_time_t i_delay )
 {
     vlc_player_t *player = p_mi->player;
     vlc_player_Lock(player);

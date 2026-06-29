@@ -37,6 +37,8 @@ EXTRA_DIST = qt6.pro qtest.pro quicktest.pro scripts
 vlc_qt_libs = $(QT_LIBS)
 RCC_EXTRA_PARAMS =
 
+all-local: $(VLC_QT_CHECK_DEP) $(QML_MODULE_STAMPS)
+
 if !HAVE_QT_ZSTD
 RCC_EXTRA_PARAMS += --no-zstd
 endif
@@ -692,10 +694,10 @@ endif
 
 BUILT_SOURCES += $(nodist_libqt_wayland_plugin_la_SOURCES)
 
-maininterface/xdg-shell-client-protocol.h: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml Makefile.am
+maininterface/xdg-shell-client-protocol.h: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
 	$(AM_V_GEN)$(WAYLAND_SCANNER) client-header $< $@
 
-maininterface/xdg-shell-protocol.c: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml Makefile.am
+maininterface/xdg-shell-protocol.c: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
 	$(AM_V_GEN)$(WAYLAND_SCANNER) private-code $< $@
 
 #endif
@@ -989,7 +991,33 @@ libqt_plugin_la_RES += \
 	pixmaps/win7/play.svg
 endif
 
-#QML modules
+# QML modules
+#
+# Each QML module has a small section below. To add a new module "foo", append
+# a section following this template:
+#
+#   libqml_module_foo_a_Module     = VLC.Foo
+#   libqml_module_foo_a_ModulePath = VLC/Foo
+#   libqml_module_foo_a_CXXFLAGS   = $(libqt_plugin_la_CXXFLAGS)
+#   libqml_module_foo_a_CPPFLAGS   = $(libqt_plugin_la_CPPFLAGS)
+#   libqml_module_foo_a_SOURCES    = $(QML_MODULE_foo_SRC)
+#   libqml_module_foo_a_QML 			 = foo/qml/Bar.qml # ...
+#   libqml_module_foo_a_Singleton_QML  = foo/qml/SingletonBar.qml # only when there are Singletons
+#   nodist_libqml_module_foo_a_SOURCES = foo/qmlassets.cpp $(QML_MODULE_foo_NODIST_EXTRA)
+#   QML_MODULE_LIBS += libqml_module_foo.a
+#
+# When exposing singletons, list those QML files in the proper variable so that
+# they are declared as singletons in the generated qmldir.
+#
+# Then:
+#   1. Add "foo" to libqt_plugin_la_QML_MODULES.
+#   2. Add the QML file lists to libqt_plugin_la_ALL_QML.
+#   3. Add a QML_MODULE_foo_SRC / QML_MODULE_foo_NODIST_EXTRA pair to the
+#      "if HAVE_QMLCACHEGEN" block below.
+#
+noinst_LIBRARIES =
+QML_MODULE_LIBS =
+
 libqml_module_dialogs_a_Module = VLC.Dialogs
 libqml_module_dialogs_a_ModulePath = VLC/Dialogs
 libqml_module_dialogs_a_CXXFLAGS = $(libqt_plugin_la_CXXFLAGS)
@@ -1006,10 +1034,10 @@ libqml_module_dialogs_a_QML = \
 	dialogs/toolbar/qml/ToolbarEditor.qml \
 	dialogs/toolbar/qml/ToolbarEditorDialog.qml \
 	dialogs/toolbar/qml/ToolbarEditorButtonList.qml
-
-$(libqml_module_dialogs_a_QML:.qml=.cpp) : $(builddir)/dialogs/res.qrc
-$(libqml_module_dialogs_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/dialogs/res.qrc
-nodist_libqml_module_dialogs_a_SOURCES = dialogs_qmlassets.cpp
+libqml_module_dialogs_a_Singleton_QML =
+libqml_module_dialogs_a_SOURCES = $(QML_MODULE_dialogs_SRC)
+nodist_libqml_module_dialogs_a_SOURCES = dialogs/qmlassets.cpp $(QML_MODULE_dialogs_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_dialogs.a
 
 libqml_module_maininterface_a_Module = VLC.MainInterface
 libqml_module_maininterface_a_ModulePath = VLC/MainInterface
@@ -1026,9 +1054,10 @@ if UPDATE_CHECK
 libqml_module_maininterface_a_QML += maininterface/qml/UpdatePane.qml
 endif
 
-nodist_libqml_module_maininterface_a_SOURCES = maininterface_qmlassets.cpp
-$(libqml_module_maininterface_a_QML:.qml=.cpp) : $(builddir)/maininterface/res.qrc
-$(libqml_module_maininterface_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/maininterface/res.qrc
+libqml_module_maininterface_a_Singleton_QML =
+libqml_module_maininterface_a_SOURCES = $(QML_MODULE_maininterface_SRC)
+nodist_libqml_module_maininterface_a_SOURCES = maininterface/qmlassets.cpp $(QML_MODULE_maininterface_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_maininterface.a
 
 libqml_module_medialibrary_a_Module = VLC.MediaLibrary
 libqml_module_medialibrary_a_ModulePath = VLC/MediaLibrary
@@ -1075,9 +1104,10 @@ libqml_module_medialibrary_a_QML = \
 	medialibrary/qml/MLDragItem.qml \
 	medialibrary/qml/MLTableColumns.qml \
 	medialibrary/qml/ScanProgressBar.qml
-nodist_libqml_module_medialibrary_a_SOURCES = medialibrary_qmlassets.cpp
-$(libqml_module_medialibrary_a_QML:.qml=.cpp) : $(builddir)/medialibrary/res.qrc
-$(libqml_module_medialibrary_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/medialibrary/res.qrc
+libqml_module_medialibrary_a_Singleton_QML =
+libqml_module_medialibrary_a_SOURCES = $(QML_MODULE_medialibrary_SRC)
+nodist_libqml_module_medialibrary_a_SOURCES = medialibrary/qmlassets.cpp $(QML_MODULE_medialibrary_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_medialibrary.a
 
 libqml_module_menus_a_Module = VLC.Menus
 libqml_module_menus_a_ModulePath = VLC/Menus
@@ -1087,9 +1117,10 @@ libqml_module_menus_a_QML = \
 	menus/qml/GlobalShortcuts.qml \
 	menus/qml/Menubar.qml \
 	menus/qml/ShortcutExt.qml
-nodist_libqml_module_menus_a_SOURCES = menus_qmlassets.cpp
-$(libqml_module_menus_a_QML:.qml=.cpp) : $(builddir)/menus/res.qrc
-$(libqml_module_menus_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/menus/res.qrc
+libqml_module_menus_a_Singleton_QML =
+libqml_module_menus_a_SOURCES = $(QML_MODULE_menus_SRC)
+nodist_libqml_module_menus_a_SOURCES = menus/qmlassets.cpp $(QML_MODULE_menus_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_menus.a
 
 libqml_module_network_a_Module = VLC.Network
 libqml_module_network_a_ModulePath = VLC/Network
@@ -1110,9 +1141,10 @@ libqml_module_network_a_QML = \
 	network/qml/ServicesHomeDisplay.qml \
 	network/qml/ServicesManage.qml \
 	network/qml/ServicesSources.qml
-nodist_libqml_module_network_a_SOURCES = network_qmlassets.cpp
-$(libqml_module_network_a_QML:.qml=.cpp) : $(builddir)/network/res.qrc
-$(libqml_module_network_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/network/res.qrc
+libqml_module_network_a_Singleton_QML =
+libqml_module_network_a_SOURCES = $(QML_MODULE_network_SRC)
+nodist_libqml_module_network_a_SOURCES = network/qmlassets.cpp $(QML_MODULE_network_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_network.a
 
 libqml_module_player_a_Module = VLC.Player
 libqml_module_player_a_ModulePath = VLC/Player
@@ -1144,10 +1176,9 @@ libqml_module_player_a_QML = \
 
 libqml_module_player_a_Singleton_QML = \
 	player/qml/PlayerControlbarControls.qml
-
-nodist_libqml_module_player_a_SOURCES = player_qmlassets.cpp
-$(libqml_module_player_a_QML:.qml=.cpp) $(libqml_module_player_a_Singleton_QML:.qml=.cpp) : $(builddir)/player/res.qrc
-$(libqml_module_player_a_QML:.qml=.cpp) $(libqml_module_player_a_Singleton_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/player/res.qrc
+libqml_module_player_a_SOURCES = $(QML_MODULE_player_SRC)
+nodist_libqml_module_player_a_SOURCES = player/qmlassets.cpp $(QML_MODULE_player_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_player.a
 
 libqml_module_playercontrols_a_Module = VLC.PlayerControls
 libqml_module_playercontrols_a_ModulePath = VLC/PlayerControls
@@ -1198,9 +1229,10 @@ libqml_module_playercontrols_a_QML = \
 	player/qml/controlbarcontrols/TeletextWidget.qml \
 	player/qml/controlbarcontrols/VolumeWidget.qml \
 	player/qml/controlbarcontrols/Fallback.qml
-nodist_libqml_module_playercontrols_a_SOURCES = playercontrols_qmlassets.cpp
-$(libqml_module_playercontrols_a_QML:.qml=.cpp) : $(builddir)/playercontrols/res.qrc
-$(libqml_module_playercontrols_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/playercontrols/res.qrc
+libqml_module_playercontrols_a_Singleton_QML =
+libqml_module_playercontrols_a_SOURCES = $(QML_MODULE_playercontrols_SRC)
+nodist_libqml_module_playercontrols_a_SOURCES = playercontrols/qmlassets.cpp $(QML_MODULE_playercontrols_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_playercontrols.a
 
 libqml_module_playlist_a_Module = VLC.Playlist
 libqml_module_playlist_a_ModulePath = VLC/Playlist
@@ -1211,9 +1243,10 @@ libqml_module_playlist_a_QML = \
 	playlist/qml/PlaylistPane.qml \
 	playlist/qml/PlaylistToolbar.qml \
 	playlist/qml/PlaylistDetachedWindow.qml
-nodist_libqml_module_playlist_a_SOURCES = playlist_qmlassets.cpp
-$(libqml_module_playlist_a_QML:.qml=.cpp) : $(builddir)/playlist/res.qrc
-$(libqml_module_playlist_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/playlist/res.qrc
+libqml_module_playlist_a_Singleton_QML =
+libqml_module_playlist_a_SOURCES = $(QML_MODULE_playlist_SRC)
+nodist_libqml_module_playlist_a_SOURCES = playlist/qmlassets.cpp $(QML_MODULE_playlist_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_playlist.a
 
 libqml_module_style_a_Module = VLC.Style
 libqml_module_style_a_ModulePath = VLC/Style
@@ -1224,9 +1257,9 @@ libqml_module_style_a_Singleton_QML = \
 	style/AcrylicController.qml \
 	style/VLCIcons.qml \
 	style/VLCStyle.qml
-nodist_libqml_module_style_a_SOURCES = style_qmlassets.cpp
-$(libqml_module_style_a_QML:.qml=.cpp) $(libqml_module_style_a_Singleton_QML:.qml=.cpp) : $(builddir)/style/res.qrc
-$(libqml_module_style_a_QML:.qml=.cpp) $(libqml_module_style_a_Singleton_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/style/res.qrc
+libqml_module_style_a_SOURCES = $(QML_MODULE_style_SRC)
+nodist_libqml_module_style_a_SOURCES = style/qmlassets.cpp $(QML_MODULE_style_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_style.a
 
 libqml_module_util_a_Module = VLC.Util
 libqml_module_util_a_ModulePath = VLC/Util
@@ -1245,9 +1278,9 @@ libqml_module_util_a_QML = \
 	util/qml/DelegateTouchTapHandler.qml
 libqml_module_util_a_Singleton_QML = \
 	util/qml/Helpers.qml
-nodist_libqml_module_util_a_SOURCES = util_qmlassets.cpp
-$(libqml_module_util_a_QML:.qml=.cpp) $(libqml_module_util_a_Singleton_QML:.qml=.cpp) : $(builddir)/util/res.qrc
-$(libqml_module_util_a_QML:.qml=.cpp) $(libqml_module_util_a_Singleton_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/util/res.qrc
+libqml_module_util_a_SOURCES = $(QML_MODULE_util_SRC)
+nodist_libqml_module_util_a_SOURCES = util/qmlassets.cpp $(QML_MODULE_util_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_util.a
 
 libqml_module_widgets_a_Module = VLC.Widgets
 libqml_module_widgets_a_ModulePath = VLC/Widgets
@@ -1341,9 +1374,41 @@ libqml_module_widgets_a_QML = \
 	widgets/qml/DualKawaseBlur.qml \
 	widgets/qml/CheckBoxExt.qml \
 	widgets/qml/ProgressBarExt.qml
-nodist_libqml_module_widgets_a_SOURCES = widgets_qmlassets.cpp
-$(libqml_module_widgets_a_QML:.qml=.cpp) : $(builddir)/widgets/res.qrc
-$(libqml_module_widgets_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/widgets/res.qrc
+libqml_module_widgets_a_Singleton_QML =
+libqml_module_widgets_a_SOURCES = $(QML_MODULE_widgets_SRC)
+nodist_libqml_module_widgets_a_SOURCES = widgets/qmlassets.cpp $(QML_MODULE_widgets_NODIST_EXTRA)
+QML_MODULE_LIBS += libqml_module_widgets.a
+
+if ENABLE_QT
+libqt_plugin_la_LIBADD += $(QML_MODULE_LIBS)
+noinst_LIBRARIES += $(QML_MODULE_LIBS)
+endif
+
+if HAVE_QMLCACHEGEN
+QML_MODULE_dialogs_SRC = $(libqml_module_dialogs_a_QML) $(libqml_module_dialogs_a_Singleton_QML)
+QML_MODULE_dialogs_NODIST_EXTRA = dialogs/qmlcache_loader.cpp
+QML_MODULE_maininterface_SRC = $(libqml_module_maininterface_a_QML) $(libqml_module_maininterface_a_Singleton_QML)
+QML_MODULE_maininterface_NODIST_EXTRA = maininterface/qmlcache_loader.cpp
+QML_MODULE_medialibrary_SRC = $(libqml_module_medialibrary_a_QML) $(libqml_module_medialibrary_a_Singleton_QML)
+QML_MODULE_medialibrary_NODIST_EXTRA = medialibrary/qmlcache_loader.cpp
+QML_MODULE_menus_SRC = $(libqml_module_menus_a_QML) $(libqml_module_menus_a_Singleton_QML)
+QML_MODULE_menus_NODIST_EXTRA = menus/qmlcache_loader.cpp
+QML_MODULE_network_SRC = $(libqml_module_network_a_QML) $(libqml_module_network_a_Singleton_QML)
+QML_MODULE_network_NODIST_EXTRA = network/qmlcache_loader.cpp
+QML_MODULE_player_SRC = $(libqml_module_player_a_QML) $(libqml_module_player_a_Singleton_QML)
+QML_MODULE_player_NODIST_EXTRA = player/qmlcache_loader.cpp
+QML_MODULE_playercontrols_SRC = $(libqml_module_playercontrols_a_QML) $(libqml_module_playercontrols_a_Singleton_QML)
+QML_MODULE_playercontrols_NODIST_EXTRA = playercontrols/qmlcache_loader.cpp
+QML_MODULE_playlist_SRC = $(libqml_module_playlist_a_QML) $(libqml_module_playlist_a_Singleton_QML)
+QML_MODULE_playlist_NODIST_EXTRA = playlist/qmlcache_loader.cpp
+QML_MODULE_style_SRC = $(libqml_module_style_a_QML) $(libqml_module_style_a_Singleton_QML)
+QML_MODULE_style_NODIST_EXTRA = style/qmlcache_loader.cpp
+QML_MODULE_util_SRC = $(libqml_module_util_a_QML) $(libqml_module_util_a_Singleton_QML)
+QML_MODULE_util_NODIST_EXTRA = util/qmlcache_loader.cpp
+QML_MODULE_widgets_SRC = $(libqml_module_widgets_a_QML) $(libqml_module_widgets_a_Singleton_QML)
+QML_MODULE_widgets_NODIST_EXTRA = widgets/qmlcache_loader.cpp
+endif
+
 
 libqt_plugin_la_QML_MODULES = \
 	dialogs \
@@ -1400,30 +1465,6 @@ libqt_plugin_la_SHADER = $(libqt_plugin_la_SHADER_FRAG) $(libqt_plugin_la_SHADER
 
 if ENABLE_QT
 
-libqt_plugin_la_LIBADD += libqml_module_dialogs.a \
-	libqml_module_maininterface.a \
-	libqml_module_medialibrary.a \
-	libqml_module_menus.a \
-	libqml_module_network.a \
-	libqml_module_player.a \
-	libqml_module_playercontrols.a \
-	libqml_module_playlist.a \
-	libqml_module_style.a \
-	libqml_module_util.a \
-	libqml_module_widgets.a
-
-noinst_LIBRARIES = libqml_module_dialogs.a \
-	libqml_module_maininterface.a \
-	libqml_module_medialibrary.a \
-	libqml_module_menus.a \
-	libqml_module_network.a \
-	libqml_module_player.a \
-	libqml_module_playercontrols.a \
-	libqml_module_playlist.a \
-	libqml_module_style.a \
-	libqml_module_util.a \
-	libqml_module_widgets.a
-
 BUILT_SOURCES += \
     $(libqt_plugin_la_SHADER_FRAG:.frag=.frag.qsb) \
     $(libqt_plugin_la_SHADER_VERT:.vert=.vert.qsb)
@@ -1453,15 +1494,17 @@ QSB_PARAMS_VERBOSE__0 = $(QSB_PARAMS_VERBOSE_0)
 
 EXTRA_DIST += shaders/Common.glsl
 
-%.frag.qsb: %.frag shaders/Common.glsl
-	$(qsb_verbose)PATH="$(QSB_EXTRA_PATH)$$PATH" $(QSB) $(QSB_PARAMS) $(QSB_PARAMS_VERBOSE) -o $@ $<
+$(libqt_plugin_la_SHADER_FRAG:.frag=.frag.qsb) $(libqt_plugin_la_SHADER_VERT:.vert=.vert.qsb): shaders/Common.glsl
 
-%.vert.qsb: %.vert shaders/Common.glsl
-	$(qsb_verbose)PATH="$(QSB_EXTRA_PATH)$$PATH" $(QSB) $(QSB_PARAMS) $(QSB_PARAMS_VERBOSE) -o $@ $<
+$(libqt_plugin_la_SHADER_FRAG:.frag=.frag.qsb):
+	$(qsb_verbose)PATH="$(QSB_EXTRA_PATH)$$PATH" $(QSB) $(QSB_PARAMS) $(QSB_PARAMS_VERBOSE) -o $@ $(srcdir)/$(@:.qsb=)
+
+$(libqt_plugin_la_SHADER_VERT:.vert=.vert.qsb):
+	$(qsb_verbose)PATH="$(QSB_EXTRA_PATH)$$PATH" $(QSB) $(QSB_PARAMS) $(QSB_PARAMS_VERBOSE) -o $@ $(srcdir)/$(@:.qsb=)
 
 shaders/shaders.cpp: $(srcdir)/shaders/shaders.qrc $(libqt_plugin_la_SHADER_FRAG:.frag=.frag.qsb) $(libqt_plugin_la_SHADER_VERT:.vert=.vert.qsb)
-	$(AM_V_GEN) cp -f $(filter %.qrc, $^) $(builddir)/shaders/shaders.qrc || true
-	$(AM_V_GEN) $(RCC) $(RCC_EXTRA_PARAMS) --name shaders -o $@ $(builddir)/shaders/$(notdir $(filter %.qrc, $^))
+	$(AM_V_GEN) cp -f $< $(builddir)/shaders/shaders.qrc || true
+	$(AM_V_GEN) $(RCC) $(RCC_EXTRA_PARAMS) --name shaders -o $@ $(builddir)/shaders/shaders.qrc
 
 libqt_plugin_la_SOURCES += shaders/shaders.qrc $(libqt_plugin_la_SHADER)
 CLEANFILES += shaders/shaders.qrc
@@ -1483,58 +1526,95 @@ EXTRA_DIST += $(lib_qt_plugin_la_QRC) $(libqt_plugin_la_RES) $(libqt_plugin_la_S
 nodist_libqt_plugin_la_SOURCES += assets.cpp  shaders/shaders.cpp
 endif
 
+# Emit shader source dependencies so that the built shaders are properly
+# registered with the sources as prerequisites
+shaders/shaders.deps: Makefile
+	$(AM_V_at)$(MKDIR_P) $(@D)
+	$(AM_V_GEN){ \
+	  for s in $(libqt_plugin_la_SHADER_FRAG) $(libqt_plugin_la_SHADER_VERT); do \
+	    echo "$$s.qsb: $(srcdir)/$$s"; \
+	  done; \
+	} > $@.tmp && \
+	if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+BUILT_SOURCES += shaders/shaders.deps
+CLEANFILES    += shaders/shaders.deps
+
+-include shaders/shaders.deps
+
 if ENABLE_VLM
 nodist_libqt_plugin_la_SOURCES += dialogs/vlm/vlm.moc.cpp
 endif
 
-# QRC generation depends on the list of files (defined here) but not the file contents
-%/res.qrc: Makefile
+# Dynamically generate the rules dependencies so that rebuilds are working
+# properly. Since this is not GNU Make, we cannot generate the rules using
+# text functions.
+QML_RULES_DEPS = $(libqt_plugin_la_QML_MODULES:=/qml.deps)
+
+# Since every QML modules is built into a given directory, we can use $(@D)
+# to get the module name.
+$(QML_RULES_DEPS): Makefile
+	$(AM_V_at)$(MKDIR_P) $(@D)
+	$(AM_V_GEN){ \
+	  echo '$(@D)/qmldir.qrc: $(@D)/qmldir'; \
+	  echo '$(@D)/res.qrc $(@D)/qmldir: $(@D)/qml_modules.stamp'; \
+	  echo '$(@D)/qmlcachegen.rsp: $$(builddir)/$(@D)/res.qrc'; \
+	  echo '$(@D)/qmlcache_loader.cpp: $(@D)/qmlcachegen.rsp'; \
+	  echo '$(@D)/qmlassets.cpp: $$(builddir)/$(@D)/qmldir.qrc $$(builddir)/$(@D)/res.qrc'; \
+	  echo '$(@D)/qmlassets.cpp: $$(libqml_module_$(@D)_a_QML) $$(libqml_module_$(@D)_a_Singleton_QML)'; \
+	  echo '$$(libqml_module_$(@D)_a_QML:.qml=.cpp) $$(libqml_module_$(@D)_a_Singleton_QML:.qml=.cpp): $$(builddir)/$(@D)/res.qrc'; \
+	} > $@.tmp && \
+	if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+BUILT_SOURCES += $(QML_RULES_DEPS)
+CLEANFILES += $(QML_RULES_DEPS)
+
+-include $(QML_RULES_DEPS)
+
+# QRC/qmldir generation depends on the list of files (defined here) but
+# not the file contents. Use per-module stamp files so that changes to
+# one module's file list don't trigger rebuilds in other modules.
+QML_MODULE_STAMPS =
+if ENABLE_QT
+QML_MODULE_STAMPS += $(libqt_plugin_la_QML_MODULES:=/qml_modules.stamp)
+endif
+
+# Pre-expand target lists into named variables so that automake does not
+# see the same '$(libqt_plugin_la_QML_MODULES' prefix repeated across
+# conditionals and emit spurious "was already defined" warnings.
+QML_MODULE_RES_QRC = $(libqt_plugin_la_QML_MODULES:=/res.qrc)
+QML_MODULE_QMLDIR = $(libqt_plugin_la_QML_MODULES:=/qmldir)
+QML_MODULE_QMLDIR_QRC = $(libqt_plugin_la_QML_MODULES:=/qmldir.qrc)
+
+$(QML_MODULE_STAMPS): Makefile
+	$(AM_V_at)$(MKDIR_P) $(@D); \
+	echo '$(libqml_module_$(@D)_a_Module) $(libqml_module_$(@D)_a_ModulePath) $(libqml_module_$(@D)_a_QML) $(libqml_module_$(@D)_a_Singleton_QML)' > $@.tmp; \
+	if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+$(QML_MODULE_RES_QRC):
 	$(AM_V_GEN)$(PYTHON3) $(srcdir)/scripts/genqrc.py \
 	-o $@ \
 	-s $(srcdir) \
-	--prefix qt/qml/$(libqml_module_$*_a_ModulePath) \
-	--sources $(libqml_module_$*_a_QML) $(libqml_module_$*_a_Singleton_QML)
+	--prefix qt/qml/$(libqml_module_$(@D)_a_ModulePath) \
+	--sources $(libqml_module_$(@D)_a_QML) $(libqml_module_$(@D)_a_Singleton_QML)
 
-%/qmldir: Makefile
+$(QML_MODULE_QMLDIR):
 	$(AM_V_GEN)$(PYTHON3) $(srcdir)/scripts/genqmldir.py \
 	-o $@ \
 	--prefix qt/qml \
-	--module $(libqml_module_$*_a_Module)  \
-	--sources $(libqml_module_$*_a_QML) \
-	--singletons $(libqml_module_$*_a_Singleton_QML)
+	--module $(libqml_module_$(@D)_a_Module) \
+	--sources $(libqml_module_$(@D)_a_QML) \
+	--singletons $(libqml_module_$(@D)_a_Singleton_QML)
 
-%/qmldir.qrc: %/qmldir
-	$(AM_V_GEN)$(PYTHON3) $(srcdir)/scripts/genqrc.py -o $@ --prefix qt/qml/$(libqml_module_$*_a_ModulePath) --sources $<
+$(QML_MODULE_QMLDIR_QRC):
+	$(AM_V_GEN)$(PYTHON3) $(srcdir)/scripts/genqrc.py -o $@ \
+	--prefix qt/qml/$(libqml_module_$(@D)_a_ModulePath) --sources $<
 
-CLEANFILES += $(libqt_plugin_la_QML_MODULES:%=%/res.qrc) $(libqt_plugin_la_QML_MODULES:%=%/qmldir) $(libqt_plugin_la_QML_MODULES:%=%/qmldir.qrc) $(libqml_module_util_a_QML:%.qml=%.cpp)
+CLEANFILES += $(QML_MODULE_STAMPS) $(QML_MODULE_RES_QRC) $(QML_MODULE_QMLDIR) $(QML_MODULE_QMLDIR_QRC) $(libqml_module_util_a_QML:.qml=.cpp)
 
 if HAVE_QMLCACHEGEN
 
 libqt_plugin_la_CPPFLAGS += -DQT_USE_QMLCACHEGEN
-
-nodist_libqml_module_dialogs_a_SOURCES += dialogs_qmlcache_loader.cpp
-nodist_libqml_module_maininterface_a_SOURCES += maininterface_qmlcache_loader.cpp
-nodist_libqml_module_medialibrary_a_SOURCES += medialibrary_qmlcache_loader.cpp
-nodist_libqml_module_menus_a_SOURCES += menus_qmlcache_loader.cpp
-nodist_libqml_module_network_a_SOURCES += network_qmlcache_loader.cpp
-nodist_libqml_module_player_a_SOURCES += player_qmlcache_loader.cpp
-nodist_libqml_module_playercontrols_a_SOURCES += playercontrols_qmlcache_loader.cpp
-nodist_libqml_module_playlist_a_SOURCES += playlist_qmlcache_loader.cpp
-nodist_libqml_module_style_a_SOURCES += style_qmlcache_loader.cpp
-nodist_libqml_module_util_a_SOURCES += util_qmlcache_loader.cpp
-nodist_libqml_module_widgets_a_SOURCES += widgets_qmlcache_loader.cpp
-
-libqml_module_dialogs_a_SOURCES = $(libqml_module_dialogs_a_QML)
-libqml_module_maininterface_a_SOURCES = $(libqml_module_maininterface_a_QML)
-libqml_module_medialibrary_a_SOURCES = $(libqml_module_medialibrary_a_QML)
-libqml_module_menus_a_SOURCES = $(libqml_module_menus_a_QML)
-libqml_module_network_a_SOURCES = $(libqml_module_network_a_QML)
-libqml_module_player_a_SOURCES = $(libqml_module_player_a_QML) $(libqml_module_player_a_Singleton_QML)
-libqml_module_playercontrols_a_SOURCES = $(libqml_module_playercontrols_a_QML)
-libqml_module_playlist_a_SOURCES = $(libqml_module_playlist_a_QML)
-libqml_module_style_a_SOURCES = $(libqml_module_style_a_QML) $(libqml_module_style_a_Singleton_QML)
-libqml_module_util_a_SOURCES = $(libqml_module_util_a_QML) $(libqml_module_util_a_Singleton_QML)
-libqml_module_widgets_a_SOURCES = $(libqml_module_widgets_a_QML)
 
 cachegen_verbose = $(cachegen_verbose_$(V))
 cachegen_verbose_ = $(cachegen_verbose__$(AM_DEFAULT_VERBOSITY))
@@ -1545,49 +1625,56 @@ if HAVE_QT67
 QML_CACHEGEN_EXTRA_ARGS=--validate-basic-blocks
 endif
 
+# Each .qml/.js/.mjs is compiled with its module's res.qrc as prerequisite. The
+# per-module qrc isn't derivable from the target path, so pick it out of $^.
+qml_resource = for f in $^; do case $$f in *.qrc) echo --resource=$$f;; esac; done
+
 .qml.cpp:
-	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) $(QML_CACHEGEN_ARGS) -o $@ $<
+	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) `$(qml_resource)` -o $@ $<
 
 .js.cpp:
-	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) $(QML_CACHEGEN_ARGS) -o $@ $<
+	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) `$(qml_resource)` -o $@ $<
 
 .mjs.cpp:
-	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) $(QML_CACHEGEN_ARGS) -o $@ $<
+	$(cachegen_verbose)$(QMLCACHEGEN) $(QML_CACHEGEN_EXTRA_ARGS) `$(qml_resource)` -o $@ $<
 
-#we need to pass the resource path and as it appears in the qrc, this is easier to generate it externally
-%_qmlcachegen.rsp: $(builddir)/%/res.qrc
+# Pre-expand target lists into named variables so that automake does not
+# see the same $(libqt_plugin_la_QML_MODULES prefix repeated across
+# conditionals and emit spurious "was already defined" warnings.
+QML_MODULE_CACHEGEN_RSP = $(libqt_plugin_la_QML_MODULES:=/qmlcachegen.rsp)
+QML_MODULE_CACHELOADER = $(libqt_plugin_la_QML_MODULES:=/qmlcache_loader.cpp)
+QML_MODULE_CACHEGEN_ASSETS = $(libqt_plugin_la_QML_MODULES:=/qmlassets.cpp)
+
+$(QML_MODULE_CACHEGEN_RSP):
 	$(AM_V_GEN)$(PYTHON3) $(srcdir)/scripts/qrc2rsp.py --output $@ $^
 
-#output name matters here
-%_qmlcache_loader.cpp: %_qmlcachegen.rsp
-	$(cachegen_verbose)$(QMLCACHEGEN) --resource-name $*_cachegen --resource=$(builddir)/$*/res.qrc -o $@ @$<
+$(QML_MODULE_CACHELOADER):
+	$(cachegen_verbose)$(QMLCACHEGEN) --resource-name $(@D)_cachegen --resource=$(builddir)/$(@D)/res.qrc -o $@ @$<
 
-#package qmldir files
-%_qmlassets.cpp: $(builddir)/%/qmldir.qrc
-	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $*_assets -o $@ $<
+$(QML_MODULE_CACHEGEN_ASSETS):
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $(@D)_assets -o $@ $<
 
 
 CLEANFILES += \
-	$(libqt_plugin_la_QML_MODULES:%=%_qmlcache_loader.cpp) \
-	$(libqt_plugin_la_QML_MODULES:%=%_qmlcachegen.rsp) \
-	$(libqt_plugin_la_QML_MODULES:%=%_qmlassets.cpp) \
-	$(libqt_plugin_la_ALL_QML:%.qml=%.cpp)
+	$(QML_MODULE_CACHELOADER) \
+	$(QML_MODULE_CACHEGEN_RSP) \
+	$(QML_MODULE_CACHEGEN_ASSETS) \
+	$(libqt_plugin_la_ALL_QML:.qml=.cpp)
 
 else
 
 #package all qml from the genreated QRC files
 
-libqt_plugin_la_QML_MODULES_RES_QRC = $(libqt_plugin_la_QML_MODULES:%=$(builddir)/%/res.qrc)
-libqt_plugin_la_QML_MODULES_QMLDIR = $(libqt_plugin_la_QML_MODULES:%=$(builddir)/%/qmldir)
-libqt_plugin_la_QML_MODULES_QMLDIR_QRC = $(libqt_plugin_la_QML_MODULES:%=$(builddir)/%/qmldir.qrc)
+# See comment above QML_MODULE_RES_QRC for why this is a named variable.
+QML_MODULE_ASSETS = $(libqt_plugin_la_QML_MODULES:=/qmlassets.cpp)
 
-%_qmlassets.cpp: $(builddir)/%/qmldir.qrc $(builddir)/%/res.qrc $(libqt_plugin_la_ALL_QML)
-	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $*_assets -o $@ $(builddir)/$*/qmldir.qrc $(builddir)/$*/res.qrc
+$(QML_MODULE_ASSETS):
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $(@D)_assets \
+	-o $@ $(builddir)/$(@D)/qmldir.qrc $(builddir)/$(@D)/res.qrc
 
-nodist_libqt_plugin_la_SOURCES += $(libqt_plugin_la_QML_MODULES:%=%_qmlassets.cpp)
-
+nodist_libqt_plugin_la_SOURCES += $(QML_MODULE_ASSETS)
 if ENABLE_QT
-BUILT_SOURCES += $(libqt_plugin_la_QML_MODULES_QRC) $(libqt_plugin_la_QML_MODULES_QMLDIR)
+BUILT_SOURCES += $(QML_MODULE_RES_QRC) $(QML_MODULE_QMLDIR)
 endif
 
 endif
@@ -1626,7 +1713,7 @@ if !HAVE_OS2
 if !HAVE_IOS_OR_TVOS
 if !HAVE_XROS
 pkglibexec_PROGRAMS = vlc-qt-check
-all-local: $(builddir)/../../vlc-qt-check
+VLC_QT_CHECK_DEP = $(builddir)/../../vlc-qt-check
 
 $(builddir)/../../vlc-qt-check: vlc-qt-check
 	$(AM_V_GEN)cd ../../ && $(LN_S) -f gui/qt/vlc-qt-check . && chmod +x vlc-qt-check

@@ -32,11 +32,17 @@
 #include <vlc_input_item.h>
 #include <vlc_preparser.h>
 
-static void media_parse_ended(const libvlc_event_t *event, void *user_data)
+static void media_parse_ended(void *opaque, libvlc_parser_task *task,
+                              libvlc_parser_status_t status)
 {
-    (void)event;
-    vlc_sem_t *sem = user_data;
+    libvlc_media_t *media = libvlc_parser_task_get_media(task);
+    assert(media != NULL);
+    assert(libvlc_media_is_parsed(media) ==
+           (status == libvlc_parser_status_done));
+
+    vlc_sem_t *sem = opaque;
     vlc_sem_post (sem);
+    libvlc_parser_task_release(task);
 }
 
 static void print_media(libvlc_media_t *media)
@@ -69,16 +75,16 @@ static void print_media(libvlc_media_t *media)
             {
             case libvlc_track_audio:
                 printf("audio: channels: %u, rate: %u\n",
-                       p_track->audio->i_channels, p_track->audio->i_rate);
+                       p_track->u.audio->i_channels, p_track->u.audio->i_rate);
                 break;
             case libvlc_track_video:
                 printf("video: %ux%u, sar: %u/%u, fps: %u/%u\n",
-                       p_track->video->i_width, p_track->video->i_height,
-                       p_track->video->i_sar_num, p_track->video->i_sar_den,
-                       p_track->video->i_frame_rate_num, p_track->video->i_frame_rate_den);
+                       p_track->u.video->i_width, p_track->u.video->i_height,
+                       p_track->u.video->i_sar_num, p_track->u.video->i_sar_den,
+                       p_track->u.video->i_frame_rate_num, p_track->u.video->i_frame_rate_den);
                 break;
             case libvlc_track_text:
-                printf("text: %s\n", p_track->subtitle->psz_encoding);
+                printf("text: %s\n", p_track->u.subtitle->psz_encoding);
                 break;
             case libvlc_track_unknown:
                 printf("unknown\n");
@@ -107,10 +113,10 @@ static libvlc_media_t *
 test_media_preparsed_ext(libvlc_instance_t *vlc, const char *path,
                          const char *location,
                          libvlc_media_parse_flag_t parse_flags,
-                         libvlc_media_parsed_status_t i_expected_status)
+                         bool b_expected_parsed)
 {
     test_log ("test_media_preparsed: %s, expected: %d\n", path ? path : location,
-              i_expected_status);
+              b_expected_parsed);
 
     libvlc_media_t *media;
     if (path != NULL)
@@ -122,21 +128,38 @@ test_media_preparsed_ext(libvlc_instance_t *vlc, const char *path,
     vlc_sem_t sem;
     vlc_sem_init (&sem, 0);
 
-    // Check to see if we are properly receiving the event.
-    libvlc_event_manager_t *em = libvlc_media_event_manager (media);
-    libvlc_event_attach (em, libvlc_MediaParsedChanged, media_parse_ended, &sem);
+    static const struct libvlc_parser_cbs cbs = {
+        .version = 0,
+        .on_parsed = media_parse_ended,
+    };
 
-    // Parse the media. This is synchronous.
-    int i_ret = libvlc_media_parse_request(vlc, media, parse_flags, -1);
-    assert(i_ret == 0);
+    const struct libvlc_parser_cfg cfg = {
+        .version = 0,
+        .max_parser_threads = 1,
+        .timeout = -1,
+    };
+
+    libvlc_parser_t *parser = libvlc_parser_new(vlc, &cfg);
+    assert(parser != NULL);
+
+    libvlc_parser_request_t req = {
+        .version = 0,
+        .media = media,
+        .parse_flags = parse_flags,
+    };
+
+    libvlc_parser_task *task = libvlc_parser_queue(parser, &req, &cbs, &sem);
+    assert(task != NULL);
 
     // Wait for preparsed event
     vlc_sem_wait (&sem);
 
     // We are good, now check Elementary Stream info.
-    assert (libvlc_media_get_parsed_status(media) == i_expected_status);
-    if (i_expected_status == libvlc_media_parsed_status_done)
+    assert (libvlc_media_is_parsed(media) == b_expected_parsed);
+    if (b_expected_parsed)
         print_media(media);
+
+    libvlc_parser_destroy(parser);
 
     return media;
 }
@@ -144,11 +167,11 @@ test_media_preparsed_ext(libvlc_instance_t *vlc, const char *path,
 static void test_media_preparsed(libvlc_instance_t *vlc, const char *path,
                                  const char *location,
                                  libvlc_media_parse_flag_t parse_flags,
-                                 libvlc_media_parsed_status_t i_expected_status)
+                                 bool b_expected_parsed)
 {
     libvlc_media_t *media = test_media_preparsed_ext(vlc, path, location,
                                                      parse_flags,
-                                                     i_expected_status);
+                                                     b_expected_parsed);
     libvlc_media_release (media);
 }
 
@@ -160,8 +183,8 @@ static void test_media_tracks(libvlc_instance_t *vlc)
         "audio_channels=2;audio_rate=48000;";
     libvlc_media_t *media =
         test_media_preparsed_ext(vlc, NULL, url,
-                                 libvlc_media_parse_local|libvlc_media_parse_forced,
-                                 libvlc_media_parsed_status_done);
+                                 libvlc_media_parse,
+                                 true);
 
     char buf[32];
     libvlc_media_tracklist_t *tracklist;
@@ -173,9 +196,9 @@ static void test_media_tracks(libvlc_instance_t *vlc)
     {
         libvlc_media_track_t *track = libvlc_media_tracklist_at(tracklist, i);
         assert(track->i_type == libvlc_track_video);
-        assert(track->video != NULL);
-        assert(track->video->i_width == 100);
-        assert(track->video->i_height == 50);
+        assert(track->u.video != NULL);
+        assert(track->u.video->i_width == 100);
+        assert(track->u.video->i_height == 50);
 
         sprintf(buf, "video/%zu", i);
         assert(strcmp(track->psz_id, buf) == 0);
@@ -190,9 +213,9 @@ static void test_media_tracks(libvlc_instance_t *vlc)
     {
         libvlc_media_track_t *track = libvlc_media_tracklist_at(tracklist, i);
         assert(track->i_type == libvlc_track_audio);
-        assert(track->audio != NULL);
-        assert(track->audio->i_channels == 2);
-        assert(track->audio->i_rate == 48000);
+        assert(track->u.audio != NULL);
+        assert(track->u.audio->i_channels == 2);
+        assert(track->u.audio->i_rate == 48000);
 
         sprintf(buf, "audio/%zu", i);
         assert(strcmp(track->psz_id, buf) == 0);
@@ -293,22 +316,13 @@ static struct
     { "file.ts", libvlc_media_type_file },
 };
 
-static void subitem_parse_ended(const libvlc_event_t *event, void *user_data)
-{
-    (void)event;
-    vlc_sem_t *sem = user_data;
-    vlc_sem_post (sem);
-}
-
-static void subitem_added(const libvlc_event_t *event, void *user_data)
+static void check_subitems(libvlc_media_t *m, bool *subitems_found)
 {
 #ifdef _WIN32
 #define FILE_SEPARATOR   '\\'
 #else
 #define FILE_SEPARATOR   '/'
 #endif
-    bool *subitems_found = user_data;
-    libvlc_media_t *m = event->u.media_subitem_added.new_child;
     assert (m);
 
     char *mrl = libvlc_media_get_mrl (m);
@@ -345,6 +359,20 @@ static void subitem_added(const libvlc_event_t *event, void *user_data)
 #undef FILE_SEPARATOR
 }
 
+static void on_media_parsed(void *opaque, libvlc_media_t *media)
+{
+    (void) media;
+    vlc_sem_t *sem = opaque;
+    vlc_sem_post(sem);
+}
+
+static void on_media_subitems_changed(void *opaque, libvlc_media_t *media)
+{
+    (void) media;
+    vlc_sem_t *sem = opaque;
+    vlc_sem_post(sem);
+}
+
 static void test_media_subitems_media(libvlc_instance_t *vlc,
                                       libvlc_media_t *media, bool play,
                                       bool b_items_expected)
@@ -356,31 +384,65 @@ static void test_media_subitems_media(libvlc_instance_t *vlc,
     vlc_sem_t sem;
     vlc_sem_init (&sem, 0);
 
-    libvlc_event_manager_t *em = libvlc_media_event_manager (media);
-    libvlc_event_attach (em, libvlc_MediaSubItemAdded, subitem_added, subitems_found);
-
     if (play)
     {
         /* XXX: libvlc_media_parse won't work with fd, since it
          * won't be preparsed because fd:// is an unknown type, so play the
          * file to force parsing. */
-        libvlc_event_attach (em, libvlc_MediaSubItemTreeAdded, subitem_parse_ended, &sem);
 
-        libvlc_media_player_t *mp = libvlc_media_player_new_from_media(vlc, media);
+        static const struct libvlc_media_player_cbs cbs = {
+            .version = 0,
+            .on_media_parsed = on_media_parsed,
+            .on_media_subitems_changed = on_media_subitems_changed,
+        };
+
+        libvlc_media_player_t *mp =
+            libvlc_media_player_new_from_media(vlc, media, &cbs, &sem);
         assert (mp);
         assert (libvlc_media_player_play (mp) != -1);
-        vlc_sem_wait (&sem);
+
+        vlc_sem_wait(&sem);
+        vlc_sem_wait(&sem);
+
         libvlc_media_player_release (mp);
     }
     else
     {
-        libvlc_event_attach (em, libvlc_MediaParsedChanged, subitem_parse_ended, &sem);
+        static const struct libvlc_parser_cbs cbs = {
+            .version = 0,
+            .on_parsed = media_parse_ended,
+        };
 
-        int i_ret = libvlc_media_parse_request(vlc, media,
-                                               libvlc_media_parse_local, -1);
-        assert(i_ret == 0);
+        const struct libvlc_parser_cfg cfg = {
+            .version = 0,
+            .max_parser_threads = 1,
+            .timeout = -1,
+        };
+
+        libvlc_parser_t *parser = libvlc_parser_new(vlc, &cfg);
+        assert(parser != NULL);
+        libvlc_parser_request_t req = {
+            .version = 0,
+            .media = media,
+            .parse_flags = 0,
+        };
+        libvlc_parser_task *task = libvlc_parser_queue(parser, &req, &cbs, &sem);
+        assert(task != NULL);
+
         vlc_sem_wait (&sem);
+        libvlc_parser_destroy(parser);
     }
+
+    libvlc_media_list_t *subitems = libvlc_media_subitems(media);
+    assert(subitems != NULL);
+    for (int i = 0; i < libvlc_media_list_count(subitems); ++i)
+    {
+        libvlc_media_t *child = libvlc_media_list_item_at_index(subitems, i);
+        assert(child != NULL);
+        check_subitems(child, subitems_found);
+        libvlc_media_release(child);
+    }
+    libvlc_media_list_release(subitems);
 
     if (!b_items_expected)
         return;
@@ -466,21 +528,16 @@ int main(int i_argc, char *ppsz_argv[])
             psz_test_path = psz_test_arg;
         }
         test_media_preparsed (vlc, psz_test_path, psz_test_url,
-                              libvlc_media_parse_network,
-                              libvlc_media_parsed_status_done);
+                              libvlc_media_parse,
+                              true);
         libvlc_release(vlc);
         return 0;
     }
 
     test_media_preparsed (vlc, SRCDIR"/samples/image.jpg", NULL,
-                          libvlc_media_parse_local,
-                          libvlc_media_parsed_status_done);
-    test_media_preparsed (vlc, NULL, "http://parsing_should_be_skipped.org/video.mp4",
-                          libvlc_media_parse_local,
-                          libvlc_media_parsed_status_skipped);
-    test_media_preparsed (vlc, NULL, "unknown://parsing_should_be_skipped.org/video.mp4",
-                          libvlc_media_parse_local,
-                          libvlc_media_parsed_status_skipped);
+                          libvlc_media_parse,
+                          true);
+
     test_media_subitems (vlc);
     test_media_tracks (vlc);
 
