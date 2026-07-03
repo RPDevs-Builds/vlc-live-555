@@ -32,13 +32,21 @@
 
 #include "gl_api.h"
 #include "picture.h"
+#include "sampler.h"
 
 struct vlc_gl_filter *
-vlc_gl_filter_New(struct vlc_gl_t *gl, const struct vlc_gl_api *api)
+vlc_gl_filter_New(struct vlc_gl_t *gl)
 {
     struct vlc_gl_filter_priv *priv = vlc_object_create(gl, sizeof(*priv));
     if (!priv)
         return NULL;
+
+    int ret = vlc_gl_api_Init(&priv->api, gl);
+    if (ret != VLC_SUCCESS)
+    {
+        vlc_object_delete(&priv->filter.obj);
+        return NULL;
+    }
 
     priv->size_out.width = 0;
     priv->size_out.height = 0;
@@ -50,7 +58,6 @@ vlc_gl_filter_New(struct vlc_gl_t *gl, const struct vlc_gl_api *api)
 
     struct vlc_gl_filter *filter = &priv->filter;
     filter->gl = gl;
-    filter->api = api;
     filter->config.filter_planes = false;
     filter->config.blend = false;
     filter->config.msaa_level = 0;
@@ -60,8 +67,7 @@ vlc_gl_filter_New(struct vlc_gl_t *gl, const struct vlc_gl_api *api)
 
     vlc_list_init(&priv->blend_subfilters);
 
-    /* Expose a const pointer to the OpenGL format publicly */
-    filter->glfmt_in = &priv->glfmt_in;
+    filter->sampler = NULL;
 
     return filter;
 }
@@ -73,10 +79,10 @@ ActivateGLFilter(void *func, bool forced, va_list args)
     vlc_gl_filter_open_fn *activate = func;
     struct vlc_gl_filter *filter = va_arg(args, struct vlc_gl_filter *);
     const config_chain_t *config = va_arg(args, config_chain_t *);
-    const struct vlc_gl_format *glfmt = va_arg(args, struct vlc_gl_format *);
+    struct vlc_gl_sampler *sampler = va_arg(args, struct vlc_gl_sampler *);
     struct vlc_gl_tex_size *size_out = va_arg(args, struct vlc_gl_tex_size *);
 
-    return activate(filter, config, glfmt, size_out);
+    return activate(filter, config, sampler, size_out);
 }
 
 #undef vlc_gl_filter_LoadModule
@@ -84,13 +90,13 @@ int
 vlc_gl_filter_LoadModule(vlc_object_t *parent, const char *name,
                          struct vlc_gl_filter *filter,
                          const config_chain_t *config,
-                         const struct vlc_gl_format *glfmt,
+                         struct vlc_gl_sampler *sampler,
                          struct vlc_gl_tex_size *size_out)
 {
     filter->module = vlc_module_load(vlc_object_logger(parent), "opengl filter",
                                      name, true,
                                      ActivateGLFilter, filter, config,
-                                     glfmt, size_out);
+                                     sampler, size_out);
     if (!filter->module)
         return VLC_EGENERIC;
 
@@ -101,7 +107,7 @@ vlc_gl_filter_LoadModule(vlc_object_t *parent, const char *name,
 static void
 DeleteFramebuffersOut(struct vlc_gl_filter_priv *priv)
 {
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
 
     vt->DeleteFramebuffers(priv->tex_count, priv->framebuffers_out);
     vt->DeleteTextures(priv->tex_count, priv->textures_out);
@@ -110,7 +116,7 @@ DeleteFramebuffersOut(struct vlc_gl_filter_priv *priv)
 static void
 DeleteFramebufferMSAA(struct vlc_gl_filter_priv *priv)
 {
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
 
     vt->DeleteFramebuffers(1, &priv->framebuffer_msaa);
     vt->DeleteRenderbuffers(1, &priv->renderbuffer_msaa);
@@ -124,6 +130,9 @@ vlc_gl_filter_Delete(struct vlc_gl_filter *filter)
 
     if (filter->module)
         module_unneed(filter, filter->module);
+
+    if (filter->sampler)
+        vlc_gl_sampler_Delete(filter->sampler);
 
     struct vlc_gl_filter_priv *priv = vlc_gl_filter_PRIV(filter);
 
@@ -147,7 +156,7 @@ static int
 InitPlane(struct vlc_gl_filter_priv *priv, unsigned plane, GLsizei width,
           GLsizei height)
 {
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
 
     GLuint framebuffer = priv->framebuffers_out[plane];
     GLuint texture = priv->textures_out[plane];
@@ -182,7 +191,7 @@ InitFramebuffersOut(struct vlc_gl_filter_priv *priv)
     /* Not initialized yet */
     assert(priv->tex_count == 0);
 
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
 
     struct vlc_gl_filter *filter = &priv->filter;
     if (filter->config.filter_planes)
@@ -219,7 +228,7 @@ InitFramebufferMSAA(struct vlc_gl_filter_priv *priv, unsigned msaa_level)
     assert(msaa_level);
     assert(priv->size_out.width > 0 && priv->size_out.height > 0);
 
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
 
     vt->GenRenderbuffers(1, &priv->renderbuffer_msaa);
     vt->BindRenderbuffer(GL_RENDERBUFFER, priv->renderbuffer_msaa);
@@ -305,7 +314,7 @@ vlc_gl_filter_ApplyOutputSize(struct vlc_gl_filter *filter)
 
     vlc_gl_filter_InitPlaneSizes(filter);
 
-    const opengl_vtable_t *vt = &priv->filter.api->vt;
+    const opengl_vtable_t *vt = &priv->api.vt;
     GL_ASSERT_NOERROR(vt);
 
     unsigned msaa_level = filter->config.msaa_level;

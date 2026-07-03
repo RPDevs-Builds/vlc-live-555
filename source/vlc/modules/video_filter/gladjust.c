@@ -36,6 +36,7 @@
 #include "video_output/opengl/sampler.h"
 
 struct sys {
+    struct vlc_gl_api api;
     struct vlc_gl_sampler *sampler;
 
     GLuint program_id;
@@ -80,7 +81,7 @@ Draw(struct vlc_gl_filter *filter, const struct vlc_gl_picture *pic,
 
     struct sys *sys = filter->sys;
 
-    const opengl_vtable_t *vt = &filter->api->vt;
+    const opengl_vtable_t *vt = &sys->api.vt;
 
     vt->UseProgram(sys->program_id);
 
@@ -149,11 +150,10 @@ Close(struct vlc_gl_filter *filter) {
     var_DelCallback(sys->outer, "saturation", varFloatCallback, &sys->saturation);
     var_DelCallback(sys->outer, "gamma",      varFloatCallback, &sys->gamma);
 
-    const opengl_vtable_t *vt = &filter->api->vt;
+    const opengl_vtable_t *vt = &sys->api.vt;
     vt->DeleteProgram(sys->program_id);
     vt->DeleteBuffers(1, &sys->vbo);
 
-    vlc_gl_sampler_Delete(sys->sampler);
     free(sys);
 }
 
@@ -170,7 +170,7 @@ static vlc_object_t *FindOuterFilter(struct vlc_gl_filter *filter)
 static vlc_gl_filter_open_fn Open;
 static int
 Open(struct vlc_gl_filter *filter, const config_chain_t *config,
-     const struct vlc_gl_format *glfmt, struct vlc_gl_tex_size *size_out)
+     struct vlc_gl_sampler *sampler, struct vlc_gl_tex_size *size_out)
 {
     (void) config;
     (void) size_out;
@@ -187,17 +187,16 @@ Open(struct vlc_gl_filter *filter, const config_chain_t *config,
     if (!sys)
         return VLC_EGENERIC;
 
-    struct vlc_gl_sampler *sampler =
-        vlc_gl_sampler_New(filter->gl, filter->api, glfmt, false);
-    if (!sampler)
+    sys->sampler = sampler;
+    sys->outer = outer;
+    filter->sys = sys;
+
+    int ret = vlc_gl_api_Init(&sys->api, filter->gl);
+    if (ret != VLC_SUCCESS)
     {
         free(sys);
         return VLC_EGENERIC;
     }
-
-    sys->sampler = sampler;
-    sys->outer = outer;
-    filter->sys = sys;
 
     atomic_init(&sys->contrast,
                 var_CreateGetFloatCommand(outer, "contrast"));
@@ -304,7 +303,7 @@ Open(struct vlc_gl_filter *filter, const config_chain_t *config,
     const char *extensions = sampler->shader.extensions
                            ? sampler->shader.extensions : "";
 
-    const opengl_vtable_t *vt = &filter->api->vt;
+    const opengl_vtable_t *vt = &sys->api.vt;
 
     const char *vertex_shader[] = { shader_version, VERTEX_SHADER };
     const char *fragment_shader[] = {

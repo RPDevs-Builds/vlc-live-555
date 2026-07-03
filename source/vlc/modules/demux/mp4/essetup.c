@@ -1309,7 +1309,10 @@ int SetupAudioES( demux_t *p_demux, const mp4_track_t *p_track,
     if ( !p_esds ) p_esds = MP4_BoxGet( p_sample, "wave/esds" );
     if ( p_esds && BOXDATA(p_esds) && BOXDATA(p_esds)->es_descriptor.p_decConfigDescr )
     {
-        assert(i_sample_type == ATOM_mp4a);
+        if( i_sample_type != ATOM_mp4a )
+        {
+            msg_Warn( p_demux, "Unexpected ESDS for %4.4s", (char *)&i_sample_type );
+        }
         SetupESDS( p_demux, p_track, BOXDATA(p_esds)->es_descriptor.p_decConfigDescr, p_fmt );
     }
     else switch( i_sample_type )
@@ -1417,7 +1420,8 @@ int SetupSpuES( demux_t *p_demux, const mp4_track_t *p_track,
             if( p_text->i_data > 4 && GetDWBE(p_text->p_data) & 0xC0000000 )
             {
                 p_fmt->i_priority = ES_PRIORITY_SELECTABLE_MIN + 1;
-                p_cfg->b_forced_spu = true;
+                p_fmt->subs.b_forced = true;
+                p_fmt->psz_description = strdup( _("Forced caption") );
             }
 
             CopyExtradata( p_text->p_data, p_text->i_data, p_fmt );

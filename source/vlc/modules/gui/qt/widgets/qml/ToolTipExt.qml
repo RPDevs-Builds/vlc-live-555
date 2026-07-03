@@ -74,12 +74,14 @@ T.ToolTip {
     contentItem: Text {
         text: control.text
         font: control.font
+        wrapMode: Text.WordWrap
 
         color: theme.fg.primary
     }
 
     background: Rectangle {
         border.color: theme.border
+        border.pixelAligned: (radius < Number.EPSILON)
         color: theme.bg.primary
         radius: control.radius
     }

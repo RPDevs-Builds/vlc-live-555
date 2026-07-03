@@ -53,6 +53,7 @@ static const char *const filter_options[] = {
 
 struct sys
 {
+    struct vlc_gl_api api;
     GLuint id;
     GLuint vbo;
 
@@ -79,7 +80,7 @@ DestroyTextures(pl_gpu gpu, unsigned count, pl_tex textures[])
 
 static int
 WrapTextures(pl_gpu gpu, unsigned count, const GLuint textures[],
-             const GLsizei tex_widths[], const GLsizei tex_heights[],
+             const uint32_t tex_widths[], const uint32_t tex_heights[],
              GLenum tex_target, pl_tex out[])
 {
     for (unsigned i = 0; i < count; ++i)
@@ -124,8 +125,8 @@ Draw(struct vlc_gl_filter *filter, const struct vlc_gl_picture *pic,
     (void) meta;
 
     struct sys *sys = filter->sys;
-    const opengl_vtable_t *vt = &filter->api->vt;
-    const struct vlc_gl_format *glfmt = filter->glfmt_in;
+    const opengl_vtable_t *vt = &sys->api.vt;
+    struct vlc_gl_sampler *sampler = filter->sampler;
     pl_gpu gpu = sys->pl_opengl->gpu;
     struct pl_frame *frame_in = &sys->frame_in;
     struct pl_frame *frame_out = &sys->frame_out;
@@ -161,8 +162,8 @@ Draw(struct vlc_gl_filter *filter, const struct vlc_gl_picture *pic,
 
         vlc_gl_picture_ToTexCoords(pic, 2, coords, coords);
 
-        unsigned w = glfmt->tex_widths[0];
-        unsigned h = glfmt->tex_heights[0];
+        unsigned w = sampler->tex_widths[0];
+        unsigned h = sampler->tex_heights[0];
         struct pl_rect2df *r = &frame_in->crop;
         r->x0 = coords[0] * w;
         r->y0 = coords[1] * h;
@@ -185,14 +186,14 @@ Draw(struct vlc_gl_filter *filter, const struct vlc_gl_picture *pic,
     GLuint final_draw_framebuffer = value; /* as GLuint */
 
     pl_tex texs_in[PICTURE_PLANE_MAX];
-    int ret = WrapTextures(gpu, glfmt->tex_count, pic->textures,
-                           glfmt->tex_widths, glfmt->tex_heights,
-                           glfmt->tex_target, texs_in);
+    int ret = WrapTextures(gpu, sampler->tex_count, pic->textures,
+                           sampler->tex_widths, sampler->tex_heights,
+                           sampler->tex_target, texs_in);
     if (ret != VLC_SUCCESS)
         goto end;
 
     /* Only changes the plane textures from the cached pl_frame */
-    for (unsigned i = 0; i < glfmt->tex_count; ++i)
+    for (unsigned i = 0; i < sampler->tex_count; ++i)
         frame_in->planes[i].texture = texs_in[i];
 
     pl_tex tex_out = WrapFramebuffer(gpu, final_draw_framebuffer,
@@ -209,7 +210,7 @@ Draw(struct vlc_gl_filter *filter, const struct vlc_gl_picture *pic,
 
     DestroyTextures(gpu, 1, &tex_out);
 destroy_texs_in:
-    DestroyTextures(gpu, glfmt->tex_count, texs_in);
+    DestroyTextures(gpu, sampler->tex_count, texs_in);
 
 end:
     vt->BindFramebuffer(GL_DRAW_FRAMEBUFFER, final_draw_framebuffer);
@@ -248,14 +249,14 @@ Close(struct vlc_gl_filter *filter)
 static vlc_gl_filter_open_fn Open;
 static int
 Open(struct vlc_gl_filter *filter, const config_chain_t *config,
-     const struct vlc_gl_format *glfmt, struct vlc_gl_tex_size *size_out)
+     struct vlc_gl_sampler *sampler, struct vlc_gl_tex_size *size_out)
 {
     (void) config;
 
     /* By default, do not scale. The dimensions will be modified dynamically by
      * request_output_size(). */
-    unsigned width = glfmt->tex_widths[0];
-    unsigned height = glfmt->tex_heights[0];
+    unsigned width = sampler->tex_widths[0];
+    unsigned height = sampler->tex_heights[0];
 
     config_ChainParse(filter, CFG_PREFIX, filter_options, config);
     int upscaler = var_InheritInteger(filter, CFG_PREFIX "upscaler");
@@ -279,6 +280,13 @@ Open(struct vlc_gl_filter *filter, const config_chain_t *config,
     if (!sys)
         return VLC_EGENERIC;
 
+    int ret = vlc_gl_api_Init(&sys->api, filter->gl);
+    if (ret != VLC_SUCCESS)
+    {
+        free(sys);
+        return VLC_EGENERIC;
+    }
+
     sys->pl_log = vlc_placebo_CreateLog(VLC_OBJECT(filter));
 
     struct pl_opengl_params opengl_params = {
@@ -295,12 +303,12 @@ Open(struct vlc_gl_filter *filter, const config_chain_t *config,
         goto error;
 
     sys->frame_in = (struct pl_frame) {
-        .num_planes = glfmt->tex_count,
-        .repr = vlc_placebo_ColorRepr(&glfmt->fmt),
-        .color = vlc_placebo_ColorSpace(&glfmt->fmt),
+        .num_planes = sampler->tex_count,
+        .repr = vlc_placebo_ColorRepr(&sampler->fmt_in),
+        .color = vlc_placebo_ColorSpace(&sampler->fmt_in),
     };
 
-    if (glfmt->fmt.dovi.rpu_present && !glfmt->fmt.dovi.el_present) {
+    if (sampler->fmt_in.dovi.rpu_present && !sampler->fmt_in.dovi.el_present) {
         sys->frame_in.color.primaries = PL_COLOR_PRIM_BT_2020;
         sys->frame_in.color.transfer = PL_COLOR_TRC_PQ;
         sys->frame_in.repr.sys = PL_COLOR_SYSTEM_DOLBYVISION;
@@ -309,10 +317,10 @@ Open(struct vlc_gl_filter *filter, const config_chain_t *config,
 
     /* Initialize frame_in.planes */
     int plane_count =
-        vlc_placebo_PlaneComponents(&glfmt->fmt, sys->frame_in.planes);
-    if ((unsigned) plane_count != glfmt->tex_count) {
+        vlc_placebo_PlaneComponents(&sampler->fmt_in, sys->frame_in.planes);
+    if ((unsigned) plane_count != sampler->tex_count) {
         msg_Err(filter, "Unexpected plane count (%d) != tex count (%u)",
-                        plane_count, glfmt->tex_count);
+                        plane_count, sampler->tex_count);
         goto error;
     }
 

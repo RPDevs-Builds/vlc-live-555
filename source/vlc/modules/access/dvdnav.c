@@ -65,6 +65,7 @@ dvdnav_status_t dvdnav_jump_to_sector_by_time(dvdnav_t *, uint64_t, int32_t);
 #include "../demux/timestamps_filter.h"
 
 #include "disc_helper.h"
+#include "dvd_description.h"
 
 /*****************************************************************************
  * Module descriptor
@@ -79,6 +80,10 @@ dvdnav_status_t dvdnav_jump_to_sector_by_time(dvdnav_t *, uint64_t, int32_t);
     "will try to skip all the useless warning introductions." )
 
 #define LANGUAGE_DEFAULT ("en")
+
+/* dvdnav_get_active_spu_stream sets this bit when subtitles are hidden
+   and only forced captions should show */
+#define DVDNAV_SPU_HIDDEN 0x80
 
 static int  AccessDemuxOpen ( vlc_object_t * );
 static void Close( vlc_object_t * );
@@ -1675,12 +1680,37 @@ static void ESNew( demux_t *p_demux, int i_id )
             {
                 b_select = true;
             }
+
+            /* Audio track description from code_extension */
+            audio_attr_t audio_attr;
+            if( dvdnav_get_audio_attr( p_sys->dvdnav, i_audio, &audio_attr )
+                == DVDNAV_STATUS_OK )
+            {
+                    if( audio_attr.code_extension < ARRAY_SIZE(dvd_audio_code_ext)
+                    && dvd_audio_code_ext[audio_attr.code_extension] )
+                    tk->fmt.psz_description =
+                        strdup( vlc_gettext( dvd_audio_code_ext[audio_attr.code_extension] ) );
+            }
         }
     }
     else if( tk->fmt.i_cat == SPU_ES )
     {
         int32_t i_title, i_part;
         i_lang = dvdnav_spu_stream_to_lang( p_sys->dvdnav, i_id&0x1f );
+
+        /* Subtitle track description from code_extension */
+        subp_attr_t subp_attr;
+        if( dvdnav_get_spu_attr( p_sys->dvdnav, i_id&0x1f, &subp_attr )
+            == DVDNAV_STATUS_OK )
+        {
+            if( subp_attr.code_extension < ARRAY_SIZE(dvd_spu_code_ext)
+                && dvd_spu_code_ext[subp_attr.code_extension] )
+                tk->fmt.psz_description =
+                    strdup( vlc_gettext( dvd_spu_code_ext[subp_attr.code_extension] ) );
+
+            if( subp_attr.code_extension == DVD_SUBP_CODE_EXT_FORCED )
+                tk->fmt.subs.b_forced = true;
+        }
 
         /* Palette */
         tk->fmt.subs.spu.b_palette = true;
@@ -1689,11 +1719,14 @@ static void ESNew( demux_t *p_demux, int i_id )
         memcpy( tk->fmt.subs.spu.palette, p_sys->clut, sizeof( p_sys->clut ) );
 
         /* We select only when we are not in the menu */
+        int i_active_spu = dvdnav_get_active_spu_stream( p_sys->dvdnav );
         if( dvdnav_current_title_info( p_sys->dvdnav, &i_title, &i_part ) == DVDNAV_STATUS_OK &&
-            i_title > 0 &&
-            dvdnav_get_active_spu_stream( p_sys->dvdnav ) == (i_id&0x1f) )
+            i_title > 0 && i_active_spu != -1 &&
+            (i_active_spu & 0x1f) == (i_id&0x1f) )
         {
             b_select = true;
+            if( i_active_spu & DVDNAV_SPU_HIDDEN )
+                tk->fmt.subs.b_forced = true;
         }
     }
 
