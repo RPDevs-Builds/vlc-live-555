@@ -95,6 +95,14 @@ class DialogsProvider : public QObject, public Singleton<DialogsProvider>
     friend class Singleton<DialogsProvider>;
 
 public:
+    enum Mode
+    {
+        Show,
+        Hide,
+        Toggle
+    };
+    Q_ENUM(Mode)
+
     static DialogsProvider *getInstance()
     {
         const auto instance = Singleton<DialogsProvider>::getInstance<false>();
@@ -189,7 +197,7 @@ public slots:
 #endif
     void helpDialog();
 #if defined(UPDATE_CHECK)
-    void updateDialog();
+    void updateDialog(Mode mode = Toggle);
 #endif
     void aboutDialog();
     void gotoTimeDialog();

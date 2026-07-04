@@ -818,7 +818,8 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/expand.svg \
 	pixmaps/icons/ic_fluent_options.svg \
 	pixmaps/icons/ic_fluent_fast_forward.svg \
-	pixmaps/icons/frame-by-frame.svg \
+	pixmaps/icons/ic_fluent_next_frame.svg \
+	pixmaps/icons/ic_fluent_previous_frame.svg \
 	pixmaps/icons/ic_fluent_full_screen_maximize.svg \
 	pixmaps/icons/ic_fluent_grid.svg \
 	pixmaps/icons/history.svg \
@@ -834,7 +835,7 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/ic_playlist_clear.svg \
 	pixmaps/icons/ic_playlist.svg \
 	pixmaps/icons/ic_fluent_play.svg \
-	pixmaps/icons/play_reverse.svg \
+	pixmaps/icons/ic_fluent_play_reverse_filled.svg \
 	pixmaps/icons/ic_fluent_arrow_move.svg \
 	pixmaps/icons/ic_fluent_chevron_down_24.svg \
 	pixmaps/icons/ic_fluent_chevron_left_24.svg \
@@ -1197,7 +1198,8 @@ libqml_module_playercontrols_a_QML = \
 	player/qml/controlbarcontrols/ExpandingSpacerWidget.qml \
 	player/qml/controlbarcontrols/ExtendedSettingsButton.qml \
 	player/qml/controlbarcontrols/FasterButton.qml \
-	player/qml/controlbarcontrols/FrameButton.qml \
+	player/qml/controlbarcontrols/FrameNextButton.qml \
+	player/qml/controlbarcontrols/FramePrevButton.qml \
 	player/qml/controlbarcontrols/FullscreenButton.qml \
 	player/qml/controlbarcontrols/InfoButton.qml \
 	player/qml/controlbarcontrols/LangButton.qml \

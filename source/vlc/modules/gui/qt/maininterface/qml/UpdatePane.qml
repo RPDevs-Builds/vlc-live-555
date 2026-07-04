@@ -81,14 +81,16 @@ T.Pane {
                     switch (UpdateModel.updateStatus) {
                         case UpdateModel.NeedUpdate:
                             const extra = UpdateModel.extra
-                            return qsTr("A new version of VLC (%1.%2.%3%4) is available.").arg(UpdateModel.major)
-                                                                                          .arg(UpdateModel.minor)
-                                                                                          .arg(UpdateModel.revision)
-                                                                                          .arg(extra === 0 ? "" : "." + extra)
+                            return qsTr("A new version of VLC is available: <font color=\"%1\">%2.%3.%4%5</font>").arg(theme.fg.neutral)
+                                                                                                                  .arg(UpdateModel.major)
+                                                                                                                  .arg(UpdateModel.minor)
+                                                                                                                  .arg(UpdateModel.revision)
+                                                                                                                  .arg(extra === 0 ? "" : "." + extra)
                         case UpdateModel.UpToDate:
-                            return qsTr("You have the latest version of VLC media player.")
+                            return qsTr("You have the latest version of VLC media player: <font color=\"%1\">%2</font>.").arg(theme.accent)
+                                                                                                                         .arg(Application.version)
                         case UpdateModel.CheckFailed:
-                            return qsTr("An error occurred while checking for updates...")
+                            return qsTr("An <font color=\"%1\">error</font> occurred while checking for updates...").arg(theme.fg.negative)
                         case UpdateModel.Checking:
                             return qsTr("Checking for updates...")
                         default:

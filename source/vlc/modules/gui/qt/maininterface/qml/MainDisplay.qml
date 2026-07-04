@@ -683,11 +683,29 @@ FocusScope {
         anchors.right: parent.right
         anchors.bottom: loaderProgress.top
 
-        active: !!UpdateModel && (shouldShow || height > 0.0)
+        readonly property bool updateModelIsAvailable: (typeof UpdateModel !== 'undefined')
+
+        active: updateModelIsAvailable && (shouldShow || height > 0.0)
 
         focus: !!item
 
-        readonly property bool shouldShow: !!UpdateModel && (UpdateModel.updateStatus !== UpdateModel.Unchecked)
+        readonly property bool shouldShow: {
+            if (!updateModelIsAvailable)
+                return false
+
+            if (UpdateModel.explicitCheck) {
+                return (UpdateModel.updateStatus !== UpdateModel.Unchecked)
+            } else {
+                switch (UpdateModel.updateStatus) {
+                    case UpdateModel.Unchecked:
+                    case UpdateModel.Checking:
+                    case UpdateModel.UpToDate:
+                        return false
+                    default:
+                        return true
+                }
+            }
+        }
 
         // This property can be used to enable/disable the animation:
         property alias toggleAnimation: heightBehavior.enabled
@@ -702,8 +720,7 @@ FocusScope {
         }
 
         onActiveChanged: {
-            console.assert(!!UpdateModel)
-            if (!active)
+            if (updateModelIsAvailable && !active)
                 UpdateModel.resetStatus()
         }
 
@@ -773,7 +790,7 @@ FocusScope {
         PIPPlayer {
             id: playerPip
             anchors {
-                bottom: miniPlayer.top
+                bottom: loaderUpdatePane.top
                 left: parent.left
                 bottomMargin: VLCStyle.margin_normal
                 leftMargin: VLCStyle.margin_normal + VLCStyle.applicationHorizontalMargin
@@ -788,7 +805,7 @@ FocusScope {
             dragXMin: 0
             dragXMax: g_mainDisplay.width - playerPip.width
             dragYMin: sourcesBanner.y + sourcesBanner.height
-            dragYMax: miniPlayer.y - playerPip.height
+            dragYMax: loaderUpdatePane.y - playerPip.height
 
             //keep the player visible on resize
             Connections {

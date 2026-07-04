@@ -34,6 +34,8 @@ public:
         ID_ROLE = Qt::UserRole
     };
 
+    //changin the enum order or inserting new ID before the end will break user configuration
+    //RESERVED_0x__ are available for future use, they can be repurposed
     enum ControlType
     {
         PLAY_BUTTON,
@@ -49,7 +51,7 @@ public:
         SNAPSHOT_BUTTON,
         RECORD_BUTTON,
         ATOB_BUTTON,
-        FRAME_BUTTON,
+        FRAME_NEXT_BUTTON,
         SKIP_BACK_BUTTON,
         SKIP_FW_BUTTON,
         QUIT_BUTTON,
@@ -66,6 +68,8 @@ public:
         ARTWORK_INFO,
         PLAYBACK_SPEED_BUTTON,
         HIGH_RESOLUTION_TIME_WIDGET,
+        FRAME_PREV_BUTTON,
+        RESERVED_0X1F,
 
         SPLITTER = 0x20,
         VOLUME,
@@ -78,13 +82,37 @@ public:
         NAVIGATION_BUTTONS,
         PROGRAM_BUTTON,
         NAVIGATION_BOX,
-        SPECIAL_MAX,
+        RESERVED_0X2B,
+        RESERVED_0X2C,
+        RESERVED_0X2D,
+        RESERVED_0X2E,
+        RESERVED_0X2F,
+        RESERVED_0X30,
+        RESERVED_0X31,
+        RESERVED_0X32,
+        RESERVED_0X33,
+        RESERVED_0X34,
+        RESERVED_0X35,
+        RESERVED_0X36,
+        RESERVED_0X37,
+        RESERVED_0X38,
+        RESERVED_0X39,
+        RESERVED_0X3A,
+        RESERVED_0X3B,
+        RESERVED_0X3C,
+        RESERVED_0X3D,
+        RESERVED_0X3E,
+        RESERVED_0X3F,
 
         WIDGET_SPACER = 0x40,
         WIDGET_SPACER_EXTEND,
         WIDGET_MAX,
     };
     Q_ENUM(ControlType)
+
+    static_assert(RESERVED_0X1F == 0x1F, "missaligned");
+    static_assert(RESERVED_0X2B == 0x2B, "missaligned");
+    static_assert(RESERVED_0X3F == 0x3F, "missaligned");
 
     // Basic functionality:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;

@@ -1,8 +1,24 @@
 # live555
 
-LIVE555_VERSION := 2022.07.14
+LIVE555_VERSION := 2026.06.24
 LIVE555_FILE := live.$(LIVE555_VERSION).tar.gz
 LIVEDOTCOM_URL := $(CONTRIB_VIDEOLAN)/live555/$(LIVE555_FILE)
+
+ifdef HAVE_GCC
+# older GCC doesn't support -std=c++20 required for std::atomic_flag
+ifeq ($(call gcc_at_least, 10), true)
+HAVE_LIVE555_CPP20=1
+endif
+else
+ifdef HAVE_CLANG
+# older CLANG doesn't support -std=c++20 required for std::atomic_flag
+ifeq ($(call clang_at_least, 10), true)
+HAVE_LIVE555_CPP20=1
+endif
+else
+HAVE_LIVE555_CPP20=1
+endif
+endif
 
 ifdef BUILD_NETWORK
 ifdef GNUV3
@@ -34,7 +50,7 @@ LIVE_TARGET := mingw
 LIVE_EXTRA_CFLAGS += -DNO_GETIFADDRS=1
 endif
 ifdef HAVE_DARWIN_OS
-LIVE_TARGET := macosx-bigsur
+LIVE_TARGET := macosx-catalina
 endif
 ifdef HAVE_BSD
 LIVE_TARGET := freebsd
@@ -47,59 +63,55 @@ LIVE_TARGET := solaris-32bit
 endif
 endif
 
+live555: UNPACK_DIR=live
 live555: $(LIVE555_FILE) .sum-live555
-	rm -Rf live && $(UNPACK)
+	rm -rf $(UNPACK_DIR)
+	$(UNPACK)
 
 	# Change permissions to patch and sed the source
-	chmod -R u+w live
+	chmod -R u+w $(UNPACK_DIR)
 	# Remove hardcoded cc, c++, ar variables
-	cd live && sed -e 's%cc%$(CC)%' -e 's%c++%$(CXX)%' -e 's%LIBRARY_LINK =.*ar%LIBRARY_LINK = $(AR)%' -i.orig config.$(LIVE_TARGET)
-	# Replace libtool -s by ar cr for macOS only
-	cd live && sed -i.orig -e s/"libtool -s -o"/"ar cr"/g config.macosx*
-	# Add Extra LDFLAGS for macOS
-	cd live && sed -i.orig -e 's%$(CXX)%$(CXX)\ $(EXTRA_LDFLAGS)%' config.macosx*
-	# Add CXXFLAGS for macOS (force libc++)
-	cd live && sed -i.orig -e 's%^\(CPLUSPLUS_FLAGS.*\)$$%\1 '"$(CXXFLAGS)%" config.macosx*
+	sed -e 's%C_COMPILER%#C_COMPILER%' -e 's%CPLUSPLUS_COMPILER%#CPLUSPLUS_COMPILER%' -e 's%LIBRARY_LINK%#LIBRARY_LINK%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
+	# Remove hardcoded --std=c+20 on un supported compilers
+ifndef HAVE_LIVE555_CPP20
+	sed -e 's%std=c++20%std=c++2a -DNO_STD_LIB=1%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
+endif
 	# Add the Extra_CFLAGS to all config files
-	cd live && sed -i.orig \
-		-e 's%^\(COMPILE_OPTS.*\)$$%\1 '"$(LIVE_EXTRA_CFLAGS)%" config.*
+	sed -i.orig \
+		-e 's%^\(COMPILE_OPTS.*\)$$%\1 '"$(LIVE_EXTRA_CFLAGS)%" $(UNPACK_DIR)/config.*
 	# We want 64bits offsets and PIC on Linux
-	cd live && sed -e 's%-D_FILE_OFFSET_BITS=64%-D_FILE_OFFSET_BITS=64\ -fPIC\ -DPIC%' -i.orig config.linux
+	sed -e 's%-D_FILE_OFFSET_BITS=64%-D_FILE_OFFSET_BITS=64\ -fPIC\ -DPIC%' -i.orig $(UNPACK_DIR)/config.linux
 	# Disable Locale for Solaris
-	cd live && sed -e 's%-DSOLARIS%-DSOLARIS -DXLOCALE_NOT_USED%' -i.orig config.solaris-*bit
+	sed -e 's%-DSOLARIS%-DSOLARIS -DXLOCALE_NOT_USED%' -i.orig $(UNPACK_DIR)/config.solaris-*bit
 ifdef HAVE_ANDROID
 	# Disable locale on Android too
-	cd live && sed -e 's%-DPIC%-DPIC -DNO_SSTREAM=1 -DLOCALE_NOT_USED -I$(ANDROID_NDK)/platforms/android-$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)/usr/include%' -i.orig config.linux
+	sed -e 's%-DPIC%-DPIC -DNO_SSTREAM=1 -DLOCALE_NOT_USED -I$(ANDROID_NDK)/platforms/android-$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)/usr/include%' -i.orig $(UNPACK_DIR)/config.linux
 endif
-	mv live live.$(LIVE555_VERSION)
-	# Patch for MSG_NOSIGNAL
-	$(APPLY) $(SRC)/live555/live555-nosignal.patch
 	# Add a pkg-config file
 	$(APPLY) $(SRC)/live555/add-pkgconfig-file.patch
 	# Expose Server:
 	$(APPLY) $(SRC)/live555/expose_server_string.patch
-	# Fix creating static libs on mingw
-	$(APPLY) $(SRC)/live555/mingw-static-libs.patch
 	# FormatMessageA is available on all Windows versions, even WinRT
 	$(APPLY) $(SRC)/live555/live555-formatmessage.patch
 	# ifaddrs.h is supported since API level 24
 	$(APPLY) $(SRC)/live555/android-no-ifaddrs.patch
 	# Don't use unavailable off64_t functions
 	$(APPLY) $(SRC)/live555/file-offset-bits-64.patch
-	cd $(UNPACK_DIR) && sed -i.orig "s,LIBRARY_LINK =.*,LIBRARY_LINK = $(AR) cr ,g" config.macosx*
-	mv live.$(LIVE555_VERSION) $@ && touch $@
+	# disable code built/installed in unused folder
+	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/testProgs/Makefile.tail
+	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/mediaServer/Makefile.tail
+	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/proxyServer/Makefile.tail
+	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/hlsProxy/Makefile.tail
+	$(MOVE)
 
-LIVE555_SUBDIRS=groupsock liveMedia UsageEnvironment BasicUsageEnvironment
+LIVE555_ENV := $(HOSTVARS) C_COMPILER=$(CC) CPLUSPLUS_COMPILER=$(CXX) LIBRARY_LINK="$(AR) cr " \
+	PREFIX=$(PREFIX) DESTDIR= LIBDIR=$(PREFIX)/lib
 
+.live555: BUILD_DIR=$<
 .live555: live555
 	$(REQUIRE_GNUV3)
-	cd $< && for subdir in $(LIVE555_SUBDIRS); do \
-		echo "PREFIX = $(PREFIX)" >> $$subdir/Makefile.head && \
-		echo "LIBDIR = $(PREFIX)/lib" >> $$subdir/Makefile.head ; done
-	cd $< && echo "LIBDIR = $(PREFIX)/lib" >> Makefile.head && \
-		echo "PREFIX = $(PREFIX)" >> Makefile.head
 	cd $< && ./genMakefiles $(LIVE_TARGET)
-	cd $< && for subdir in $(LIVE555_SUBDIRS); do $(MAKE) $(HOSTVARS) -C $$subdir; done
-	cd $< && for subdir in $(LIVE555_SUBDIRS); do $(MAKE) $(HOSTVARS) -C $$subdir install; done
-	$(MAKE) -C $< install_shared_libraries
+	+$(MAKEBUILD) $(LIVE555_ENV)
+	+$(MAKEBUILD) $(LIVE555_ENV) install
+	+$(MAKEBUILD) $(LIVE555_ENV) install_shared_libraries
 	touch $@
