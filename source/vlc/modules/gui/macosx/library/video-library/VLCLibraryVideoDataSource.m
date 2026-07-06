@@ -564,7 +564,7 @@ NSString * const VLCLibraryVideoDataSourceDisplayedCollectionChangedNotification
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
     VLCLibraryCollectionViewItem * const viewItem =
-        [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier forIndexPath:indexPath];
     const VLCMediaLibraryParentGroupType parentType = [self rowToVideoGroup:indexPath.section];
     const id<VLCMediaLibraryItemProtocol> item =
         [self libraryItemAtIndexPath:indexPath forCollectionView:collectionView];

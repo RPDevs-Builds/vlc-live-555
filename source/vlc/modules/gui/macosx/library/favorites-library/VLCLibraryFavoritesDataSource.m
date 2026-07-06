@@ -466,7 +466,8 @@ NSString * const VLCLibraryFavoritesDataSourceDisplayedCollectionChangedNotifica
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
     VLCLibraryCollectionViewItem * const viewItem =
-        [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier
+                                  forIndexPath:indexPath];
     
     const VLCLibraryFavoritesSection section = [self sectionForVisibleIndex:indexPath.section];
     const VLCMediaLibraryParentGroupType parentType = [self parentTypeForSection:section];

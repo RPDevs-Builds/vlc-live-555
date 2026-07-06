@@ -366,9 +366,22 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     [self.firstMediaItem revealInFinder];
 }
 
+- (void)enumerateMediaItemsWithBlock:(nonnull void (^)(VLCMediaLibraryMediaItem * _Nonnull, BOOL * _Nonnull))mediaItemBlock
+{
+    for (VLCMediaLibraryMediaItem * const item in self.mediaItems) {
+        BOOL stop = NO;
+        mediaItemBlock(item, &stop);
+        if (stop) {
+            break;
+        }
+    }
+}
+
 - (void)iterateMediaItemsWithBlock:(nonnull void (^)(VLCMediaLibraryMediaItem * _Nonnull))mediaItemBlock
 {
-    [self doesNotRecognizeSelector:_cmd];
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    }];
 }
 
 - (NSArray<NSString *> *)labels
@@ -582,8 +595,28 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 
 - (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
 {
-    for(VLCMediaLibraryAlbum* album in self.albums) {
-        [album iterateMediaItemsWithBlock:mediaItemBlock];
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    }];
+}
+
+- (void)enumerateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem *item, BOOL *stop))mediaItemBlock
+{
+    __block BOOL shouldStop = NO;
+    for (VLCMediaLibraryAlbum * const album in self.albums) {
+        if (shouldStop) {
+            break;
+        }
+        [album enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+            if (shouldStop) {
+                *stop = YES;
+                return;
+            }
+            mediaItemBlock(item, stop);
+            if (*stop) {
+                shouldStop = YES;
+            }
+        }];
     }
 }
 
@@ -708,13 +741,6 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     return self.genres.firstObject;
 }
 
-- (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
-{
-    for(VLCMediaLibraryMediaItem* mediaItem in self.mediaItems) {
-        mediaItemBlock(mediaItem);
-    }
-}
-
 - (int)setFavorite:(BOOL)favorite
 {
     const int res = setFavoriteForLibraryItem(vlc_ml_album_set_favorite, self.libraryID, favorite);
@@ -805,10 +831,25 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 - (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
 {
     // By default iterate album-by-album
-    [self iterateMediaItemsWithBlock:mediaItemBlock orderedBy:VLC_ML_PARENT_ALBUM];
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    } orderedBy:VLC_ML_PARENT_ALBUM];
+}
+
+- (void)enumerateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem *item, BOOL *stop))mediaItemBlock
+{
+    [self enumerateMediaItemsWithBlock:mediaItemBlock orderedBy:VLC_ML_PARENT_ALBUM];
 }
 
 - (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock orderedBy:(int)mediaItemParentType
+{
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    } orderedBy:mediaItemParentType];
+}
+
+- (void)enumerateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem *item, BOOL *stop))mediaItemBlock
+                       orderedBy:(int)mediaItemParentType
 {
     NSArray<id<VLCMediaLibraryItemProtocol>> *childItems;
     switch(mediaItemParentType) {
@@ -824,8 +865,21 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
             break;
     }
 
-    for(id<VLCMediaLibraryItemProtocol> childItem in childItems) {
-        [childItem iterateMediaItemsWithBlock:mediaItemBlock];
+    __block BOOL shouldStop = NO;
+    for (id<VLCMediaLibraryItemProtocol> const childItem in childItems) {
+        if (shouldStop) {
+            break;
+        }
+        [childItem enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+            if (shouldStop) {
+                *stop = YES;
+                return;
+            }
+            mediaItemBlock(item, stop);
+            if (*stop) {
+                shouldStop = YES;
+            }
+        }];
     }
 }
 
@@ -922,13 +976,6 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     return self.groupMediaItems;
 }
 
-- (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
-{
-    for (VLCMediaLibraryMediaItem * const item in self.mediaItems) {
-        [item iterateMediaItemsWithBlock:mediaItemBlock];
-    }
-}
-
 @end
 
 @interface VLCMediaLibraryPlaylist ()
@@ -963,7 +1010,8 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
         self.libraryID = p_playlist->i_id;
         self.smallArtworkMRL = toNSStr(p_playlist->psz_artwork_mrl);
         self.displayString = toNSStr(p_playlist->psz_name);
-        self.primaryDetailString = [NSString stringWithFormat:@"%u items", p_playlist->i_nb_media];
+        const unsigned int numberOfMedia = p_playlist->i_nb_media;
+        self.primaryDetailString = numberOfMedia == 0 ? _NS("No item") : _NPS("%u item", "%u items", numberOfMedia);
         self.durationString = [NSString stringWithTime:p_playlist->i_duration / VLCMediaLibraryMediaItemDurationDenominator];
 
         _MRL = toNSStr(p_playlist->psz_mrl);
@@ -1128,17 +1176,6 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     NSURL * const URL = [NSURL URLWithString:_MRL];
     if (URL) {
         [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[URL]];
-    }
-}
-
-- (void)iterateMediaItemsWithBlock:(nonnull void (^)(VLCMediaLibraryMediaItem * _Nonnull))mediaItemBlock
-{
-    if (self.mediaItems == nil) {
-        [self fetchMediaItems];
-    }
-
-    for(VLCMediaLibraryMediaItem * const item in self.mediaItems) {
-        mediaItemBlock(item);
     }
 }
 
@@ -1552,7 +1589,15 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 
 - (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
 {
-    mediaItemBlock(self);
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    }];
+}
+
+- (void)enumerateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem *item, BOOL *stop))mediaItemBlock
+{
+    BOOL stop = NO;
+    mediaItemBlock(self, &stop);
 }
 
 #pragma mark - preference setters / getters
@@ -1872,13 +1917,6 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     return self.episodes;
 }
 
-- (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
-{
-    for (VLCMediaLibraryMediaItem * const item in self.mediaItems) {
-        mediaItemBlock(item);
-    }
-}
-
 @end
 
 @implementation VLCMediaLibraryMovie
@@ -1912,13 +1950,6 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 - (VLCMediaLibraryMediaItem *)firstMediaItem
 {
     return self.mediaItems.firstObject;
-}
-
-- (void)iterateMediaItemsWithBlock:(void (^)(VLCMediaLibraryMediaItem*))mediaItemBlock
-{
-    for (VLCMediaLibraryMediaItem *item in self.mediaItems) {
-        mediaItemBlock(item);
-    }
 }
 
 @end
@@ -2017,8 +2048,19 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 
 - (void)iterateMediaItemsWithBlock:(nonnull void (^)(VLCMediaLibraryMediaItem * _Nonnull))mediaItemBlock
 {
-     for (VLCMediaLibraryMediaItem * const childItem in self.mediaItems) {
-        mediaItemBlock(childItem);
+    [self enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+        mediaItemBlock(item);
+    }];
+}
+
+- (void)enumerateMediaItemsWithBlock:(nonnull void (^)(VLCMediaLibraryMediaItem * _Nonnull, BOOL * _Nonnull))mediaItemBlock
+{
+    for (VLCMediaLibraryMediaItem * const childItem in self.mediaItems) {
+        BOOL stop = NO;
+        mediaItemBlock(childItem, &stop);
+        if (stop) {
+            break;
+        }
     }
 }
 

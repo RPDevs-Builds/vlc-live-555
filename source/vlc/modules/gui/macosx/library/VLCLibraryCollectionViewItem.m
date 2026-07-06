@@ -1,9 +1,10 @@
 /*****************************************************************************
  * VLCLibraryCollectionViewItem.m: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2019 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
  * Authors: Felix Paul Kühne <fkuehne # videolan -dot- org>
+ *          Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,84 +23,44 @@
 
 #import "VLCLibraryCollectionViewItem.h"
 
-#import "extensions/NSString+Helpers.h"
-#import "extensions/NSFont+VLCAdditions.h"
 #import "extensions/NSColor+VLCAdditions.h"
-#import "extensions/NSView+VLCAdditions.h"
+#import "extensions/NSString+Helpers.h"
 
 #import "library/VLCLibraryCollectionViewDataSource.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
-#import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryImageCache.h"
-#import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryMenuController.h"
+#import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryRepresentedItem.h"
-#import "library/VLCLibraryUIUnits.h"
-
-#import "main/VLCMain.h"
 
 #import "views/VLCImageView.h"
 #import "views/VLCLinearProgressIndicator.h"
+#import "views/VLCMediaItemCollectionViewItem.h"
 #import "views/VLCTrackingView.h"
 
-#import <vlc_configuration.h>
+NSString *VLCLibraryCollectionViewItemIdentifier = @"VLCLibraryCollectionViewItemIdentifier";
 
-NSString *VLCLibraryCellIdentifier = @"VLCLibraryCellIdentifier";
-const CGFloat VLCLibraryCollectionViewItemMinimalDisplayedProgress = 0.05;
-const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
-
-@interface VLCLibraryCollectionViewItem()
+@interface VLCLibraryCollectionViewItem ()
 {
     VLCLibraryMenuController *_menuController;
     NSLayoutConstraint *_videoImageViewAspectRatioConstraint;
 }
-
 @end
 
 @implementation VLCLibraryCollectionViewItem
 
-+ (const NSSize)defaultSize
-{
-    const CGFloat width = VLCLibraryCollectionViewItem.defaultWidth;
-    return CGSizeMake(width, width + self.bottomTextViewsHeight);
-}
-
-+ (const NSSize)defaultVideoItemSize
-{
-    const CGFloat width = VLCLibraryCollectionViewItem.defaultWidth;
-    const CGFloat imageViewHeight = width * [VLCLibraryCollectionViewItem videoHeightAspectRatioMultiplier];
-    return CGSizeMake(width, imageViewHeight + self.bottomTextViewsHeight);
-}
-
-+ (const CGFloat)defaultWidth
-{
-    return 214.;
-}
-
-+ (const CGFloat)bottomTextViewsHeight
-{
-    return VLCLibraryUIUnits.smallSpacing +
-           16 +
-           VLCLibraryUIUnits.smallSpacing +
-           16 +
-           VLCLibraryUIUnits.smallSpacing;
-}
-
-+ (const CGFloat)videoHeightAspectRatioMultiplier
-{
-    return 10. / 16.;
-}
+@synthesize representedItem = _representedItem;
 
 - (instancetype)initWithNibName:(NSNibName)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
 {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
-        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
-        [notificationCenter addObserver:self
-                               selector:@selector(mediaItemThumbnailGenerated:)
-                                   name:VLCLibraryModelMediaItemThumbnailGenerated
-                                 object:nil];
+        NSNotificationCenter * const nc = NSNotificationCenter.defaultCenter;
+        [nc addObserver:self
+               selector:@selector(mediaItemThumbnailGenerated:)
+                   name:VLCLibraryModelMediaItemThumbnailGenerated
+                 object:nil];
     }
     return self;
 }
@@ -111,134 +72,87 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 - (void)awakeFromNib
 {
-    _deselectWhenClickedIfSelected = YES;
-    _videoImageViewAspectRatioConstraint = [NSLayoutConstraint constraintWithItem:_mediaImageView
+    self.deselectWhenClickedIfSelected = YES;
+    _videoImageViewAspectRatioConstraint = [NSLayoutConstraint constraintWithItem:self.mediaImageView
                                                                         attribute:NSLayoutAttributeHeight
                                                                         relatedBy:NSLayoutRelationEqual
-                                                                        toItem:_mediaImageView
+                                                                        toItem:self.mediaImageView
                                                                         attribute:NSLayoutAttributeWidth
-                                                                       multiplier:[VLCLibraryCollectionViewItem videoHeightAspectRatioMultiplier]
+                                                                       multiplier:VLCLibraryUIUnits.videoItemCollectionViewImageViewAspectRatioMultiplier
                                                                         constant:1];
     _videoImageViewAspectRatioConstraint.priority = NSLayoutPriorityRequired;
     _videoImageViewAspectRatioConstraint.active = NO;
 
-    if (@available(macOS 26.0, *)) {
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 260000
-        self.playInstantlyButton.bordered = YES;
-        self.playInstantlyButton.bezelStyle = NSBezelStyleGlass;
-        self.playInstantlyButton.borderShape = NSControlBorderShapeCircle;
-        self.playInstantlyButton.image = [NSImage imageWithSystemSymbolName:@"play.fill" accessibilityDescription:nil];
-        self.playInstantlyButton.imageScaling = NSImageScaleProportionallyUpOrDown;
-        self.playInstantlyButton.controlSize = NSControlSizeExtraLarge;
-        [NSLayoutConstraint activateConstraints:@[
-            [self.playInstantlyButton.widthAnchor constraintEqualToConstant:VLCLibraryUIUnits.mediumPlaybackControlButtonSize],
-            [self.playInstantlyButton.heightAnchor constraintEqualToConstant:VLCLibraryUIUnits.mediumPlaybackControlButtonSize],
-        ]];
+    [super awakeFromNib];
 
-        self.addToPlayQueueButton.bordered = YES;
-        self.addToPlayQueueButton.bezelStyle = NSBezelStyleGlass;
-        self.addToPlayQueueButton.borderShape = NSControlBorderShapeCapsule;
-        self.addToPlayQueueButton.image = [NSImage imageWithSystemSymbolName:@"ellipsis" accessibilityDescription:nil];
-        self.addToPlayQueueButton.imageScaling = NSImageScaleProportionallyUpOrDown;
-        self.addToPlayQueueButton.controlSize = NSControlSizeSmall;
-#endif
-    }
-
-    [(VLCTrackingView *)self.view setViewsToHide:@[self.playInstantlyButton, self.addToPlayQueueButton]];
     self.secondaryInfoTextField.textColor = NSColor.VLClibrarySubtitleColor;
-    self.annotationTextField.font = NSFont.VLCLibraryItemAnnotationFont;
-    self.annotationTextField.textColor = NSColor.VLClibraryAnnotationColor;
-    self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
     self.unplayedIndicatorTextField.stringValue = _NS("NEW");
     self.unplayedIndicatorTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
-    self.highlightBox.borderColor = NSColor.VLCAccentColor;
     self.unplayedIndicatorTextField.textColor = NSColor.VLCAccentColor;
-
-    [self updateColoredAppearance:self.view.effectiveAppearance];
-    [self prepareForReuse];
 }
-
-#pragma mark - dynamic appearance
-
-- (void)viewDidChangeEffectiveAppearance
-{
-    [self updateColoredAppearance:self.view.effectiveAppearance];
-}
-
-- (void)updateColoredAppearance:(NSAppearance*)appearance
-{
-    NSParameterAssert(appearance);
-    BOOL isDark = NO;
-    if (@available(macOS 10.14, *)) {
-        isDark = [appearance.name isEqualToString:NSAppearanceNameDarkAqua] || [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
-    }
-
-    self.mediaTitleTextField.textColor = isDark ? NSColor.VLClibraryDarkTitleColor : NSColor.VLClibraryLightTitleColor;
-}
-
-#pragma mark - view representation
 
 - (void)prepareForReuse
 {
     [super prepareForReuse];
-    self.playInstantlyButton.hidden = YES;
-    self.addToPlayQueueButton.hidden = YES;
-    _mediaTitleTextField.stringValue = @"";
-    _secondaryInfoTextField.stringValue = [NSString stringWithTime:0];
-    _mediaImageView.image = nil;
-    _annotationTextField.hidden = YES;
-    _progressIndicator.hidden = YES;
-    _highlightBox.hidden = YES;
-
+    self.secondaryInfoTextField.stringValue = [NSString stringWithTime:0];
+    self.progressIndicator.hidden = YES;
     [self setUnplayedIndicatorHidden:YES];
 }
 
 - (void)setRepresentedItem:(VLCLibraryRepresentedItem *)representedItem
 {
+    if (_representedItem == representedItem) {
+        return;
+    }
     _representedItem = representedItem;
     [self updateRepresentation];
 }
 
 - (void)setSelected:(BOOL)selected
 {
-    super.selected = selected;
-    _highlightBox.hidden = !selected;
+    [super setSelected:selected];
 }
 
 - (void)mediaItemThumbnailGenerated:(NSNotification *)aNotification
 {
-    VLCMediaLibraryMediaItem *updatedMediaItem = aNotification.object;
-    if (updatedMediaItem == nil || _representedItem == nil || ![_representedItem isKindOfClass:[VLCMediaLibraryMediaItem class]]) {
+    VLCMediaLibraryMediaItem * const updatedMediaItem = aNotification.object;
+    VLCLibraryRepresentedItem * const representedItem = self.representedItem;
+    if (updatedMediaItem == nil || representedItem == nil ||
+        ![representedItem.item isKindOfClass:VLCMediaLibraryMediaItem.class]) {
         return;
     }
-
-    VLCMediaLibraryMediaItem *mediaItem = (VLCMediaLibraryMediaItem *)_representedItem;
-    if(mediaItem && updatedMediaItem.libraryID == mediaItem.libraryID) {
+    VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)representedItem.item;
+    if (updatedMediaItem.libraryID == mediaItem.libraryID) {
         [self updateRepresentation];
     }
 }
 
 - (void)updateRepresentation
 {
-    NSAssert(self.representedItem != nil, @"no item assigned for collection view item", nil);
+    VLCLibraryRepresentedItem * const libraryItem = self.representedItem;
+    if (libraryItem == nil) {
+        return;
+    }
+    id<VLCMediaLibraryItemProtocol> const actualItem = libraryItem.item;
 
-    const id<VLCMediaLibraryItemProtocol> actualItem = self.representedItem.item;
     self.mediaTitleTextField.stringValue = actualItem.displayString;
     self.secondaryInfoTextField.stringValue = actualItem.primaryDetailString;
+    self.secondaryInfoTextField.hidden = NO;
 
     __weak typeof(self) weakSelf = self;
     [VLCLibraryImageCache thumbnailForLibraryItem:actualItem
                                    withCompletion:^(NSImage * const thumbnail) {
-        if (!weakSelf || weakSelf.representedItem.item != actualItem) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.representedItem != libraryItem) {
             return;
         }
-        weakSelf.mediaImageView.image = thumbnail;
+        strongSelf.mediaImageView.image = thumbnail;
     }];
 
     if ([actualItem isKindOfClass:VLCMediaLibraryMediaItem.class]) {
         VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)actualItem;
 
-        if (mediaItem.mediaType == VLC_ML_MEDIA_TYPE_VIDEO || 
+        if (mediaItem.mediaType == VLC_ML_MEDIA_TYPE_VIDEO ||
             mediaItem.mediaType == VLC_ML_MEDIA_TYPE_UNKNOWN) {
             VLCMediaLibraryTrack * const videoTrack = mediaItem.firstVideoTrack;
             NSString * const resolutionLabel = videoTrack.resolutionLabel;
@@ -258,8 +172,8 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
         }
 
         const CGFloat position = mediaItem.progress;
-        if (position > VLCLibraryCollectionViewItemMinimalDisplayedProgress &&
-            position < VLCLibraryCollectionViewItemMaximumDisplayedProgress) {
+        if (position > VLCMediaItemCollectionViewItemMinimalDisplayedProgress &&
+            position < VLCMediaItemCollectionViewItemMaximumDisplayedProgress) {
             self.progressIndicator.progress = position;
             self.progressIndicator.hidden = NO;
         }
@@ -278,14 +192,12 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 - (void)setUnplayedIndicatorHidden:(BOOL)indicatorHidden
 {
-    if (_unplayedIndicatorTextField.hidden == indicatorHidden) {
+    if (self.unplayedIndicatorTextField.hidden == indicatorHidden) {
         return;
     }
-
-    _unplayedIndicatorTextField.hidden = indicatorHidden;
-
-    _trailingSecondaryTextToLeadingUnplayedIndicatorConstraint.active = !indicatorHidden;
-    _trailingSecondaryTextToTrailingSuperviewConstraint.active = indicatorHidden;
+    self.unplayedIndicatorTextField.hidden = indicatorHidden;
+    self.trailingSecondaryTextToLeadingUnplayedIndicatorConstraint.active = !indicatorHidden;
+    self.trailingSecondaryTextToTrailingSuperviewConstraint.active = indicatorHidden;
 }
 
 #pragma mark - actions
@@ -305,67 +217,59 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
     if (!_menuController) {
         _menuController = [[VLCLibraryMenuController alloc] init];
     }
-
     NSCollectionView * const collectionView = self.collectionView;
+    id const dataSource = collectionView.dataSource;
     Protocol * const vlcDataSourceProtocol = @protocol(VLCLibraryCollectionViewDataSource);
-
-    if([collectionView.dataSource conformsToProtocol:vlcDataSourceProtocol]) {
-        NSObject<VLCLibraryCollectionViewDataSource> * const dataSource = 
-            (NSObject<VLCLibraryCollectionViewDataSource> *)collectionView.dataSource;
-        NSSet<NSIndexPath *> * const indexPaths = collectionView.selectionIndexPaths;
-        NSArray<VLCLibraryRepresentedItem *> * const selectedItems =
-            [dataSource representedItemsAtIndexPaths:indexPaths forCollectionView:collectionView];
-        const NSInteger representedItemIndex = [selectedItems indexOfObjectPassingTest:^BOOL(
-            VLCLibraryRepresentedItem * const repItem, const NSUInteger __unused idx, BOOL * const __unused stop
-        ) {
-            return repItem.item.libraryID == self.representedItem.item.libraryID;
-        }];
-        NSArray<VLCLibraryRepresentedItem *> *items = nil;
-
-        if (representedItemIndex == NSNotFound) {
-            items = @[self.representedItem];
-        } else {
-            items = selectedItems;
-        }
-
-        _menuController.representedItems = items;
-    } else {
-        _menuController.representedItems = @[self.representedItem];
+    if (![dataSource conformsToProtocol:vlcDataSourceProtocol]) {
+        return;
     }
-
+    NSObject<VLCLibraryCollectionViewDataSource> * const libraryDataSource =
+        (NSObject<VLCLibraryCollectionViewDataSource> *)dataSource;
+    NSSet<NSIndexPath *> * const indexPaths = collectionView.selectionIndexPaths;
+    NSArray<VLCLibraryRepresentedItem *> * const selectedItems =
+        [libraryDataSource representedItemsAtIndexPaths:indexPaths
+                                      forCollectionView:collectionView];
+    const NSInteger representedItemIndex = [selectedItems indexOfObjectPassingTest:^BOOL(
+        VLCLibraryRepresentedItem * const repItem, const NSUInteger __unused idx, BOOL * const __unused stop
+    ) {
+        return [repItem isEqual:self.representedItem];
+    }];
+    NSArray<VLCLibraryRepresentedItem *> *items = nil;
+    if (representedItemIndex == NSNotFound) {
+        items = @[self.representedItem];
+    } else {
+        items = selectedItems;
+    }
+    _menuController.representedItems = items;
     [_menuController popupMenuWithEvent:event forView:self.view];
 }
 
--(void)mouseDown:(NSEvent *)event
+- (void)mouseDown:(NSEvent *)event
 {
     if (event.modifierFlags & NSEventModifierFlagControl) {
         [self openContextMenu:event];
-    } else if (self.deselectWhenClickedIfSelected && 
-               self.selected &&
-               [self.collectionView.dataSource conformsToProtocol:@protocol(VLCLibraryCollectionViewDataSource)]) {
-        NSObject<VLCLibraryCollectionViewDataSource> * const dataSource = (NSObject<VLCLibraryCollectionViewDataSource> *)self.collectionView.dataSource;
-        NSIndexPath * const indexPath = [dataSource indexPathForLibraryItem:self.representedItem.item];
+        return;
+    }
+    if (self.deselectWhenClickedIfSelected &&
+        self.selected &&
+        [self.collectionView.dataSource conformsToProtocol:@protocol(VLCLibraryCollectionViewDataSource)]) {
+        NSObject<VLCLibraryCollectionViewDataSource> * const libraryDataSource =
+            (NSObject<VLCLibraryCollectionViewDataSource> *)self.collectionView.dataSource;
+        NSIndexPath * const indexPath = [libraryDataSource indexPathForLibraryItem:self.representedItem.item];
         if (indexPath == nil) {
             NSLog(@"Received nil indexPath for item %@!", self.representedItem.item.displayString);
+            [super mouseDown:event];
             return;
         }
-
         NSSet<NSIndexPath *> * const indexPathSet = [NSSet setWithObject:indexPath];
         [self.collectionView deselectItemsAtIndexPaths:indexPathSet];
-        
         if ([self.collectionView.collectionViewLayout isKindOfClass:[VLCLibraryCollectionViewFlowLayout class]]) {
-            VLCLibraryCollectionViewFlowLayout * const flowLayout = (VLCLibraryCollectionViewFlowLayout *)self.collectionView.collectionViewLayout;
+            VLCLibraryCollectionViewFlowLayout * const flowLayout =
+                (VLCLibraryCollectionViewFlowLayout *)self.collectionView.collectionViewLayout;
             [flowLayout collapseDetailSectionAtIndex:indexPath];
         }
     }
-
     [super mouseDown:event];
-}
-
-- (void)rightMouseDown:(NSEvent *)event
-{
-    [self openContextMenu:event];
-    [super rightMouseDown:event];
 }
 
 @end

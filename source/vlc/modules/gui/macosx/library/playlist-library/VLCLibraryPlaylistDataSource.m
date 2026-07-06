@@ -279,7 +279,7 @@ typedef NS_ENUM(NSInteger, VLCLibraryDataSourceCacheAction) {
 - (void)setupCollectionView:(NSCollectionView *)collectionView
 {
     [collectionView registerClass:VLCLibraryCollectionViewItem.class
-            forItemWithIdentifier:VLCLibraryCellIdentifier];
+            forItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier];
     [collectionView registerClass:VLCLibraryCollectionViewSupplementaryElementView.class
        forSupplementaryViewOfKind:NSCollectionElementKindSectionHeader
                    withIdentifier:VLCLibrarySupplementaryElementViewIdentifier];
@@ -311,8 +311,9 @@ typedef NS_ENUM(NSInteger, VLCLibraryDataSourceCacheAction) {
 - (NSCollectionViewItem *)collectionView:(NSCollectionView *)collectionView
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
-    VLCLibraryCollectionViewItem * const viewItem = [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier
-                                                                              forIndexPath:indexPath];
+    VLCLibraryCollectionViewItem * const viewItem =
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier
+                                  forIndexPath:indexPath];
     const id<VLCMediaLibraryItemProtocol> libraryItem = self.playlists[indexPath.item];
     // NOTE: Unknown parent type represented items default to playing the represented item only.
     // We want this behaviour as it feels unnatural to handle any parent types for playlists

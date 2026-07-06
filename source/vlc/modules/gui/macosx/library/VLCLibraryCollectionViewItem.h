@@ -1,9 +1,10 @@
 /*****************************************************************************
  * VLCLibraryCollectionViewItem.h: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2019 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
  * Authors: Felix Paul Kühne <fkuehne # videolan -dot- org>
+ *          Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,42 +21,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import <Cocoa/Cocoa.h>
+#import "views/VLCMediaItemCollectionViewItem.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class VLCImageView;
-@class VLCLinearProgressIndicator;
 @class VLCLibraryRepresentedItem;
-@protocol VLCMediaLibraryItemProtocol;
 
-extern NSString *VLCLibraryCellIdentifier;
+extern NSString *VLCLibraryCollectionViewItemIdentifier;
 
-@interface VLCLibraryCollectionViewItem : NSCollectionViewItem
+@interface VLCLibraryCollectionViewItem : VLCMediaItemCollectionViewItem
 
-// NOTE: These will need to be changed after changes to XIB
-@property (class, readonly) const NSSize defaultSize;
-@property (class, readonly) const NSSize defaultVideoItemSize;
-@property (class, readonly) const CGFloat defaultWidth;
-@property (class, readonly) const CGFloat bottomTextViewsHeight;
-@property (class, readonly) const CGFloat videoHeightAspectRatioMultiplier;
-
-@property (readwrite, assign) BOOL deselectWhenClickedIfSelected;
-
-@property (readwrite, weak) IBOutlet NSTextField *mediaTitleTextField;
-@property (readwrite, weak) IBOutlet NSTextField *annotationTextField;
-@property (readwrite, weak) IBOutlet NSTextField *unplayedIndicatorTextField;
-@property (readwrite, weak) IBOutlet NSTextField *secondaryInfoTextField;
-@property (readwrite, weak) IBOutlet VLCImageView *mediaImageView;
-@property (readwrite, weak) IBOutlet NSButton *playInstantlyButton;
-@property (readwrite, weak) IBOutlet NSButton *addToPlayQueueButton;
-@property (readwrite, weak) IBOutlet VLCLinearProgressIndicator *progressIndicator;
-@property (readwrite, weak) IBOutlet NSBox *highlightBox;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *imageViewAspectRatioConstraint;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *trailingSecondaryTextToLeadingUnplayedIndicatorConstraint;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *trailingSecondaryTextToTrailingSuperviewConstraint;
-
-@property (readwrite, retain, nonatomic) VLCLibraryRepresentedItem *representedItem;
+@property (readwrite, strong, nonatomic, nullable) VLCLibraryRepresentedItem *representedItem;
 
 @end
 

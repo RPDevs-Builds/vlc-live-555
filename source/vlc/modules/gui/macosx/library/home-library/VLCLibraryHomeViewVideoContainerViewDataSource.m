@@ -267,8 +267,8 @@ NSString * const VLCLibraryVideoCollectionViewDataSourceDisplayedCollectionChang
     self.collectionView.dataSource = self;
     self.carouselView.dataSource = self;
 
-    [self.collectionView registerClass:[VLCLibraryCollectionViewItem class]
-             forItemWithIdentifier:VLCLibraryCellIdentifier];
+    [self.collectionView registerClass:VLCLibraryCollectionViewItem.class
+                 forItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier];
 
     [self.collectionView registerClass:[VLCLibraryCollectionViewSupplementaryElementView class]
         forSupplementaryViewOfKind:NSCollectionElementKindSectionHeader
@@ -298,7 +298,9 @@ NSString * const VLCLibraryVideoCollectionViewDataSourceDisplayedCollectionChang
 - (NSCollectionViewItem *)collectionView:(NSCollectionView *)collectionView
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
-    VLCLibraryCollectionViewItem * const viewItem = [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+    VLCLibraryCollectionViewItem * const viewItem =
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier
+                                  forIndexPath:indexPath];
     const id<VLCMediaLibraryItemProtocol> item = self.collectionArray[indexPath.item];
     VLCLibraryRepresentedItem * const representedItem = [[VLCLibraryRepresentedItem alloc] initWithItem:item parentType:self.groupDescriptor.group];
 

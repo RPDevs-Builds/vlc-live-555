@@ -275,43 +275,61 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
         ![libraryItem isKindOfClass:VLCMediaLibraryMediaItem.class]) {
 
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
-            NSMutableArray<NSImage *> * const itemImages = [NSMutableArray array];
-            dispatch_group_t const group = dispatch_group_create();
+            NSMutableSet<NSString *> * const seenMRLs = NSMutableSet.set;
+            NSMutableArray<VLCMediaLibraryMediaItem *> * const uniqueItems =
+                [NSMutableArray arrayWithCapacity:kVLCCompositeImageDefaultCompositedGridItemCount];
 
-            [libraryItem iterateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item) {
-                dispatch_group_enter(group);
-                [cache imageForLibraryItem:item withCompletion:^(const NSImage * thumbnail) {
-                    NSImage * const mutableRef = (NSImage *)thumbnail;
-                    @synchronized (itemImages) {
-                        if (mutableRef && ![mutableRef isEqual:cache->_noArtImage]) {
-                            [itemImages addObject:mutableRef];
-                        }
-                    }
-                    dispatch_group_leave(group);
-                }];
+            [libraryItem enumerateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item, BOOL * const stop) {
+                if (uniqueItems.count == (NSUInteger)kVLCCompositeImageDefaultCompositedGridItemCount) {
+                    *stop = YES;
+                    return;
+                }
+                NSString * const mrl = item.smallArtworkMRL;
+                if (mrl == nil || [seenMRLs containsObject:mrl]) {
+                    return;
+                }
+                [seenMRLs addObject:mrl];
+                [uniqueItems addObject:item];
             }];
 
-            dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
-
-            NSArray<NSImage *> *uniqueImages;
-            @synchronized (itemImages) {
-                uniqueImages = [NSOrderedSet orderedSetWithArray:itemImages].array;
-            }
-
-            if (uniqueImages.count == 0) {
+            if (uniqueItems.count == 0) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     completionHandler(cache->_noArtImage);
                 });
                 return;
             }
 
-            const NSSize size = NSMakeSize(kVLCDesiredThumbnailWidth, kVLCDesiredThumbnailHeight);
-            NSArray<NSValue *> * const frames =
-                [NSImage framesForCompositeImageSquareGridWithImages:uniqueImages size:size gridItemCount:kVLCCompositeImageDefaultCompositedGridItemCount];
-            NSImage * const compositeImage =
-                [NSImage compositeImageWithImages:uniqueImages frames:frames size:size];
+            NSMutableArray<NSImage *> * const itemImages =
+                [NSMutableArray arrayWithCapacity:uniqueItems.count];
+            dispatch_group_t const group = dispatch_group_create();
 
-            dispatch_async(dispatch_get_main_queue(), ^{
+            for (VLCMediaLibraryMediaItem * const item in uniqueItems) {
+                dispatch_group_enter(group);
+                [cache imageForLibraryItem:item withCompletion:^(const NSImage * thumbnail) {
+                    NSImage * const mutableRef = (NSImage *)thumbnail;
+                    if (mutableRef && ![mutableRef isEqual:cache->_noArtImage]) {
+                        @synchronized (itemImages) {
+                            [itemImages addObject:mutableRef];
+                        }
+                    }
+                    dispatch_group_leave(group);
+                }];
+            }
+
+            dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+                if (itemImages.count == 0) {
+                    completionHandler(cache->_noArtImage);
+                    return;
+                }
+
+                const NSSize size = NSMakeSize(kVLCDesiredThumbnailWidth, kVLCDesiredThumbnailHeight);
+                NSArray<NSValue *> * const frames =
+                    [NSImage framesForCompositeImageSquareGridWithImages:itemImages
+                                                                    size:size
+                                                           gridItemCount:kVLCCompositeImageDefaultCompositedGridItemCount];
+                NSImage * const compositeImage =
+                    [NSImage compositeImageWithImages:itemImages frames:frames size:size];
+
                 completionHandler(compositeImage);
             });
         });

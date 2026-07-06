@@ -38,17 +38,16 @@
 #import "library/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewMediaItemSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewSupplementaryElementView.h"
-
-#import "library/audio-library/VLCLibraryCollectionViewAudioGroupSupplementaryDetailView.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryModel.h"
+#import "library/VLCLibrarySectionedTableViewDelegate.h"
 #import "library/VLCLibraryTableCellView.h"
 #import "library/VLCLibraryTableView.h"
 #import "library/VLCLibraryUIUnits.h"
-
-#import "library/VLCLibrarySectionedTableViewDelegate.h"
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryWindowPersistentPreferences.h"
+
+#import "library/audio-library/VLCLibraryCollectionViewAudioGroupSupplementaryDetailView.h"
 
 #import "main/VLCMain.h"
 
@@ -134,11 +133,11 @@
 
     _collectionViewDelegate = [[VLCLibraryCollectionViewDelegate alloc] init];
     self.collectionViewDelegate.itemsAspectRatio = VLCLibraryCollectionViewItemAspectRatioDefaultItem;
-    self.collectionViewDelegate.staticItemSize = VLCLibraryCollectionViewItem.defaultSize;
+    self.collectionViewDelegate.staticItemSize = VLCLibraryUIUnits.defaultMediaItemCollectionViewItemSize;
     self.collectionView.delegate = self.collectionViewDelegate;
 
     [self.collectionView registerClass:VLCLibraryCollectionViewItem.class
-                 forItemWithIdentifier:VLCLibraryCellIdentifier];
+                 forItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier];
 
     [self.collectionView registerClass:VLCLibraryCollectionViewSupplementaryElementView.class
             forSupplementaryViewOfKind:NSCollectionElementKindSectionHeader

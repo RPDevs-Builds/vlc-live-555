@@ -469,6 +469,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCLinearProgressIndicator.m \
 	gui/macosx/views/VLCLoadingOverlayView.h \
 	gui/macosx/views/VLCLoadingOverlayView.m \
+	gui/macosx/views/VLCMediaItemCollectionViewItem.h \
+	gui/macosx/views/VLCMediaItemCollectionViewItem.m \
 	gui/macosx/views/VLCNoResultsLabel.h \
 	gui/macosx/views/VLCNoResultsLabel.m \
 	gui/macosx/views/VLCPlaybackEndViewController.h \
@@ -583,7 +585,6 @@ libmacosx_plugin_la_XIB_SOURCES = \
 	gui/macosx/UI/VLCLibraryVideoTableCellView.xib \
 	gui/macosx/UI/VLCPlayQueueTableCellView.xib \
 	gui/macosx/UI/VLCLibraryCarouselViewItemView.xib \
-	gui/macosx/UI/VLCLibraryCollectionViewItem.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewAudioGroupSupplementaryDetailView.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewMediaItemSupplementaryDetailView.xib \
@@ -593,7 +594,7 @@ libmacosx_plugin_la_XIB_SOURCES = \
 	gui/macosx/UI/VLCClassicMainVideoView.xib \
 	gui/macosx/UI/VLCMainVideoView.xib \
 	gui/macosx/UI/VLCMainVideoViewAudioMediaDecorativeView.xib \
-	gui/macosx/UI/VLCMediaSourceCollectionViewItem.xib \
+	gui/macosx/UI/VLCMediaItemCollectionViewItem.xib \
 	gui/macosx/UI/VLCMediaSourceDeviceCollectionViewItem.xib \
 	gui/macosx/UI/VLCInformationWindow.xib \
 	gui/macosx/UI/VLCPlaybackEndView.xib \

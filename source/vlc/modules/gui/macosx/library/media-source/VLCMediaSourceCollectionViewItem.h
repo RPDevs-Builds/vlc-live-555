@@ -1,9 +1,10 @@
 /*****************************************************************************
  * VLCMediaSourceCollectionViewItem.h: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2019 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
  * Authors: Felix Paul Kühne <fkuehne # videolan -dot- org>
+ *          Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,28 +21,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import <Cocoa/Cocoa.h>
+#import "views/VLCMediaItemCollectionViewItem.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-extern NSString *VLCMediaSourceCellIdentifier;
-
-@class VLCImageView;
 @class VLCInputItem;
 
-@interface VLCMediaSourceCollectionViewItem : NSCollectionViewItem
+extern NSString *VLCMediaSourceCollectionViewItemIdentifier;
 
-@property (readwrite, weak) IBOutlet NSTextField *mediaTitleTextField;
-@property (readwrite, weak) IBOutlet NSTextField *annotationTextField;
-@property (readwrite, weak) IBOutlet VLCImageView *mediaImageView;
-@property (readwrite, weak) IBOutlet NSButton *playInstantlyButton;
-@property (readwrite, weak) IBOutlet NSButton *addToPlayQueueButton;
-@property (readwrite, weak) IBOutlet NSBox *highlightBox;
+@interface VLCMediaSourceCollectionViewItem : VLCMediaItemCollectionViewItem
 
-@property (readwrite, strong, nonatomic) VLCInputItem *representedInputItem;
-
-- (IBAction)playInstantly:(id)sender;
-- (IBAction)addToPlayQueue:(id)sender;
+@property (readwrite, strong, nonatomic, nullable) VLCInputItem *representedItem;
 
 @end
 

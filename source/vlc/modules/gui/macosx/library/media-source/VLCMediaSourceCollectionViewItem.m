@@ -1,9 +1,10 @@
 /*****************************************************************************
  * VLCMediaSourceCollectionViewItem.m: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2019 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
  * Authors: Felix Paul Kühne <fkuehne # videolan -dot- org>
+ *          Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,15 +23,11 @@
 
 #import "VLCMediaSourceCollectionViewItem.h"
 
-#import "extensions/NSColor+VLCAdditions.h"
-#import "extensions/NSFont+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
-#import "extensions/NSView+VLCAdditions.h"
 
 #import "library/VLCInputItem.h"
-#import "library/VLCLibraryMenuController.h"
 #import "library/VLCLibraryImageCache.h"
-#import "library/VLCLibraryUIUnits.h"
+#import "library/VLCLibraryMenuController.h"
 
 #import "library/media-source/VLCMediaSourceDataSource.h"
 
@@ -39,13 +36,11 @@
 #import "playqueue/VLCPlayQueueController.h"
 
 #import "views/VLCImageView.h"
-#import "views/VLCTrackingView.h"
+#import "views/VLCMediaItemCollectionViewItem.h"
 
-#import <vlc_configuration.h>
+NSString *VLCMediaSourceCollectionViewItemIdentifier = @"VLCMediaSourceCollectionViewItemIdentifier";
 
-NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
-
-@interface VLCMediaSourceCollectionViewItem()
+@interface VLCMediaSourceCollectionViewItem ()
 {
     VLCLibraryMenuController *_menuController;
 }
@@ -53,149 +48,69 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 
 @implementation VLCMediaSourceCollectionViewItem
 
-- (void)dealloc
+- (void)setRepresentedItem:(VLCInputItem *)representedItem
 {
-    [NSNotificationCenter.defaultCenter removeObserver:self];
-    if (@available(macOS 10.14, *)) {
-        [NSApplication.sharedApplication removeObserver:self forKeyPath:@"effectiveAppearance"];
+    if (_representedItem == representedItem) {
+        return;
     }
-}
-
-- (void)awakeFromNib
-{
-    [(VLCTrackingView *)self.view setViewToHide:self.playInstantlyButton];
-    self.annotationTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
-    self.annotationTextField.textColor = NSColor.VLClibraryAnnotationColor;
-    self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
-    self.highlightBox.borderColor = NSColor.VLCAccentColor;
-
-        if (@available(macOS 26.0, *)) {
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 260000
-        self.playInstantlyButton.bordered = YES;
-        self.playInstantlyButton.bezelStyle = NSBezelStyleGlass;
-        self.playInstantlyButton.borderShape = NSControlBorderShapeCircle;
-        self.playInstantlyButton.image = [NSImage imageWithSystemSymbolName:@"play.fill" accessibilityDescription:nil];
-        self.playInstantlyButton.imageScaling = NSImageScaleProportionallyUpOrDown;
-        self.playInstantlyButton.controlSize = NSControlSizeExtraLarge;
-        [NSLayoutConstraint activateConstraints:@[
-            [self.playInstantlyButton.widthAnchor constraintEqualToConstant:VLCLibraryUIUnits.mediumPlaybackControlButtonSize],
-            [self.playInstantlyButton.heightAnchor constraintEqualToConstant:VLCLibraryUIUnits.mediumPlaybackControlButtonSize],
-        ]];
-#endif
-    }
-
-    if (@available(macOS 10.14, *)) {
-        [NSApplication.sharedApplication addObserver:self
-                                            forKeyPath:@"effectiveAppearance"
-                                               options:NSKeyValueObservingOptionNew
-                                               context:nil];
-    }
-
-    [self updateColoredAppearance:self.view.effectiveAppearance];
-    [self prepareForReuse];
-}
-
-#pragma mark - dynamic appearance
-
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                      ofObject:(id)object
-                        change:(NSDictionary<NSKeyValueChangeKey,id> *)change
-                       context:(void *)context
-{
-    if ([keyPath isEqualToString:@"effectiveAppearance"]) {
-        NSAppearance *effectiveAppearance = change[NSKeyValueChangeNewKey];
-        [self updateColoredAppearance:effectiveAppearance];
-    }
-}
-
-- (void)updateColoredAppearance:(NSAppearance*)appearance
-{
-    NSParameterAssert(appearance);
-    BOOL isDark = NO;
-    if (@available(macOS 10.14, *)) {
-        isDark = [appearance.name isEqualToString:NSAppearanceNameDarkAqua] || [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
-    }
-
-    self.mediaTitleTextField.textColor = isDark ? NSColor.VLClibraryDarkTitleColor : NSColor.VLClibraryLightTitleColor;
-}
-
-#pragma mark - view representation
-
-- (void)prepareForReuse
-{
-    [super prepareForReuse];
-    _playInstantlyButton.hidden = YES;
-    _mediaTitleTextField.stringValue = @"";
-    _annotationTextField.hidden = YES;
-    _mediaImageView.image = nil;
-    _addToPlayQueueButton.hidden = NO;
-    _highlightBox.hidden = YES;
-}
-
-- (void)setRepresentedInputItem:(VLCInputItem *)representedInputItem
-{
-    _representedInputItem = representedInputItem;
+    _representedItem = representedItem;
     [self updateRepresentation];
-}
-
-- (void)setSelected:(BOOL)selected
-{
-    super.selected = selected;
-    _highlightBox.hidden = !selected;
 }
 
 - (void)updateRepresentation
 {
-    if (_representedInputItem == nil) {
-        NSAssert(1, @"no input item assigned for collection view item", nil);
+    VLCInputItem * const inputItem = self.representedItem;
+    if (inputItem == nil) {
         return;
     }
 
-    VLCInputItem * const inputItem = _representedInputItem;
-    _mediaTitleTextField.stringValue = inputItem.name;
+    self.mediaTitleTextField.stringValue = inputItem.name;
+
+    switch (inputItem.inputType) {
+        case ITEM_TYPE_STREAM:
+            self.annotationTextField.stringValue = _NS("Stream");
+            self.annotationTextField.hidden = NO;
+            break;
+        case ITEM_TYPE_PLAYLIST:
+            self.annotationTextField.stringValue = _NS("Playlist");
+            self.annotationTextField.hidden = NO;
+            break;
+        case ITEM_TYPE_DISC:
+            self.annotationTextField.stringValue = _NS("Disk");
+            self.annotationTextField.hidden = NO;
+            break;
+        default:
+            self.annotationTextField.hidden = YES;
+            break;
+    }
 
     __weak typeof(self) weakSelf = self;
     [VLCLibraryImageCache thumbnailForInputItem:inputItem
                                  withCompletion:^(NSImage * const thumbnail) {
-        VLCMediaSourceCollectionViewItem * const strongSelf = weakSelf;
-        if (!strongSelf || strongSelf->_representedInputItem != inputItem) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.representedItem != inputItem) {
             return;
         }
-        strongSelf->_mediaImageView.image = thumbnail;
+        strongSelf.mediaImageView.image = thumbnail;
     }];
-
-
-    switch (_representedInputItem.inputType) {
-        case ITEM_TYPE_STREAM:
-            _annotationTextField.stringValue = _NS("Stream");
-            _annotationTextField.hidden = NO;
-            break;
-
-        case ITEM_TYPE_PLAYLIST:
-            _annotationTextField.stringValue = _NS("Playlist");
-            _annotationTextField.hidden = NO;
-            break;
-
-        case ITEM_TYPE_DISC:
-            _annotationTextField.stringValue = _NS("Disk");
-            _annotationTextField.hidden = NO;
-            break;
-
-        default:
-            break;
-    }
 }
 
 #pragma mark - actions
 
 - (IBAction)playInstantly:(id)sender
 {
-    [VLCMain.sharedInstance.playQueueController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
+    [VLCMain.sharedInstance.playQueueController
+        addInputItem:self.representedItem.vlcInputItem
+           atPosition:-1
+        startPlayback:YES];
 }
 
 - (IBAction)addToPlayQueue:(id)sender
 {
-    [VLCMain.sharedInstance.playQueueController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:NO];
+    [VLCMain.sharedInstance.playQueueController
+        addInputItem:self.representedItem.vlcInputItem
+           atPosition:-1
+        startPlayback:NO];
 }
 
 - (void)openContextMenu:(NSEvent *)event
@@ -207,23 +122,23 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
     NSCollectionView * const collectionView = self.collectionView;
     VLCMediaSourceDataSource * const dataSource =
         (VLCMediaSourceDataSource *)collectionView.dataSource;
-    NSParameterAssert(dataSource != nil);
+    if (dataSource == nil) {
+        return;
+    }
     NSSet<NSIndexPath *> * const indexPaths = collectionView.selectionIndexPaths;
     NSArray<VLCInputItem *> * const selectedInputItems =
         [dataSource mediaSourceInputItemsAtIndexPaths:indexPaths];
-    const NSInteger mediaSourceItemIndex = [selectedInputItems indexOfObjectPassingTest:^BOOL(
+    const NSInteger representedItemIndex = [selectedInputItems indexOfObjectPassingTest:^BOOL(
         VLCInputItem * const inputItem, const NSUInteger __unused idx, BOOL * const __unused stop
     ) {
-        return [inputItem.MRL isEqualToString:_representedInputItem.MRL];
+        return [inputItem.MRL isEqualToString:self.representedItem.MRL];
     }];
     NSArray<VLCInputItem *> *items = nil;
-
-    if (mediaSourceItemIndex == NSNotFound) {
-        items = @[_representedInputItem];
+    if (representedItemIndex == NSNotFound) {
+        items = @[self.representedItem];
     } else {
         items = selectedInputItems;
     }
-
     _menuController.representedInputItems = items;
     [_menuController popupMenuWithEvent:event forView:self.view];
 }
@@ -232,17 +147,13 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 {
     if (event.modifierFlags & NSEventModifierFlagControl) {
         [self openContextMenu:event];
-    } else if (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagCommand)) {
-        self.selected = !self.selected;
-    } else {
-        [super mouseDown:event];
+        return;
     }
-}
-
-- (void)rightMouseDown:(NSEvent *)event
-{
-    [self openContextMenu:event];
-    [super rightMouseDown:event];
+    if (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagCommand)) {
+        self.selected = !self.selected;
+        return;
+    }
+    [super mouseDown:event];
 }
 
 @end

@@ -12,7 +12,7 @@ endif
 else
 ifdef HAVE_CLANG
 # older CLANG doesn't support -std=c++20 required for std::atomic_flag
-ifeq ($(call clang_at_least, 10), true)
+ifeq ($(call clang_at_least, 12), true)
 HAVE_LIVE555_CPP20=1
 endif
 else
@@ -74,11 +74,11 @@ live555: $(LIVE555_FILE) .sum-live555
 	sed -e 's%C_COMPILER%#C_COMPILER%' -e 's%CPLUSPLUS_COMPILER%#CPLUSPLUS_COMPILER%' -e 's%LIBRARY_LINK%#LIBRARY_LINK%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
 	# Remove hardcoded --std=c+20 on un supported compilers
 ifndef HAVE_LIVE555_CPP20
-	sed -e 's%std=c++20%std=c++2a -DNO_STD_LIB=1%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
+	sed -e 's%-std=c++20% -DNO_STD_LIB=1%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
 endif
-	# Add the Extra_CFLAGS to all config files
+	# Add the Extra_CFLAGS to the config files
 	sed -i.orig \
-		-e 's%^\(COMPILE_OPTS.*\)$$%\1 '"$(LIVE_EXTRA_CFLAGS)%" $(UNPACK_DIR)/config.*
+		-e 's%^\(COMPILE_OPTS.*\)$$%\1 '"$(LIVE_EXTRA_CFLAGS)%" $(UNPACK_DIR)/config.$(LIVE_TARGET)
 	# We want 64bits offsets and PIC on Linux
 	sed -e 's%-D_FILE_OFFSET_BITS=64%-D_FILE_OFFSET_BITS=64\ -fPIC\ -DPIC%' -i.orig $(UNPACK_DIR)/config.linux
 	# Disable Locale for Solaris
@@ -97,6 +97,10 @@ endif
 	$(APPLY) $(SRC)/live555/android-no-ifaddrs.patch
 	# Don't use unavailable off64_t functions
 	$(APPLY) $(SRC)/live555/file-offset-bits-64.patch
+	# add IPv4 inet_pton()/inet_ntop() helper on older Windows
+	$(APPLY) $(SRC)/live555/live555-vista-inet.patch
+	# fix Win32 time_tm constructor to build on older compilers
+	sed -e 's,= tm{},= tm\(\),' -i.orig $(UNPACK_DIR)/liveMedia/RTSPCommon.cpp
 	# disable code built/installed in unused folder
 	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/testProgs/Makefile.tail
 	sed -e 's,all: $$(,all: #,' -e 's,install: $$,install: #,' -e 's,install ,#install ,' -i.orig $(UNPACK_DIR)/mediaServer/Makefile.tail

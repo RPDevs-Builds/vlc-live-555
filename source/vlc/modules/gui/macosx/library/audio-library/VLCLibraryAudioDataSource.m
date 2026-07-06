@@ -28,12 +28,12 @@
 
 #import "library/VLCInputItem.h"
 #import "library/VLCLibraryCarouselViewItemView.h"
+#import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryTableCellView.h"
-#import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryCollectionViewMediaItemSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.h"
@@ -447,7 +447,8 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 {
     NSAssert(collectionView != nil, @"Collection view must not be nil");
 
-    [collectionView registerClass:[VLCLibraryCollectionViewItem class] forItemWithIdentifier:VLCLibraryCellIdentifier];
+    [collectionView registerClass:VLCLibraryCollectionViewItem.class
+            forItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier];
 
     NSNib * const albumSupplementaryDetailView =
         [[NSNib alloc] initWithNibNamed:@"VLCLibraryCollectionViewMediaItemListSupplementaryDetailView" bundle:nil];
@@ -879,7 +880,9 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 - (NSCollectionViewItem *)collectionView:(NSCollectionView *)collectionView
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
-    VLCLibraryCollectionViewItem * const viewItem = [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+    VLCLibraryCollectionViewItem * const viewItem =
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier
+                                  forIndexPath:indexPath];
     const id<VLCMediaLibraryItemProtocol> actualItem = self.displayedCollection[indexPath.item];
     VLCLibraryRepresentedItem * const representedItem = [[VLCLibraryRepresentedItem alloc] initWithItem:actualItem parentType:_currentParentType];
 

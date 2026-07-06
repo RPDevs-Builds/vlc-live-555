@@ -29,7 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 @class VLCMediaLibraryMediaItem;
 @protocol VLCMediaLibraryItemProtocol;
 
-@interface VLCLibraryRepresentedItem : NSObject
+@interface VLCLibraryRepresentedItem : NSObject<VLCLocallyManipulableItemProtocol>
 
 @property (readonly) id<VLCMediaLibraryItemProtocol> item;
 // Parent media array is lazy loaded

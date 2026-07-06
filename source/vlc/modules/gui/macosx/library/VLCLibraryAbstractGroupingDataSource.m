@@ -155,7 +155,8 @@
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
     VLCLibraryCollectionViewItem * const viewItem =
-        [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier
+                                  forIndexPath:indexPath];
     const id<VLCMediaLibraryItemProtocol> item =
         [self libraryItemAtIndexPath:indexPath forCollectionView:collectionView];
     VLCLibraryRepresentedItem * const representedItem =

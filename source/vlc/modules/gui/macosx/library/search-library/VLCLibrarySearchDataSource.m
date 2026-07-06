@@ -24,23 +24,22 @@
 
 #import "VLCLibrarySearchProvider.h"
 
-NSString * const VLCLibrarySearchDataSourceDidReloadNotification = @"VLCLibrarySearchDataSourceDidReloadNotification";
-
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewMediaItemSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewSupplementaryDetailView.h"
 #import "library/VLCLibraryCollectionViewSupplementaryElementView.h"
-
-#import "library/audio-library/VLCLibraryCollectionViewAudioGroupSupplementaryDetailView.h"
-
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryRepresentedItem.h"
 #import "library/VLCLibraryWindow.h"
 
+#import "library/audio-library/VLCLibraryCollectionViewAudioGroupSupplementaryDetailView.h"
+
 #import "extensions/NSPasteboardItem+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
+
+NSString * const VLCLibrarySearchDataSourceDidReloadNotification = @"VLCLibrarySearchDataSourceDidReloadNotification";
 
 #pragma mark - Flattened row model
 
@@ -426,7 +425,7 @@ NSString * const VLCLibrarySearchDataSourceDidReloadNotification = @"VLCLibraryS
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
     VLCLibraryCollectionViewItem * const viewItem =
-        [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+        [collectionView makeItemWithIdentifier:VLCLibraryCollectionViewItemIdentifier forIndexPath:indexPath];
     const id<VLCMediaLibraryItemProtocol> item =
         [self libraryItemAtIndexPath:indexPath forCollectionView:collectionView];
     VLCLibrarySearchProvider * const provider = [self providerForVisibleSection:indexPath.section];
