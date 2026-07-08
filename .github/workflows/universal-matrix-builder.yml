@@ -83,6 +83,7 @@ jobs:
           git add source/ .github/tracking/
           if ! git diff-index --quiet HEAD; then
             git commit -m "upstream: mirror clean live555 source v${{ steps.changelog.outputs.VERSION_DATE }} and vlc"
+            git pull origin main --rebase
             if ! git rev-parse "v${{ steps.changelog.outputs.VERSION_DATE }}" >/dev/null 2>&1; then
               git tag "v${{ steps.changelog.outputs.VERSION_DATE }}"
               git push origin main
