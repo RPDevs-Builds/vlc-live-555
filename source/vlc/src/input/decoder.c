@@ -505,16 +505,16 @@ static void Decoder_ChangeOutputDelay( vlc_input_decoder_t *p_owner, vlc_tick_t 
     p_owner->output_delay = delay;
 }
 
-static void Decoder_UpdateOutState(vlc_input_decoder_t *owner)
+static void Decoder_ReapplyOutState(vlc_input_decoder_t *owner)
 {
-    if (owner->paused)
-        Decoder_ChangeOutputPause(owner, owner->paused, owner->pause_date);
+    if (owner->output_paused)
+        Decoder_ChangeOutputPause(owner, owner->output_paused, owner->pause_date);
 
-    if (owner->rate != 1.f)
-        Decoder_ChangeOutputRate(owner, owner->rate);
+    if (owner->output_rate != 1.f)
+        Decoder_ChangeOutputRate(owner, owner->output_rate);
 
-    if (owner->delay != 0)
-        Decoder_ChangeOutputDelay(owner, owner->delay);
+    if (owner->output_delay != 0)
+        Decoder_ChangeOutputDelay(owner, owner->output_delay);
 }
 
 /**
@@ -718,7 +718,7 @@ static int ModuleThread_UpdateAudioFormat( decoder_t *p_dec )
         p_dec->fmt_out.audio.i_frame_length =
             p_owner->fmt.audio.i_frame_length;
 
-        Decoder_UpdateOutState( p_owner );
+        Decoder_ReapplyOutState( p_owner );
         vlc_fifo_Unlock( p_owner->p_fifo );
     }
     return 0;
@@ -812,11 +812,12 @@ static int ModuleThread_UpdateVideoFormat( decoder_t *p_dec, vlc_video_context *
         vlc_fifo_Lock(p_owner->p_fifo);
         p_owner->video.started = true;
 
-        Decoder_UpdateOutState( p_owner );
-
         if (vout_state == INPUT_RESOURCE_VOUT_STARTED)
+        {
+            Decoder_ReapplyOutState( p_owner );
             decoder_Notify(p_owner, on_vout_started, p_vout,
                            p_owner->video.vout_order);
+        }
         vlc_fifo_Unlock(p_owner->p_fifo);
         return 0;
     }
@@ -1076,7 +1077,7 @@ static subpicture_t *ModuleThread_NewSpuBuffer( decoder_t *p_dec,
         }
 
         p_owner->spu.vout = p_vout;
-        Decoder_UpdateOutState(p_owner);
+        Decoder_ReapplyOutState(p_owner);
 
         assert(channel_order != VLC_VOUT_ORDER_NONE);
         decoder_Notify(p_owner, on_vout_started, p_vout, channel_order);

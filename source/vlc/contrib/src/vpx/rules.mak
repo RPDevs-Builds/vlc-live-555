@@ -49,8 +49,6 @@ else
 VPX_CROSS :=
 endif
 
-VPX_LDFLAGS := $(LDFLAGS)
-
 ifeq ($(ARCH),arm)
 VPX_ARCH := armv7
 else ifeq ($(ARCH),i386)
@@ -139,10 +137,6 @@ ifeq ($(ARCH),arm)
 VPX_CONF += --disable-runtime-cpu-detect
 endif
 VPX_CONF += --enable-vp8-decoder
-VPX_LDFLAGS := -L$(IOS_SDK)/usr/lib -isysroot $(IOS_SDK) $(LDFLAGS)
-ifeq ($(ARCH),aarch64)
-VPX_LDFLAGS += -arch arm64
-endif
 endif
 ifdef HAVE_DARWIN_OS
 ifeq ($(ARCH),$(filter $(ARCH), arm aarch64))
@@ -160,12 +154,6 @@ endif
 # Always enable debug symbols, we strip in the final executables if needed
 VPX_CONF += --enable-debug
 
-ifdef HAVE_ANDROID
-# Starting NDK19, standalone toolchains are deprecated and gcc is not shipped.
-# The presence of gcc can be used to detect if we are using an old standalone
-# toolchain. Unfortunately, libvpx buildsystem only work with standalone
-# toolchains, therefore pass the HOSTVARS directly to bypass any detection.
-ifneq ($(shell $(VPX_CROSS)gcc -v >/dev/null 2>&1 || echo FAIL),)
 VPX_HOSTVARS = $(HOSTVARS)
 
 ifeq ($(filter $(ARCH),i386 x86_64),)
@@ -173,15 +161,12 @@ ifeq ($(filter $(ARCH),i386 x86_64),)
 VPX_HOSTVARS += AS="$(CCAS)"
 endif
 
-endif
-endif
-
 VPX_CONF += --extra-cflags="$(VPX_CFLAGS)"
 
 .vpx: libvpx
 	rm -rf $(PREFIX)/include/vpx
 	$(MAKEBUILDDIR)
-	cd $(BUILD_DIR) && LDFLAGS="$(VPX_LDFLAGS)" CROSS=$(VPX_CROSS) $(VPX_HOSTVARS) $(BUILD_SRC)/configure $(VPX_CONF)
+	cd $(BUILD_DIR) && CROSS=$(VPX_CROSS) $(VPX_HOSTVARS) $(BUILD_SRC)/configure $(VPX_CONF)
 	+CONFIG_DEBUG=1 $(MAKEBUILD)
 	$(call pkg_static,"$(BUILD_DIRUNPACK)/vpx.pc")
 	+CONFIG_DEBUG=1 $(MAKEBUILD) install
