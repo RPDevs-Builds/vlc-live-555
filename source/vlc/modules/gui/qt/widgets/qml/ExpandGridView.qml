@@ -136,6 +136,10 @@ FocusScope {
     property alias contentHeight: flickable.contentHeight
     property alias contentWidth: flickable.contentWidth
     property alias contentX: flickable.contentX
+    property alias originX: flickable.originX
+    property alias contentY: flickable.contentY
+    property alias originY: flickable.originY
+
     property alias gridScrollBar: flickableScrollBar
     property alias interactive: flickable.interactive
 
@@ -553,6 +557,10 @@ FocusScope {
         animateContentY.start()
     }
 
+    function positionViewAtBeginningAnimated() {
+        animateFlickableContentY(0)
+    }
+
     // Private
 
     // returns true if this requires forceLayout
@@ -911,6 +919,7 @@ FocusScope {
 
             x: 0
             y: root.topMargin
+            z: 5
 
             //load the header early (when the first row is visible)
             visible: flickable.contentY < (root.headerHeight + root.rowHeight + root.topMargin)
@@ -925,6 +934,7 @@ FocusScope {
 
             y: root.topMargin + root.headerHeight + (root.rowHeight * (Math.ceil(model.count / nbItemPerRow))) +
                root._expandItemVerticalSpace
+            z: 5
         }
 
         Connections {

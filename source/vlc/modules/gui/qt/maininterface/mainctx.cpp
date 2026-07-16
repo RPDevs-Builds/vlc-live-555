@@ -188,6 +188,8 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
 
     m_sort = new SortCtx(this);
     m_search = new SearchCtx(this);
+    m_playqueuePanel = new SidePanelCtx(this);
+    m_navigationPanel = new SidePanelCtx(this);
 
     // getOSInfo();
     QOperatingSystemVersion currentOS = QOperatingSystemVersion::current();
@@ -313,20 +315,23 @@ MainCtx::~MainCtx()
     if ( !p_intf->preferencesResetPending)
     {
         settings->beginGroup("MainWindow");
-        settings->setValue( "pl-dock-status", b_playlistDocked );
         settings->setValue( "ShowRemainingTime", m_showRemainingTime );
         settings->setValue( "interface-scale", QString::number( m_intfUserScaleFactor ) );
-    
+
         /* Save playlist state */
-        settings->setValue( "playlist-visible", m_playlistVisible );
-        settings->setValue( "playlist-width-factor", QString::number( m_playlistWidthFactor ) );
-        settings->setValue( "player-playlist-width-factor", QString::number( m_playerPlaylistWidthFactor ) );
-    
-        settings->setValue( "artist-albums-width-factor", QString::number( m_artistAlbumsWidthFactor ) );
-    
+        settings->setValue( "playqueue-panel-docked", m_playqueuePanel->m_docked );
+        settings->setValue( "playqueue-panel-visible", m_playqueuePanel->m_visible );
+        settings->setValue( "playqueue-panel-width", QString::number( m_playqueuePanel->m_width ) );
+
+        settings->setValue( "navigation-panel-visible", m_navigationPanel->m_visible );
+        settings->setValue( "navigation-panel-width", QString::number( m_navigationPanel->m_width ) );
+
+        settings->setValue( "player-playlist-width", QString::number( m_playerPlaylistWidth ) );
+        settings->setValue( "artist-albums-width", QString::number( m_artistAlbumsWidth ) );
+
         settings->setValue( "grid-view", m_gridView );
         settings->setValue( "grouping", m_grouping );
-    
+
         settings->setValue( "color-scheme-index", m_colorScheme->currentIndex() );
 
         settings->setValue( "album-sections", m_albumSections );
@@ -455,7 +460,7 @@ void MainCtx::loadPrefs(const bool callSignals)
 void MainCtx::loadFromSettingsImpl(const bool callSignals)
 {
     const auto loadFromSettings = [this, callSignals](auto &variable, const char *name
-            , const auto defaultValue, auto signal)
+            , const auto defaultValue, auto obj,  auto signal)
     {
         using variableType = std::remove_reference_t<decltype(variable)>;
 
@@ -464,30 +469,29 @@ void MainCtx::loadFromSettingsImpl(const bool callSignals)
             return;
 
         variable = value;
-        if (callSignals && signal)
-            (this->*signal)(variable);
+        if (obj && callSignals && signal)
+            (obj->*signal)(variable);
     };
 
-    loadFromSettings(b_playlistDocked, "MainWindow/pl-dock-status", true, &MainCtx::playlistDockedChanged);
+    loadFromSettings(m_playqueuePanel->m_docked, "MainWindow/playqueue-panel-docked", true, m_playqueuePanel, &SidePanelCtx::dockedChanged);
+    loadFromSettings(m_playqueuePanel->m_visible, "MainWindow/playqueue-panel-visible", false, m_playqueuePanel, &SidePanelCtx::visibleChanged);
+    loadFromSettings(m_playqueuePanel->m_width, "MainWindow/playqueue-panel-width", 120, m_playqueuePanel, &SidePanelCtx::widthChanged);
 
-    loadFromSettings(m_playlistVisible, "MainWindow/playlist-visible", false, &MainCtx::playlistVisibleChanged);
+    loadFromSettings(m_navigationPanel->m_visible, "MainWindow/navigation-panel-visible", true, m_navigationPanel, &SidePanelCtx::visibleChanged);
+    loadFromSettings(m_navigationPanel->m_width, "MainWindow/navigation-panel-width", 120, m_navigationPanel, &SidePanelCtx::widthChanged);
 
-    loadFromSettings(m_playlistWidthFactor, "MainWindow/playlist-width-factor", 4.0 , &MainCtx::playlistWidthFactorChanged);
+    loadFromSettings(m_playerPlaylistWidth, "MainWindow/player-playlist-width", 120, this, &MainCtx::playerPlaylistWidthChanged);
+    loadFromSettings(m_artistAlbumsWidth, "MainWindow/artist-albums-width", 120, this,  &MainCtx::artistAlbumsWidthChanged);
 
-    loadFromSettings(m_playerPlaylistWidthFactor, "MainWindow/player-playlist-width-factor", 4.0 , &MainCtx::playerPlaylistFactorChanged);
+    loadFromSettings(m_gridView, "MainWindow/grid-view", true, this, &MainCtx::gridViewChanged);
 
-    loadFromSettings(m_artistAlbumsWidthFactor, "MainWindow/artist-albums-width-factor"
-                     , 4.0 , &MainCtx::artistAlbumsWidthFactorChanged);
+    loadFromSettings(m_grouping, "MainWindow/grouping", GROUPING_NONE, this, &MainCtx::groupingChanged);
 
-    loadFromSettings(m_gridView, "MainWindow/grid-view", true, &MainCtx::gridViewChanged);
+    loadFromSettings(m_showRemainingTime, "MainWindow/ShowRemainingTime", false, this, &MainCtx::showRemainingTimeChanged);
 
-    loadFromSettings(m_grouping, "MainWindow/grouping", GROUPING_NONE, &MainCtx::groupingChanged);
+    loadFromSettings(m_albumSections, "MainWindow/album-sections", true, this, &MainCtx::albumSectionsChanged);
 
-    loadFromSettings(m_showRemainingTime, "MainWindow/ShowRemainingTime", false, &MainCtx::showRemainingTimeChanged);
-
-    loadFromSettings(m_albumSections, "MainWindow/album-sections", true, &MainCtx::albumSectionsChanged);
-
-    loadFromSettings(m_lyricsMode, "MainWindow/lyrics-mode", true, &MainCtx::lyricsModeChanged);
+    loadFromSettings(m_lyricsMode, "MainWindow/lyrics-mode", true, this, &MainCtx::lyricsModeChanged);
 
     const auto colorSchemeIndex = getSettings()->value( "MainWindow/color-scheme-index", 0 ).toInt();
     m_colorScheme->setCurrentIndex(colorSchemeIndex);
@@ -669,35 +673,12 @@ QString MainCtx::displayMRL(const QUrl &mrl) const
     return urlToDisplayString(mrl);
 }
 
-void MainCtx::setPlaylistDocked( bool docked )
-{
-    b_playlistDocked = docked;
-
-    emit playlistDockedChanged(docked);
-}
-
-void MainCtx::setPlaylistVisible( bool visible )
-{
-    m_playlistVisible = visible;
-
-    emit playlistVisibleChanged(visible);
-}
-
-void MainCtx::setPlaylistWidthFactor( double factor )
+void MainCtx::setPlayerPlaylistWidth( double factor )
 {
     if (factor > 0.0)
     {
-        m_playlistWidthFactor = factor;
-        emit playlistWidthFactorChanged(factor);
-    }
-}
-
-void MainCtx::setPlayerPlaylistWidthFactor( double factor )
-{
-    if (factor > 0.0)
-    {
-        m_playerPlaylistWidthFactor = factor;
-        emit playerPlaylistFactorChanged(factor);
+        m_playerPlaylistWidth = factor;
+        emit playerPlaylistWidthChanged(factor);
     }
 }
 
@@ -1224,18 +1205,19 @@ bool WindowStateHolder::holdOnTop(QWindow *window, Source source, bool hold)
     return onTopCounter != 0;
 }
 
-double MainCtx::artistAlbumsWidthFactor() const
+double MainCtx::artistAlbumsWidth() const
 {
-    return m_artistAlbumsWidthFactor;
+    return dp(m_artistAlbumsWidth);
 }
 
-void MainCtx::setArtistAlbumsWidthFactor(double newArtistAlbumsWidthFactor)
+void MainCtx::setArtistAlbumsWidth(double newArtistAlbumsWidth)
 {
-    if (qFuzzyCompare(m_artistAlbumsWidthFactor, newArtistAlbumsWidthFactor))
+    double unscaledValue = newArtistAlbumsWidth / getIntfScaleFactor();
+    if (qFuzzyCompare(m_artistAlbumsWidth, unscaledValue))
         return;
 
-    m_artistAlbumsWidthFactor = newArtistAlbumsWidthFactor;
-    emit artistAlbumsWidthFactorChanged( m_artistAlbumsWidthFactor );
+    m_artistAlbumsWidth = unscaledValue;
+    emit artistAlbumsWidthChanged( dp(m_artistAlbumsWidth) );
 }
 
 #ifdef UPDATE_CHECK

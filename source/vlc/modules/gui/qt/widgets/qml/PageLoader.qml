@@ -34,20 +34,6 @@ StackViewExt {
     //list of available pages
     property var pageModel: []
 
-    //indicates whether the subview support grid/list mode
-    readonly property bool hasGridListMode: currentItem?.hasGridListMode ?? false
-
-    readonly property bool isSearchable: currentItem?.isSearchable ?? false
-
-    readonly property var sortModel: currentItem?.sortModel ?? null
-
-    readonly property var sortMenu: currentItem?.sortMenu ?? null
-
-    //property is *not* readOnly, a PageLoader may define a localMenuDelegate common for its subviews (music, video)
-    property Component localMenuDelegate: (currentItem?.localMenuDelegate
-                                    && (currentItem.localMenuDelegate instanceof Component)) ? currentItem.localMenuDelegate : null
-
-
     // Functions
 
     /**
@@ -59,6 +45,8 @@ StackViewExt {
     {
         if (currentItem && typeof currentItem.dismiss === "function")
             currentItem.dismiss()
+
+        path = (path ?? []).slice(0)
 
         if (path.length === 0) {
             const defaultPage = _getDefaultPage()
@@ -107,6 +95,7 @@ StackViewExt {
                         pageProp[key] = properties[key]
                     }
 
+                    History.update([...pagePrefix, head])
                     root.replace(null, component, pageProp)
                     found = true
                     break;
@@ -163,6 +152,10 @@ StackViewExt {
         }
 
         return path.length === 0
+    }
+
+    function positionContentAtBeginning() {
+        currentItem?.positionContentAtBeginning?.()
     }
 
     function _getDefaultPage() {

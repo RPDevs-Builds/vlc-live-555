@@ -27,11 +27,10 @@
 #import "extensions/NSFont+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 
-#import "library/VLCLibraryUIUnits.h"
-
 #import "views/VLCImageView.h"
 #import "views/VLCLinearProgressIndicator.h"
 #import "views/VLCTrackingView.h"
+#import "views/VLCUIUnits.h"
 
 NSString *VLCMediaItemCollectionViewItemIdentifier = @"VLCMediaItemCollectionViewItemIdentifier";
 
@@ -50,8 +49,9 @@ const CGFloat VLCMediaItemCollectionViewItemMaximumDisplayedProgress = 0.95;
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
         if (nibNameOrNil == nil) {
-            NSBundle * const bundle = [NSBundle bundleForClass:self.class];
-            [bundle loadNibNamed:@"VLCMediaItemCollectionViewItem" owner:self topLevelObjects:nil];
+            [NSBundle.mainBundle loadNibNamed:@"VLCMediaItemCollectionViewItem"
+                                        owner:self
+                              topLevelObjects:nil];
         }
     }
     return self;
@@ -69,7 +69,7 @@ const CGFloat VLCMediaItemCollectionViewItemMaximumDisplayedProgress = 0.95;
         self.playInstantlyButton.imageScaling = NSImageScaleProportionallyUpOrDown;
         self.playInstantlyButton.controlSize = NSControlSizeExtraLarge;
 
-        const CGFloat playButtonSize = VLCLibraryUIUnits.mediumPlaybackControlButtonSize;
+        const CGFloat playButtonSize = VLCUIUnits.mediumPlaybackControlButtonSize;
         [NSLayoutConstraint activateConstraints:@[
             [self.playInstantlyButton.widthAnchor constraintEqualToConstant:playButtonSize],
             [self.playInstantlyButton.heightAnchor constraintEqualToConstant:playButtonSize],

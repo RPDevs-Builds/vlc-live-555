@@ -1,5 +1,5 @@
 /*****************************************************************************
- * VLCLibraryUIUnits.h: MacOS X interface module
+ * VLCUIUnits.h: MacOS X interface module
  *****************************************************************************
  * Copyright (C) 2022 VLC authors and VideoLAN
  *
@@ -29,6 +29,13 @@ typedef NS_ENUM(NSUInteger, VLCLibraryCollectionViewItemAspectRatio) {
     VLCLibraryCollectionViewItemAspectRatioVideoItem,
 };
 
+typedef NS_ENUM(NSInteger, VLCSpacingToken) {
+    VLCSpacingTokenNone = 0,
+    VLCSpacingTokenSmall = 1,   // smallSpacing (4pt)
+    VLCSpacingTokenMedium = 2,  // mediumSpacing (8pt)
+    VLCSpacingTokenLarge = 3    // largeSpacing (16pt)
+};
+
 NS_ASSUME_NONNULL_BEGIN
 
 extern NSString * const VLCLibraryCollectionViewItemAdjustmentKey;
@@ -41,7 +48,7 @@ extern NSString * const VLCLibraryCollectionViewItemAdjustmentKey;
 
 @end
 
-@interface VLCLibraryUIUnits : NSObject
+@interface VLCUIUnits : NSObject
 
 // Note that these values are not necessarily linked to the layout defined in the .xib files.
 // If the spacing in the layout is changed you will want to change these values too.

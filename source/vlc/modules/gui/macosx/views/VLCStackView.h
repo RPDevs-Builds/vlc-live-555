@@ -1,9 +1,9 @@
 /*****************************************************************************
- * NSGradient+VLCAdditions.m: Category that adds safer bezier path operations
+ * VLCStackView.h: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2020 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
- * Authors: Marvin Scholz <epirat07 at gmail dot org>
+ * Authors: Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,16 +20,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import "NSGradient+VLCAdditions.h"
+#import <Cocoa/Cocoa.h>
 
-@implementation NSGradient (VLCAdditions)
+NS_ASSUME_NONNULL_BEGIN
 
-- (void)vlc_safeDrawInBezierPath:(NSBezierPath *)path 
-                           angle:(CGFloat)angle
-{
-    if ([path isEmpty])
-        return;
-    [self drawInBezierPath:path angle:angle];
-}
+IB_DESIGNABLE
+@interface VLCStackView : NSStackView
+
+@property (nonatomic) IBInspectable NSInteger spacingToken;
+@property (nonatomic) IBInspectable NSInteger edgeInsetsToken;
 
 @end
+
+NS_ASSUME_NONNULL_END

@@ -44,9 +44,7 @@ TAR_VERBOSE := v
 endif
 
 UNPACK = $(RM) -R $@ \
-    $(foreach f,$(filter %.tar.gz %.tgz,$^), && tar $(TAR_VERBOSE)xzfo $(f)) \
-    $(foreach f,$(filter %.tar.bz2,$^), && tar $(TAR_VERBOSE)xjfo $(f)) \
-    $(foreach f,$(filter %.tar.xz,$^), && tar $(TAR_VERBOSE)xJfo $(f)) \
+    $(foreach f,$(filter %.tar.gz %.tgz %.tar.bz2 %.tar.xz %.tar.zst,$^), && tar $(TAR_VERBOSE)xfo $(f)) \
     $(foreach f,$(filter %.zip,$^), && unzip $(f))
 
 UNPACK_DIR = $(patsubst %.tar,%,$(basename $(notdir $<)))
@@ -159,7 +157,7 @@ tar: tar-$(TAR_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
 
-.buildtar: .xz tar
+.buildtar: tar .xz
 	cd $<; ./configure --prefix=$(PREFIX)
 	+$(MAKE) -C $<
 	+$(MAKE) -C $< install
@@ -189,6 +187,25 @@ xz: xz-$(XZ_VERSION).tar.bz2
 CLEAN_PKG += xz
 DISTCLEAN_PKG += xz-$(XZ_VERSION).tar.bz2
 CLEAN_FILE += .buildxz
+
+# zstd
+
+zstd-$(ZSTD_VERSION).tar.gz:
+	$(call download_pkg,$(ZSTD_URL),zstd)
+
+.getzstd: zstd-$(ZSTD_VERSION).tar.gz
+zstd: zstd-$(ZSTD_VERSION).tar.gz
+	$(UNPACK)
+	$(MOVE)
+
+.buildzstd: zstd
+	+$(MAKE) -C $</programs
+	+$(MAKE) -C $</programs install prefix=$(PREFIX)
+	touch $@
+
+CLEAN_PKG += zstd
+DISTCLEAN_PKG += zstd-$(ZSTD_VERSION).tar.gz
+CLEAN_FILE += .buildzstd
 
 # config.guess
 

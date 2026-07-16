@@ -78,7 +78,9 @@ if ENABLE_PDB
 		for plugin in $$(find "$$plugindir" -type f \( -not -name '*.la' -and -not -name '*.a' \)); do cp modules/.libs/$$(basename "$$plugin" | sed s/dll/pdb/) "$$plugin_destdir"; done; \
 	done
 endif
+if HAVE_NLS
 	-cp -r $(prefix)/share/locale $(win32_destdir)
+endif
 
 # BD-J JAR
 	-cp $(CONTRIB_DIR)/share/java/*.jar $(win32_destdir)/plugins/access/
@@ -185,14 +187,7 @@ package-win32-release: package-win32-src $(win32_destdir)/NSIS/nsProcess.dll pac
 
 	$(SEVENZIP) a $(7ZIP_OPTS) $(WINVERSION)-release.7z $(win32_debugdir) "$(win32_destdir)/"
 
-#######
-# WinCE
-#######
-package-wince: package-win-strip
-	rm -f -- vlc-$(VERSION)-wince.zip
-	zip -r -9 vlc-$(VERSION)-wince.zip vlc-$(VERSION)
-
-.PHONY: package-win-install package-win-common package-win-strip package-win32-src package-win32-exe package-win32-zip package-win32-debug-zip package-win32-7zip package-win32-debug-7zip package-win32-cleanup package-win32 package-win32-debug package-wince
+.PHONY: package-win-install package-win-common package-win-strip package-win32-src package-win32-exe package-win32-zip package-win32-debug-zip package-win32-7zip package-win32-debug-7zip package-win32-cleanup package-win32 package-win32-debug
 
 EXTRA_DIST += \
 	extras/package/win32/vlc.exe.manifest \

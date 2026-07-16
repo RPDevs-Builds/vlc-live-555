@@ -19,6 +19,7 @@
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import QtQuick.Templates as T
 
 
@@ -31,8 +32,15 @@ import VLC.MainInterface
 T.Pane {
     id: root
 
+    signal browse(var tree, int reason)
+    signal homeButtonClicked(int reason)
+
     // Network* model
     required property BaseModel providerModel
+    property var path: providerModel?.path ?? []
+
+    property alias sort: gridSortFilter.sort
+    property alias search: gridSortFilter.search
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
@@ -43,6 +51,11 @@ T.Pane {
     topPadding: VLCStyle.layoutTitle_top_padding
     bottomPadding: VLCStyle.layoutTitle_bottom_padding
 
+    // FIXME: `GridItem`'s background extends beyond its
+    //        bounding rect, violating the hypothetical
+    //        clip test (see 7e6b23db).
+    bottomInset: MainCtx.gridView ? VLCStyle.gridItemSelectedBorder : undefined
+
     height: implicitHeight
     implicitHeight: layout.implicitHeight + topPadding + bottomPadding
     implicitWidth: layout.implicitWidth + leftPadding + rightPadding
@@ -50,39 +63,64 @@ T.Pane {
     focus: medialibraryBtn.visible
     Navigation.navigable: medialibraryBtn.visible
 
+    property alias networkAddressbar: networkAddressbar
+
+    background: Rectangle {
+        color: theme.bg.primary
+    }
+
     RowLayout {
         id: layout
 
         anchors.fill: parent
 
-        Widgets.SubtitleLabel {
-            text: providerModel.name
-            color: colorContext.fg.primary
+        NetworkAddressbar {
+            id: networkAddressbar
 
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            background: null
+
+            path: root.path
+
+            Navigation.parentItem: root
+            Navigation.rightItem: medialibraryBtn
+
+            onHomeButtonClicked: reason => root.homeButtonClicked(reason)
+
+            onBrowse:  (tree, reason) => root.browse(tree, reason)
         }
 
         Widgets.ButtonExt {
             id: medialibraryBtn
 
-            readonly property NetworkMediaModel networkModel: providerModel as NetworkMediaModel
-
             focus: true
 
-            iconTxt: networkModel?.indexed ? VLCIcons.remove : VLCIcons.add
+            iconTxt: root.providerModel.indexed ? VLCIcons.medialibrary_remove : VLCIcons.medialibrary_add
 
-            text: networkModel?.indexed
+            text: root.providerModel.indexed
                   ? qsTr("Remove from medialibrary")
                   : qsTr("Add to medialibrary")
 
-            visible: providerModel?.canBeIndexed ?? false
+            display: VLCStyle.isScreenSmall ?  AbstractButton.IconOnly  : AbstractButton.TextBesideIcon
 
-            onClicked: networkModel.indexed = !networkModel.indexed
+            visible: root.providerModel.canBeIndexed ?? false
+
+            onClicked: root.providerModel.indexed = !root.providerModel.indexed
 
             Layout.preferredWidth: implicitWidth
 
             Navigation.parentItem: root
+            Navigation.leftItem: networkAddressbar
+            Navigation.rightItem: gridSortFilter
+        }
+
+        Widgets.GridSortFilterControls {
+            id: gridSortFilter
+
+            Navigation.parentItem: root
+            Navigation.leftItem: medialibraryBtn
         }
     }
 }

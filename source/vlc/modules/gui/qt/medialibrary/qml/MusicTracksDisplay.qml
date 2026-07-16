@@ -23,14 +23,16 @@ import VLC.MediaLibrary
 import VLC.Style
 import VLC.Widgets as Widgets
 
-FocusScope {
+Widgets.PageExt {
     id: root
 
-    // Properties
+    title: qsTr("Tracks")
 
-    readonly property bool hasGridListMode: false
+    hasGridListMode: false
+    isSearchable: tracklistdisplay_id.isSearchable
 
-    property var pagePrefix: []
+    property alias model: tracklistdisplay_id.model
+    property alias selectionModel: tracklistdisplay_id.selectionModel
 
     property var sortModel: [
         { text: qsTr("Title"),    criteria: "title"},
@@ -41,63 +43,62 @@ FocusScope {
         { text: qsTr("Disc"),     criteria: "disc_number" }
     ]
 
-    property bool enableBeginningFade: true
-    property bool enableEndFade: true
-
-    // Aliases
-
-    property alias leftPadding: tracklistdisplay_id.leftPadding
-    property alias rightPadding: tracklistdisplay_id.rightPadding
-
-    property alias isSearchable: tracklistdisplay_id.isSearchable
-    property alias model: tracklistdisplay_id.model
-    property alias selectionModel: tracklistdisplay_id.selectionModel
-
-    property alias displayMarginBeginning: tracklistdisplay_id.displayMarginBeginning
-    property alias displayMarginEnd: tracklistdisplay_id.displayMarginEnd
-
     function setCurrentItemFocus(reason) {
         tracklistdisplay_id.setCurrentItemFocus(reason);
     }
 
-    MusicTrackListDisplay {
-        id: tracklistdisplay_id
+    function positionContentAtBeginning() {
+        tracklistdisplay_id.positionViewAtBeginningAnimated()
+    }
+
+    FocusScope {
 
         anchors.fill: parent
 
-        visible: model.count > 0
-        focus: model.count > 0
+        focus: true
 
-        preferredHeader: Widgets.ViewHeader {
-            view: tracklistdisplay_id
+        // Aliases
 
-            visible: view.count > 0
+        property alias leftPadding: tracklistdisplay_id.leftPadding
+        property alias rightPadding: tracklistdisplay_id.rightPadding
 
-            text: qsTr("Tracks")
+        MusicTrackListDisplay {
+            id: tracklistdisplay_id
+
+            anchors.fill: parent
+
+            visible: model.count > 0
+            focus: model.count > 0
+
+            searchPattern: root.search.pattern
+            sortOrder: root.sort.order
+            sortCriteria: root.sort.criteria
+
+            Navigation.parentItem: root
+            Navigation.upItem: root.header
+
+            Navigation.cancelAction: function() {
+                if (tracklistdisplay_id.currentIndex <= 0)
+                    root.Navigation.defaultNavigationCancel()
+                else
+                    tracklistdisplay_id.currentIndex = 0;
+            }
+
+
+            displayMarginBeginning: root.displayMarginBeginning
+            displayMarginEnd: root.displayMarginEnd
+
+            fadingEdge.enableEndFade: root.enableEndFade
+            fadingEdge.enableBeginningFade: root.enableBeginningFade
         }
 
-        searchPattern: MainCtx.search.pattern
-        sortOrder: MainCtx.sort.order
-        sortCriteria: MainCtx.sort.criteria
-
-        fadingEdge.enableBeginningFade: root.enableBeginningFade
-        fadingEdge.enableEndFade: root.enableEndFade
-
-        Navigation.parentItem: root
-        Navigation.cancelAction: function() {
-            if (tracklistdisplay_id.currentIndex <= 0)
-                root.Navigation.defaultNavigationCancel()
-            else
-                tracklistdisplay_id.currentIndex = 0;
+        Widgets.EmptyLabelButton {
+            anchors.centerIn: parent
+            visible: !tracklistdisplay_id.model.loading && (tracklistdisplay_id.model.count <= 0)
+            focus: visible
+            text: qsTr("No tracks found\nPlease try adding sources")
+            Navigation.parentItem: root
+            cover: VLCStyle.noArtAlbumCover
         }
-    }
-
-    Widgets.EmptyLabelButton {
-        anchors.centerIn: parent
-        visible: !tracklistdisplay_id.model.loading && (tracklistdisplay_id.model.count <= 0)
-        focus: visible
-        text: qsTr("No tracks found\nPlease try adding sources")
-        Navigation.parentItem: root
-        cover: VLCStyle.noArtAlbumCover
     }
 }

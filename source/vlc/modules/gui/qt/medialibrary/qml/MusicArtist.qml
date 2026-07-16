@@ -15,9 +15,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Templates as T
-import QtQuick
 import QtQuick.Window
 import QtQml.Models
 import QtQuick.Layouts
@@ -28,6 +28,7 @@ import VLC.Util
 import VLC.Widgets as Widgets
 import VLC.MainInterface
 import VLC.Style
+import VLC.Menus
 
 FocusScope {
     id: root
@@ -52,45 +53,62 @@ FocusScope {
 
     property bool isSearchable: true
 
-    property string searchPattern
-    property int sortOrder
-    property string sortCriteria
-
     readonly property MLBaseModel _effectiveModel: MainCtx.gridView ? albumModel : trackModel
 
-    onSearchPatternChanged: {
-        _effectiveModel.searchPattern = root.searchPattern
+    on_EffectiveModelChanged: root._effectiveModel.sortCriteria = root.sort.criteria
+
+    Connections {
+        target: root.sort
+
+        function onOrderChanged() {
+            root._effectiveModel.sortOrder = root.sort.order
+        }
+
+        function onCriteriaChanged() {
+            // FIXME: Criteria is set to empty for a brief period during initialization,
+            //        call later prevents setting the criteria empty.
+            Qt.callLater(() => {
+                root._effectiveModel.sortCriteria = root.sort.criteria
+            })
+        }
     }
 
-    onSortOrderChanged: {
-        _effectiveModel.sortOrder = root.sortOrder
-    }
+    Connections {
+        target: root.search
 
-    onSortCriteriaChanged: {
-        // FIXME: Criteria is set to empty for a brief period during initialization,
-        //        call later prevents setting the criteria empty.
-        Qt.callLater(() => {
-            _effectiveModel.sortCriteria = root.sortCriteria
-        })
+        function onPatternChanged() {
+            root._effectiveModel.searchPattern = root.search.pattern
+        }
     }
 
     Connections {
         target: root._effectiveModel
 
         function onSearchPatternChanged() {
-            if (root.searchPattern !== root._effectiveModel.searchPattern)
-                root.searchPattern = root._effectiveModel.searchPattern
+            if (root.search.pattern !== root._effectiveModel.searchPattern)
+                root.search.pattern = root._effectiveModel.searchPattern
         }
 
         function onSortOrderChanged() {
-            if (root.sortOrder !== root._effectiveModel.sortOrder)
-                root.sortOrder = root._effectiveModel.sortOrder
+            if (root.sort.order !== root._effectiveModel.sortOrder)
+                root.sort.order = root._effectiveModel.sortOrder
         }
 
         function onSortCriteriaChanged() {
-            if (root.sortCriteria !== root._effectiveModel.sortCriteria)
-                root.sortCriteria = root._effectiveModel.sortCriteria
+            if (root.sort.criteria !== root._effectiveModel.sortCriteria)
+                root.sort.criteria = root._effectiveModel.sortCriteria
         }
+    }
+
+    required property SearchCtx search
+    required property SortCtx sort
+
+    SortMenuAlbums {
+        id: sortMenuAlbums
+
+        ctx: MainCtx
+
+        sectionsVisible: !MainCtx.gridView
     }
 
     // current index of album model
@@ -119,266 +137,299 @@ FocusScope {
             _currentView.contentY = newContentY
     }
 
-    property Component header: T.Pane {
-        id: headerFs
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
 
-        focus: true
-        height: col.height
-        width: root.width
+        T.Pane {
+            id: headerFs
 
-        implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
-                                implicitContentWidth + leftPadding + rightPadding)
-        implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
-                                 implicitContentHeight + topPadding + bottomPadding)
+            focus: true
+            Layout.fillWidth: true
 
-        signal changeToNextSectionRequested()
-        signal changeToPreviousSectionRequested()
+            implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                                    implicitContentWidth + leftPadding + rightPadding)
+            implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                                     implicitContentHeight + topPadding + bottomPadding)
 
-        function setCurrentItemFocus(reason) {
-            headerFs.forceActiveFocus(reason)
-        }
+            signal changeToNextSectionRequested()
+            signal changeToPreviousSectionRequested()
 
-        contentItem: Column {
-            id: col
-
-            height: implicitHeight
-            width: headerFs.width
-
-            ArtistTopBanner {
-                id: artistBanner
-
-                focus: true
-                width: headerFs.width
-
-                rightPadding: root.rightPadding
-
-                artist: root._artist
-
-                onActiveFocusChanged: {
-                    // make sure content is visible with activeFocus
-                    if (activeFocus)
-                        root.navigationShowHeader(0, height)
-                }
-
-                Connections {
-                    enabled: !MainCtx.gridView
-                    target: trackModel
-
-                    function onSortCriteriaChanged() {
-                        if (MainCtx.albumSections &&
-                            trackModel.sortCriteria !== "album_title") {
-                            MainCtx.albumSections = false
-                        }
-                    }
-                }
-
-                property string _oldSortCriteria
-
-                function adjustAlbumSections() {
-                    if (!artistBanner) // context is lost, Qt 6.2 bug
-                        return
-
-                    if (!(root._currentView instanceof Widgets.TableViewExt))
-                        return
-
-                    if (MainCtx.albumSections) {
-                        const albumTitleSortCriteria = "album_title"
-                        if (trackModel.sortCriteria !== albumTitleSortCriteria) {
-                            artistBanner._oldSortCriteria = trackModel.sortCriteria
-                            trackModel.sortCriteria = albumTitleSortCriteria
-                        }
-                    } else {
-                        if (artistBanner._oldSortCriteria.length > 0) {
-                            trackModel.sortCriteria = artistBanner._oldSortCriteria
-                            artistBanner._oldSortCriteria = ""
-                        }
-                    }
-
-                    if (root._currentView)
-                        root._currentView.albumSections = MainCtx.albumSections
-                }
-
-                Component.onCompleted: {
-                    MainCtx.albumSectionsChanged.connect(artistBanner, adjustAlbumSections)
-                    root._currentViewChanged.connect(artistBanner, adjustAlbumSections)
-                    adjustAlbumSections()
-                }
-
-                Navigation.parentItem: root
-                Navigation.downItem: pinnedMusicAlbumSectionLoader
+            function setCurrentItemFocus(reason) {
+                headerFs.forceActiveFocus(reason)
             }
 
-            Loader {
-                id: pinnedMusicAlbumSectionLoader
+            //search box can overlap component below, make sure it has
+            //a higher z index
+            z: 1
 
-                anchors.left: parent.left
-                anchors.right: parent.right
+            contentItem: Column {
+                id: col
 
-                active: (root._currentView instanceof Widgets.TableViewExt) && MainCtx.albumSections
-                visible: active
+                height: implicitHeight
+                width:  root.width
 
-                sourceComponent: MusicAlbumSectionDelegate {
-                    id: pinnedMusicAlbumSection
-
-                    model: albumModel
-
-                    verticalPadding: VLCStyle.margin_xsmall
+                ArtistTopBanner {
+                    id: artistBanner
 
                     focus: true
+                    width: headerFs.width
 
-                    readonly property Widgets.TableViewExt tableView: root._currentView
+                    rightPadding: root.rightPadding
 
-                    section: tableView.currentSection || ""
+                    artist: root._artist
 
-                    previousSectionButtonEnabled: tableView._firstSectionInstance && (tableView._firstSectionInstance.section !== section)
-                    nextSectionButtonEnabled: tableView._lastSectionInstance && (tableView._lastSectionInstance.section !== section)
+                    onActiveFocusChanged: {
+                        // make sure content is visible with activeFocus
+                        if (activeFocus)
+                            root.navigationShowHeader(0, height)
+                    }
+
+                    Connections {
+                        enabled: !MainCtx.gridView
+                        target: root.sort
+
+                        function onCriteriaChanged() {
+                            if (MainCtx.albumSections &&
+                                root.sort.criteria !== "album_title") {
+                                MainCtx.albumSections = false
+                            }
+                        }
+                    }
+
+                    property string _oldSortCriteria
+
+                    function adjustAlbumSections() {
+                        if (!artistBanner) // context is lost, Qt 6.2 bug
+                            return
+
+                        if (!(root._currentView instanceof Widgets.TableViewExt))
+                            return
+
+                        if (MainCtx.albumSections) {
+                            const albumTitleSortCriteria = "album_title"
+                            if (root.sort.criteria !== albumTitleSortCriteria) {
+                                artistBanner._oldSortCriteria = root.sort.criteria
+                                root.sort.criteria = albumTitleSortCriteria
+                            }
+                        } else {
+                            if (artistBanner._oldSortCriteria.length > 0) {
+                                root.sort.criteria = artistBanner._oldSortCriteria
+                                artistBanner._oldSortCriteria = ""
+                            }
+                        }
+
+                        if (root._currentView)
+                            root._currentView.albumSections = MainCtx.albumSections
+                    }
 
                     Component.onCompleted: {
-                        changeToPreviousSectionRequested.connect(headerFs, headerFs.changeToPreviousSectionRequested)
-                        changeToNextSectionRequested.connect(headerFs, headerFs.changeToNextSectionRequested)
+                        MainCtx.albumSectionsChanged.connect(artistBanner, adjustAlbumSections)
+                        root._currentViewChanged.connect(artistBanner, adjustAlbumSections)
+                        adjustAlbumSections()
                     }
 
-                    background: Rectangle {
-                        color: theme.bg.secondary
-                    }
+                    Navigation.parentItem: root
+                    Navigation.downItem: pinnedMusicAlbumSectionLoader
+                }
 
-                    contentItem: RowLayout {
-                        id: _contentItem
+                Loader {
+                    id: pinnedMusicAlbumSectionLoader
 
-                        spacing: pinnedMusicAlbumSection.spacing
+                    anchors.left: parent.left
+                    anchors.right: parent.right
 
-                        readonly property bool compactButtons: (pinnedMusicAlbumSection.width < (displayPositioningButtons ? VLCStyle.colWidth(6)
-                                                                                                                           : VLCStyle.colWidth(5)))
-                        readonly property bool displayPositioningButtons: !!pinnedMusicAlbumSection.tableView?.albumSections // not possible otherwise
+                    active: (root._currentView instanceof Widgets.TableViewExt) && MainCtx.albumSections
+                    visible: active
 
-                        Widgets.ImageExt {
-                            Layout.fillHeight: true
+                    sourceComponent: MusicAlbumSectionDelegate {
+                        id: pinnedMusicAlbumSection
 
-                            Layout.preferredHeight: VLCStyle.trackListAlbumCover_heigth
-                            Layout.preferredWidth: VLCStyle.trackListAlbumCover_width
+                        model: albumModel
 
-                            source: pinnedMusicAlbumSection._albumCover ? pinnedMusicAlbumSection._albumCover : VLCStyle.noArtArtist
+                        verticalPadding: VLCStyle.margin_xsmall
 
-                            sourceSize: Qt.size(width * eDPR, height * eDPR)
+                        focus: true
 
-                            readonly property real eDPR: MainCtx.effectiveDevicePixelRatio(Window.window)
+                        readonly property Widgets.TableViewExt tableView: root._currentView
 
-                            backgroundColor: theme.bg.primary
+                        section: tableView.currentSection || ""
 
-                            fillMode: Image.PreserveAspectFit
+                        previousSectionButtonEnabled: tableView._firstSectionInstance && (tableView._firstSectionInstance.section !== section)
+                        nextSectionButtonEnabled: tableView._lastSectionInstance && (tableView._lastSectionInstance.section !== section)
 
-                            radius: VLCStyle.listAlbumCover_radius
-                            asynchronous: true
-                            cache: true
-
-                            Widgets.DefaultShadow {
-                                visible: (parent.status === Image.Ready)
-                            }
+                        Component.onCompleted: {
+                            changeToPreviousSectionRequested.connect(headerFs, headerFs.changeToPreviousSectionRequested)
+                            changeToNextSectionRequested.connect(headerFs, headerFs.changeToNextSectionRequested)
                         }
 
-                        Column {
-                            Layout.fillWidth: true
+                        background: Rectangle {
+                            color: theme.bg.secondary
+                        }
 
-                            MusicAlbumSectionDelegate.TitleLabel {
-                                id: titleLabel
+                        contentItem: RowLayout {
+                            id: _contentItem
 
-                                anchors.left: parent.left
-                                anchors.right: parent.right
+                            spacing: pinnedMusicAlbumSection.spacing
 
-                                delegate: pinnedMusicAlbumSection
+                            readonly property bool compactButtons: (pinnedMusicAlbumSection.width < (displayPositioningButtons ? VLCStyle.colWidth(6)
+                                                                                                                               : VLCStyle.colWidth(5)))
+                            readonly property bool displayPositioningButtons: !!pinnedMusicAlbumSection.tableView?.albumSections // not possible otherwise
 
-                                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                            Widgets.ImageExt {
+                                Layout.fillHeight: true
 
+                                Layout.preferredHeight: VLCStyle.trackListAlbumCover_heigth
+                                Layout.preferredWidth: VLCStyle.trackListAlbumCover_width
+
+                                source: pinnedMusicAlbumSection._albumCover ? pinnedMusicAlbumSection._albumCover : VLCStyle.noArtArtist
+
+                                sourceSize: Qt.size(width * eDPR, height * eDPR)
+
+                                readonly property real eDPR: MainCtx.effectiveDevicePixelRatio(Window.window)
+
+                                backgroundColor: theme.bg.primary
+
+                                fillMode: Image.PreserveAspectFit
+
+                                radius: VLCStyle.listAlbumCover_radius
+                                asynchronous: true
+                                cache: true
+
+                                Widgets.DefaultShadow {
+                                    visible: (parent.status === Image.Ready)
+                                }
+                            }
+
+                            Column {
                                 Layout.fillWidth: true
 
-                                Layout.maximumWidth: implicitWidth
+                                MusicAlbumSectionDelegate.TitleLabel {
+                                    id: titleLabel
 
-                                font.pixelSize: VLCStyle.fontSize_normal
-                                font.weight: Font.DemiBold
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+
+                                    delegate: pinnedMusicAlbumSection
+
+                                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+
+                                    Layout.fillWidth: true
+
+                                    Layout.maximumWidth: implicitWidth
+
+                                    font.pixelSize: VLCStyle.fontSize_normal
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MusicAlbumSectionDelegate.CaptionLabel {
+                                    id: captionLabel
+
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+
+                                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+
+                                    delegate: pinnedMusicAlbumSection
+                                }
                             }
 
-                            MusicAlbumSectionDelegate.CaptionLabel {
-                                id: captionLabel
-
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-
-                                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                            MusicAlbumSectionDelegate.PlayButton {
+                                id: playButton
 
                                 delegate: pinnedMusicAlbumSection
+
+                                showText: !_contentItem.compactButtons
+                                focus: true
+
+                                Navigation.parentItem: pinnedMusicAlbumSection
+                                Navigation.rightItem: enqueueButton
                             }
+
+                            MusicAlbumSectionDelegate.EnqueueButton {
+                                id: enqueueButton
+
+                                delegate: pinnedMusicAlbumSection
+
+                                showText: !_contentItem.compactButtons
+
+                                Navigation.parentItem: pinnedMusicAlbumSection
+                                // Navigation.rightItem: previousSectionButton
+                                Navigation.leftItem: playButton
+                            }
+
+                            // MusicAlbumSectionDelegate.PreviousSectionButton {
+                            //     id: previousSectionButton
+
+                            //     delegate: pinnedMusicAlbumSection
+
+                            //     visible: _contentItem.displayPositioningButtons
+
+                            //     showText: !_contentItem.compactButtons
+
+                            //     Navigation.parentItem: pinnedMusicAlbumSection
+                            //     Navigation.rightItem: nextSectionButton
+                            //     Navigation.leftItem: enqueueButton
+                            // }
+
+                            // MusicAlbumSectionDelegate.NextSectionButton {
+                            //     id: nextSectionButton
+
+                            //     delegate: pinnedMusicAlbumSection
+
+                            //     visible: _contentItem.displayPositioningButtons
+
+                            //     showText: !_contentItem.compactButtons
+
+                            //     Navigation.parentItem: pinnedMusicAlbumSection
+                            //     Navigation.leftItem: previousSectionButton
+                            // }
                         }
 
-                        MusicAlbumSectionDelegate.PlayButton {
-                            id: playButton
-
-                            delegate: pinnedMusicAlbumSection
-
-                            showText: !_contentItem.compactButtons
-                            focus: true
-
-                            Navigation.parentItem: pinnedMusicAlbumSection
-                            Navigation.rightItem: enqueueButton
-                        }
-
-                        MusicAlbumSectionDelegate.EnqueueButton {
-                            id: enqueueButton
-
-                            delegate: pinnedMusicAlbumSection
-
-                            showText: !_contentItem.compactButtons
-
-                            Navigation.parentItem: pinnedMusicAlbumSection
-                            // Navigation.rightItem: previousSectionButton
-                            Navigation.leftItem: playButton
-                        }
-
-                        // MusicAlbumSectionDelegate.PreviousSectionButton {
-                        //     id: previousSectionButton
-
-                        //     delegate: pinnedMusicAlbumSection
-
-                        //     visible: _contentItem.displayPositioningButtons
-
-                        //     showText: !_contentItem.compactButtons
-
-                        //     Navigation.parentItem: pinnedMusicAlbumSection
-                        //     Navigation.rightItem: nextSectionButton
-                        //     Navigation.leftItem: enqueueButton
-                        // }
-
-                        // MusicAlbumSectionDelegate.NextSectionButton {
-                        //     id: nextSectionButton
-
-                        //     delegate: pinnedMusicAlbumSection
-
-                        //     visible: _contentItem.displayPositioningButtons
-
-                        //     showText: !_contentItem.compactButtons
-
-                        //     Navigation.parentItem: pinnedMusicAlbumSection
-                        //     Navigation.leftItem: previousSectionButton
-                        // }
+                        Navigation.parentItem: root
+                        Navigation.upItem: artistBanner
+                        Navigation.downItem: viewHeader
                     }
+                }
+
+                Widgets.PageExt.DefaultPageHeader {
+                    id: viewHeader
+
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                    }
+
+                    text: qsTr("Albums")
+
+                    sortMenu: sortMenuAlbums
+
+                    search: root.search
+                    sort: root.sort
+
+                    leftPadding: root._contentLeftMargin
+                    rightPadding: root._contentRightMargin
+                    topPadding: VLCStyle.layoutTitle_top_padding
 
                     Navigation.parentItem: root
                     Navigation.upItem: artistBanner
                     Navigation.downAction: function() {
-                        tableView.setCurrentItemFocus(Qt.TabFocusReason)
+                        root.setCurrentItemFocus(Qt.TabFocusReason)
                     }
                 }
             }
+        }
 
-            Widgets.ViewHeader {
-                view: root
+        Loader {
+            id: loader
 
-                leftPadding: root._contentLeftMargin
-                bottomPadding: VLCStyle.layoutTitle_bottom_padding -
-                               (MainCtx.gridView ? 0 : VLCStyle.gridItemSelectedBorder)
-                topPadding: pinnedMusicAlbumSectionLoader.active ? bottomPadding : VLCStyle.layoutTitle_top_padding
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
-                text: qsTr("Albums")
-            }
+            anchors.rightMargin: root.rightPadding
+
+            focus: loader.status === Loader.Ready
+            sourceComponent: MainCtx.gridView ? gridComponent : tableComponent
         }
     }
 
@@ -468,6 +519,9 @@ FocusScope {
         ml: MediaLib
         parentId: artistId
 
+        searchPattern: root.search.pattern
+        sortOrder: root.sort.order
+
         onCountChanged: {
             if (albumModel.count > 0 && !albumSelectionModel.hasSelection) {
                 root.resetFocus()
@@ -496,6 +550,9 @@ FocusScope {
 
         ml: MediaLib
         parentId: albumModel.parentId
+
+        searchPattern: root.search.pattern
+        sortOrder: root.sort.order
     }
 
     MLContextMenu {
@@ -523,7 +580,6 @@ FocusScope {
 
             focus: true
             activeFocusOnTab:true
-            headerDelegate: root.header
             selectionModel: albumSelectionModel
             model: albumModel
 
@@ -601,9 +657,7 @@ FocusScope {
 
             Navigation.parentItem: root
 
-            Navigation.upAction: function() {
-                headerItem.setCurrentItemFocus(Qt.TabFocusReason);
-            }
+            Navigation.upItem: viewHeader
 
             Navigation.cancelAction: root._onNavigationCancel
 
@@ -629,7 +683,6 @@ FocusScope {
                 model.addAndPlay(selection)
             }
 
-            preferredHeader: root.header
             rowHeight: VLCStyle.tableCoverRow_height
 
             property bool albumSections: true
@@ -958,9 +1011,7 @@ FocusScope {
 
             Navigation.parentItem: root
 
-            Navigation.upAction: function() {
-                headerItem.setCurrentItemFocus(Qt.TabFocusReason);
-            }
+            Navigation.upItem: viewHeader
 
             Navigation.cancelAction: root._onNavigationCancel
 
@@ -999,15 +1050,5 @@ FocusScope {
                 showCriterias: (tableView_id.sortModel === tableView_id._modelSmall)
             }
         }
-    }
-
-    Loader {
-        id: loader
-
-        anchors.fill: parent
-        anchors.rightMargin: root.rightPadding
-
-        focus: albumModel.count !== 0
-        sourceComponent: MainCtx.gridView ? gridComponent : tableComponent
     }
 }

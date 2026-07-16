@@ -114,7 +114,7 @@ download_vendor = \
                tar xzfo $(TARBALLS)/$(3) -C vendor-$(2)-build --strip-components=1 && \
                cd vendor-$(2)-build && \
                $(CARGO_NATIVE) vendor --locked $(patsubst %.tar,%,$(basename $(notdir $(1)))) && \
-               tar -jcf $(1) $(patsubst %.tar,%,$(basename $(notdir $(1)))) && \
+               tar -c $(patsubst %.tar,%,$(basename $(notdir $(1)))) | zstd --quiet --force --threads=0 -12 -o $(1) && \
                cd .. && \
                install vendor-$(2)-build/$(1) "$(TARBALLS)" && \
                $(RM) -R vendor-$(2)-build && \
@@ -123,7 +123,7 @@ download_vendor = \
                rm $@);
 
 .sum-vendor-%: $(SRC)/%/vendor-SHA512SUMS
-	$(foreach f,$(filter %.tar.bz2,$^), if test ! -f $(f).skip-hash; then \
+	$(foreach f,$(filter %.tar.bz2 %.tar.zst,$^), if test ! -f $(f).skip-hash; then \
 		$(call checksum,$(SHA512SUM),vendor-SHA512,.sum-vendor-); \
 	fi)
 	touch $@
@@ -134,8 +134,8 @@ download_vendor = \
 .%-vendor: $(SRC)/%-vendor/SHA512SUMS
 	$(RM) -R $(patsubst .%,%,$@)
 	-$(call checksum,$(SHA512SUM),SHA512,.) \
-		$(foreach f,$(filter %.tar.bz2,$^), && tar $(TAR_VERBOSE)xjfo $(f) && \
-		  mv $(patsubst %.tar.bz2,%,$(notdir $(f))) $(patsubst .%,%,$@))
+		$(foreach f,$(filter %.tar.bz2 %.tar.zst,$^), && tar $(TAR_VERBOSE)xfo $(f) && \
+		  mv $(patsubst %.tar,%,$(basename $(notdir $(f)))) $(patsubst .%,%,$@))
 	touch $@
 
 cargo_vendor_setup = \

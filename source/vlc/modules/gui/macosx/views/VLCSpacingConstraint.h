@@ -1,9 +1,9 @@
 /*****************************************************************************
- * NSGradient+VLCAdditions.h: Category that adds safer bezier path operations
+ * VLCSpacingConstraint.h: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2020 VLC authors and VideoLAN
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
- * Authors: Marvin Scholz <epirat07 at gmail dot org>
+ * Authors: Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,14 +20,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import <Cocoa/Cocoa.h>
+#import "views/VLCUIUnits.h"
 
-@interface NSGradient (VLCAdditions)
+NS_ASSUME_NONNULL_BEGIN
 
-/* Safe alternative to drawInBezierPath:angle: which will throw an
- * exception when trying to draw into an empty NSBezierPath.
- */
-- (void)vlc_safeDrawInBezierPath:(NSBezierPath *)path 
-                           angle:(CGFloat)angle;
+IB_DESIGNABLE
+@interface VLCSpacingConstraint : NSLayoutConstraint
+
+@property (nonatomic) IBInspectable NSInteger spacingToken;
 
 @end
+
+NS_ASSUME_NONNULL_END

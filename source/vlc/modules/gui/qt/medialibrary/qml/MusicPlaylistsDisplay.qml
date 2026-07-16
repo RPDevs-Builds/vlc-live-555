@@ -56,33 +56,34 @@ Widgets.PageLoader {
     Component {
         id: componentAll
 
-        PlaylistMediaList {
-            id: playlistView
+        Widgets.PageExt {
+            id: playlistPage
 
-            header: Widgets.ViewHeader {
-                view: playlistView
+            title: qsTr("Playlists")
 
-                visible: view.count > 0
+            PlaylistMediaList {
 
-                text: qsTr("Playlists")
-            }
+                anchors.fill: parent
 
-            isMusic: true
+                focus: true
 
-            searchPattern: MainCtx.search.pattern
-            sortOrder: MainCtx.sort.order
-            sortCriteria: MainCtx.sort.criteria
+                isMusic: true
 
-            displayMarginBeginning: root.displayMarginBeginning
-            displayMarginEnd: root.displayMarginEnd
+                searchPattern: playlistPage.search.pattern
+                sortOrder: playlistPage.sort.order
+                sortCriteria: playlistPage.sort.criteria
 
-            enableBeginningFade: root.enableBeginningFade
-            enableEndFade: root.enableEndFade
+                displayMarginBeginning: root.displayMarginBeginning
+                displayMarginEnd: root.displayMarginEnd
 
-            onCurrentIndexChanged: History.viewProp.initialIndex = currentIndex
+                enableBeginningFade: root.enableBeginningFade
+                enableEndFade: root.enableEndFade
 
-            onShowList: (model, reason) => {
-                History.push([...root.pagePrefix, "list"], { parentId: model.id, name: model.name }, reason)
+                onCurrentIndexChanged: History.viewProp.initialIndex = currentIndex
+
+                onShowList: (model, reason) => {
+                    History.push([...root.pagePrefix, "list"], { parentId: model.id, title: model.name }, reason)
+                }
             }
         }
     }
@@ -95,9 +96,9 @@ Widgets.PageLoader {
 
             isMusic: true
 
-            searchPattern: MainCtx.search.pattern
-            sortOrder: MainCtx.sort.order
-            sortCriteria: MainCtx.sort.criteria
+            searchPattern: playlist.search.pattern
+            sortOrder: playlist.sort.order
+            sortCriteria: playlist.sort.criteria
 
             displayMarginBeginning: root.displayMarginBeginning
             displayMarginEnd: root.displayMarginEnd

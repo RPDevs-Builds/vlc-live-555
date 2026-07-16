@@ -102,8 +102,6 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/extensions/NSAnimationContext+VLCAdditions.m \
 	gui/macosx/extensions/NSArray+VLCAdditions.h \
 	gui/macosx/extensions/NSArray+VLCAdditions.m \
-	gui/macosx/extensions/NSGradient+VLCAdditions.h \
-	gui/macosx/extensions/NSGradient+VLCAdditions.m \
 	gui/macosx/extensions/NSColor+VLCAdditions.h \
 	gui/macosx/extensions/NSColor+VLCAdditions.m \
 	gui/macosx/extensions/NSFont+VLCAdditions.h \
@@ -218,8 +216,6 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryTableCellViewProtocol.h \
 	gui/macosx/library/VLCLibraryTwoPaneSplitViewDelegate.h \
 	gui/macosx/library/VLCLibraryTwoPaneSplitViewDelegate.m \
-	gui/macosx/library/VLCLibraryUIUnits.h \
-	gui/macosx/library/VLCLibraryUIUnits.m \
 	gui/macosx/library/VLCLibraryWindow.h \
 	gui/macosx/library/VLCLibraryWindow.m \
 	gui/macosx/library/VLCLibraryWindowController.h \
@@ -449,8 +445,6 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCBasicView.m \
 	gui/macosx/views/VLCBottomBarView.h \
 	gui/macosx/views/VLCBottomBarView.m \
-	gui/macosx/views/VLCCustomWindowButton.h \
-	gui/macosx/views/VLCCustomWindowButton.m \
 	gui/macosx/views/VLCDefaultValueSlider.h \
 	gui/macosx/views/VLCDefaultValueSlider.m \
 	gui/macosx/views/VLCDefaultValueSliderCell.h \
@@ -487,6 +481,10 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCSettingTextField.m \
 	gui/macosx/views/VLCSnowEffectView.h \
 	gui/macosx/views/VLCSnowEffectView.m \
+	gui/macosx/views/VLCSpacingConstraint.h \
+	gui/macosx/views/VLCSpacingConstraint.m \
+	gui/macosx/views/VLCStackView.h \
+	gui/macosx/views/VLCStackView.m \
 	gui/macosx/views/VLCStatusNotifierView.h \
 	gui/macosx/views/VLCStatusNotifierView.m \
 	gui/macosx/views/VLCSubScrollView.h \
@@ -497,6 +495,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCTimeFormatter.m \
 	gui/macosx/views/VLCTrackingView.h \
 	gui/macosx/views/VLCTrackingView.m \
+	gui/macosx/views/VLCUIUnits.h \
+	gui/macosx/views/VLCUIUnits.m \
 	gui/macosx/views/VLCVolumeSlider.h \
 	gui/macosx/views/VLCVolumeSlider.m \
 	gui/macosx/views/VLCVolumeSliderCell.h \

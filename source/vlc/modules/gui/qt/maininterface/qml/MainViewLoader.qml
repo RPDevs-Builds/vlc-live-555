@@ -210,6 +210,13 @@ Loader {
             Helpers.enforceFocus(root, reason)
     }
 
+    function positionContentAtBeginning() {
+        if (currentItem?.positionViewAtBeginningAnimated)
+            currentItem.positionViewAtBeginningAnimated()
+        else if (currentItem?.positionViewAtBeginning)
+            currentItem.positionViewAtBeginning()
+    }
+
     function _updateView() {
         // NOTE: When the currentItem is null we default to the StackView focusReason.
         if (currentItem && currentItem.activeFocus)

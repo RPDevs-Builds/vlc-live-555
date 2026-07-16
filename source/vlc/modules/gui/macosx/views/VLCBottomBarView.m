@@ -22,11 +22,11 @@
  *****************************************************************************/
 
 #import "VLCBottomBarView.h"
-#include "library/VLCLibraryUIUnits.h"
+
+#import "VLCUIUnits.h"
 
 #import "extensions/NSColor+VLCAdditions.h"
 #import "extensions/NSView+VLCAdditions.h"
-#import "extensions/NSGradient+VLCAdditions.h"
 
 @implementation VLCBottomBarView
 
@@ -80,13 +80,13 @@
     }
 
     const NSRect barFrame = self.frame;
-    const CGFloat cornerRadius = VLCLibraryUIUnits.cornerRadius;
+    const CGFloat cornerRadius = VLCUIUnits.cornerRadius;
     NSBezierPath * const borderPath = [NSBezierPath bezierPathWithRoundedRect:barFrame 
                                                                       xRadius:cornerRadius 
                                                                       yRadius:cornerRadius];
     
     [NSColor.VLCSubtleBorderColor setStroke];
-    borderPath.lineWidth = VLCLibraryUIUnits.borderThickness;
+    borderPath.lineWidth = VLCUIUnits.borderThickness;
     [borderPath stroke];
 }
 
