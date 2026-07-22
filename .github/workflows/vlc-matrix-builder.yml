@@ -43,7 +43,7 @@ jobs:
   build-vlc:
     needs: setup-matrix
     name: Build VLC (${{ matrix.target }} - ${{ matrix.track }})
-    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || fromJSON('["self-hosted", "vlc-builder"]') }}
+    runs-on: ${{ matrix.target == 'macos-x64' && 'macos-latest' || (matrix.target == 'win64' && 'windows-latest' || 'ubuntu-latest') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
