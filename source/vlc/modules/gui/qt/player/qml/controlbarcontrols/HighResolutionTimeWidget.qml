@@ -67,7 +67,7 @@ Control {
 
     background: Widgets.AnimatedBackground {
         enabled: theme.initialized
-        border.color: visualFocus ? theme.visualFocus : "transparent"
+        border.color: visualFocus ? theme.visualFocus : Qt.alpha(theme.visualFocus, 0.0)
     }
 
     contentItem: Item {
@@ -93,6 +93,15 @@ Control {
                 window: (label.visible && Player.isStarted && !highResolutionTimeWidget.paintOnly) ? label.Window.window
                                                                                                    : null
                 playerController: Player
+            }
+
+            // TODO: Do not use `Binding` when minimum Qt is 6.12:
+            Binding {
+                target: label
+                property: "mutabilityGroup"
+                when: label.mutabilityGroup !== undefined
+                value: (Player.playingState === Player.PLAYING_STATE_PLAYING) ? Item.DynamicMutabilityGroup
+                                                                              : Item.StaticMutabilityGroup
             }
         }
 

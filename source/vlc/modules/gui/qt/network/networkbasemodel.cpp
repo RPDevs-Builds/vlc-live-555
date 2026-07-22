@@ -42,28 +42,28 @@ QString NetworkBaseModel::artworkFallbackForType(const ItemType type) const
 {
     switch (type) {
     case TYPE_DISC:
-        return "qrc:///sd/disc.svg";
+        return QStringLiteral("qrc:///sd/disc.svg");
     case TYPE_CARD:
-        return "qrc:///sd/capture-card.svg";
+        return QStringLiteral("qrc:///sd/capture-card.svg");
     case TYPE_STREAM:
-        return "qrc:///sd/stream.svg";
+        return QStringLiteral("qrc:///sd/stream.svg");
     case TYPE_PLAYLIST:
-        return "qrc:///sd/playlist.svg";
+        return QStringLiteral("qrc:///sd/playlist.svg");
     case TYPE_FILE:
-        return "qrc:///sd/file.svg";
+        return QStringLiteral("qrc:///sd/file.svg");
     default:
-        return "qrc:///sd/directory.svg";
+        return QStringLiteral("qrc:///sd/directory.svg");
     }
 }
 
 QHash<int, QByteArray> NetworkBaseModel::roleNames() const
 {
     return {
-        { NETWORK_BASE_NAME, "name" },
-        { NETWORK_BASE_MRL, "mrl" },
-        { NETWORK_BASE_TYPE, "type" },
-        { NETWORK_BASE_PROTOCOL, "protocol" },
-        { NETWORK_BASE_ARTWORK, "artwork" },
-        { NETWORK_BASE_ARTWORK_FALLBACK, "artworkFallback" },
+        { NETWORK_BASE_NAME, QByteArrayLiteral("name") },
+        { NETWORK_BASE_MRL, QByteArrayLiteral("mrl") },
+        { NETWORK_BASE_TYPE, QByteArrayLiteral("type") },
+        { NETWORK_BASE_PROTOCOL, QByteArrayLiteral("protocol") },
+        { NETWORK_BASE_ARTWORK, QByteArrayLiteral("artwork") },
+        { NETWORK_BASE_ARTWORK_FALLBACK, QByteArrayLiteral("artworkFallback") },
     };
 }

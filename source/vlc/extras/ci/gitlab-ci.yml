@@ -27,7 +27,7 @@ variables:
     VLC_WIN_LLVM_UCRT_IMAGE: registry.videolan.org/vlc-debian-llvm-ucrt:20260611225331
     VLC_DEBIAN_IMAGE: registry.videolan.org/vlc-debian-unstable:20260611225331
     VLC_ANDROID_IMAGE: registry.videolan.org/vlc-debian-android:20260611225331
-    VLC_SNAP_IMAGE: registry.videolan.org/vlc-ubuntu-snap:20260611225331
+    VLC_SNAP_IMAGE: registry.videolan.org/vlc-ubuntu-snap:20260715210239
     VLC_RASPBIAN_IMAGE: registry.videolan.org/vlc-ubuntu-raspberry:20260611225331
     VLC_WASM_EMSCRIPTEN: registry.videolan.org/vlc-debian-wasm-emscripten:20260617104340
 
@@ -135,6 +135,8 @@ variables:
 .base-template:
     stage: build
     rules:
+        - if: '$CI_MERGE_REQUEST_DRAFT == "true"'
+          when: manual
         - if: $CI_MERGE_REQUEST_IID
         - if: '$CI_PIPELINE_SOURCE == "push" && $CI_PROJECT_PATH == "videolan/vlc"'
     artifacts:
@@ -323,13 +325,6 @@ debian:
     variables:
         <<: *variables-debian
 
-nightly-debian:
-    extends: debian
-    rules:
-        - if: '$CI_PIPELINE_SOURCE == "schedule"'
-    after_script:
-    artifacts:
-
 #
 # Linux Meson build
 #
@@ -414,6 +409,8 @@ debian-meson:
         entrypoint: [""]
     script:
         - git config --global --add safe.directory ${CI_PROJECT_DIR}/.git
+        # snapcraft need to have an up to date apt cache to be able to download its dependencies
+        - apt update
         - extras/package/snap/build.sh -p
     allow_failure: true
     variables: *variables-snap

@@ -143,7 +143,7 @@ AbstractButton {
 
     background: Widgets.AnimatedBackground {
         enabled: theme.initialized
-        border.color: visualFocus ? theme.visualFocus : "transparent"
+        border.color: visualFocus ? theme.visualFocus : Qt.alpha(theme.visualFocus, 0.0)
     }
 
     contentItem: RowLayout {
@@ -276,6 +276,15 @@ AbstractButton {
                     }
                 }
                 color: theme.fg.secondary
+
+                // TODO: Do not use `Binding` when minimum Qt is 6.12:
+                Binding {
+                    target: progressIndicator
+                    property: "mutabilityGroup"
+                    when: progressIndicator.mutabilityGroup !== undefined
+                    value: (Player.playingState === Player.PLAYING_STATE_PLAYING) ? Item.ModerateMutabilityGroup
+                                                                                  : Item.StaticMutabilityGroup
+                }
             }
         }
     }
