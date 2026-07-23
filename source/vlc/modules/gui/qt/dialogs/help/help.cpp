@@ -376,6 +376,14 @@ bool UpdateModel::explicitCheck() const
     return d->m_explicitCheck;
 }
 
+void UpdateModel::resetExplicitCheck()
+{
+    Q_D(UpdateModel);
+    if (!d->m_explicitCheck)
+        return;
+    d->m_explicitCheck = false;
+    emit explicitCheckChanged();
+}
 
 /*****************************************************************************
  * UpdateDialog
@@ -418,6 +426,28 @@ UpdateDialog::UpdateDialog( qt_intf_t *_p_intf ) : QVLCFrame( _p_intf )
 UpdateDialog::~UpdateDialog()
 {
     saveWidgetPosition( "Update" );
+}
+
+bool UpdateDialog::event(QEvent* event)
+{
+    assert(event);
+
+    if (Q_LIKELY(m_model))
+    {
+        switch(event->type())
+        {
+        case QEvent::Hide:
+        case QEvent::Show:
+        case QEvent::Close:
+        case QEvent::Destroy:
+            m_model->resetExplicitCheck();
+            break;
+        default:
+            break;
+        }
+    }
+
+    return QVLCFrame::event(event);
 }
 
 /* Check for updates */
@@ -494,6 +524,11 @@ void UpdateDialog::updateUI( )
     }
     case UpdateModel::Unchecked:
         // do nothing
+        break;
+    case UpdateModel::Downloading:
+        // NOTE: It is not planned to implement this in the legacy dialog.
+        //       The new update pane already respects it, we are only
+        //       waiting for the core to provide this information.
         break;
     }
 }

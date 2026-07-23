@@ -68,8 +68,10 @@ Widgets.PageExt {
             continueWatchingRow.setCurrentItemFocus(reason)
         else if (favoritesRow.focus)
             favoritesRow.setCurrentItemFocus(reason)
-        else if (newMediaRow.focus)
-            newMediaRow.setCurrentItemFocus(reason)
+        else if (newVideoRow.focus)
+            newVideoRow.setCurrentItemFocus(reason)
+        else if (newMusicRow.focus)
+            newMusicRow.setCurrentItemFocus(reason)
         else
             coneNButtons.forceActiveFocus(reason)
     }
@@ -135,7 +137,7 @@ Widgets.PageExt {
             }
 
             MainCtx.setTimeout(() => {
-                flickable._hasMedias = Qt.binding(() => { return continueWatchingRow.visible || favoritesRow.visible || newMediaRow.visible } )
+                flickable._hasMedias = Qt.binding(() => { return continueWatchingRow.visible || favoritesRow.visible || newVideoRow.visible || newMusicRow.visible } )
             }, 50, [], flickable)
         }
 
@@ -159,7 +161,7 @@ Widgets.PageExt {
             anchors.centerIn: flickable._hasMedias ? undefined : parent
             anchors.top: flickable._hasMedias ? parent.top : undefined
             anchors.left: flickable._hasMedias ? parent.left : undefined
-            anchors.leftMargin: flickable._hasMedias ? newMediaRow.contentLeftMargin : 0
+            anchors.leftMargin: flickable._hasMedias ? newVideoRow.contentLeftMargin : 0
 
             Navigation.parentItem: root
             Navigation.upItem: root.header
@@ -337,18 +339,96 @@ Widgets.PageExt {
             }
 
             Widgets.ViewHeader {
-                text: qsTr("New Medias")
-                visible: newMediaRow.visible
-                view: newMediaRow
-                seeAllButton.visible: newMediaRow.model.maximumCount > newMediaRow.model.count
+                text: qsTr("New Videos")
+                visible: newVideoRow.visible
+                view: newVideoRow
+                seeAllButton.visible: newVideoRow.model.maximumCount > newVideoRow.model.count
 
                 onSeeAllButtonClicked: function (reason) {
-                    root.seeAllButtonClicked("newMedia", reason)
+                    root.seeAllButtonClicked("newVideo", reason)
+                }
+            }
+
+            VideoAll {
+                id: newVideoRow
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+
+                height: currentItem?.contentHeight ?? implicitHeight
+
+                visible: model.count !== 0
+
+                headerPositioning: ListView.InlineHeader
+                enableBeginningFade: false
+                enableEndFade: false
+                sectionProperty: ""
+
+                interactive: false
+
+                emptyLabel: null
+
+                // FIXME: `ExpandGridView` causes extreme performance degradation when `reuseItems`
+                //        is true and items provided by the model change (#29084).
+                reuseItems: !MainCtx.gridView
+
+                listCoverWidth: root.listCoverWidth
+                listCoverHeight: root.listCoverHeight
+                listCoverRadius: root.listCoverRadius
+
+                Navigation.parentItem: mediaRows
+
+                model: MLVideoModel {
+                    ml: MediaLib
+
+                    sortCriteria: root.sort.criteria || "insertion"
+                    sortOrder: root.sort.order
+                    searchPattern: root.search.pattern
+
+                    // FIXME: Make limit 0 load no items, instead of loading all items.
+                    limit: MainCtx.gridView ? Math.max(newVideoRow.currentItem?.nbItemPerRow ?? null, 1) : 5
+                }
+
+                contextMenu: MLContextMenu {
+                    model: newVideoRow.model
+
+                    showPlayAsAudioAction: true
+                }
+
+                onActiveFocusChanged: {
+                    if (activeFocus) {
+                        const item = currentItem?.currentItem ?? currentItem?._getItem(currentIndex) // FIXME: `ExpandGridView` does not have `currentItem`.
+                        contentYBehavior.enabled = true
+                        Helpers.positionFlickableToContainItem(flickable, item ?? this)
+                        contentYBehavior.enabled = false
+                    }
+                }
+
+                onCurrentIndexChanged: {
+                    if (activeFocus) {
+                        const item = currentItem?.currentItem ?? currentItem?._getItem(currentIndex) // FIXME: `ExpandGridView` does not have `currentItem`.
+                        if (item) {
+                            contentYBehavior.enabled = true
+                            Helpers.positionFlickableToContainItem(flickable, item)
+                            contentYBehavior.enabled = false
+                        }
+                    }
+                }
+            }
+
+            Widgets.ViewHeader {
+                text: qsTr("New Music")
+                visible: newMusicRow.visible
+                view: newMusicRow
+                seeAllButton.visible: newMusicRow.model.maximumCount > newMusicRow.model.count
+
+                onSeeAllButtonClicked: function (reason) {
+                    root.seeAllButtonClicked("newMusic", reason)
                 }
             }
 
             MediaView {
-                id: newMediaRow
+                id: newMusicRow
 
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -376,7 +456,7 @@ Widgets.PageExt {
 
                 Navigation.parentItem: mediaRows
 
-                model: MLMediaModel {
+                model: MLAudioModel {
                     ml: MediaLib
 
                     sortCriteria: root.sort.criteria || "insertion"
@@ -384,7 +464,7 @@ Widgets.PageExt {
                     searchPattern: root.search.pattern
 
                     // FIXME: Make limit 0 load no items, instead of loading all items.
-                    limit: MainCtx.gridView ? Math.max(newMediaRow.currentItem?.nbItemPerRow ?? null, 1) : 5
+                    limit: MainCtx.gridView ? Math.max(newMusicRow.currentItem?.nbItemPerRow ?? null, 1) : 5
                 }
 
                 onActiveFocusChanged: {

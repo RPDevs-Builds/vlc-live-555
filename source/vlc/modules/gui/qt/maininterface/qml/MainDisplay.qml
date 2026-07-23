@@ -455,6 +455,43 @@ FocusScope {
 
                 rightPadding: playlistLoader.shown ? 0 : VLCStyle.applicationHorizontalMargin
 
+                // Top-left corner rounding:
+                Widgets.AcrylicBackground {
+                    id: topLeftCornerBackground
+
+                    z: 99
+                    color: sidebar.background.color
+                    visible: sidebar.visible && (stackViewTopLeftRadiusRectangle.topLeftRadius !== undefined)
+
+                    anchors.left: stackView.left
+                    anchors.leftMargin: -1
+                    anchors.top: stackView.top
+
+                    // (-1) is to prevent seams
+                    width: stackViewTopLeftRadiusRectangle.width - 1
+                    height: stackViewTopLeftRadiusRectangle.height - 1
+
+                    Rectangle {
+                        id: stackViewTopLeftRadiusRectangle
+
+                        width: (stackViewTopLeftRadiusRectangle.topLeftRadius * 2)
+                        height: (stackViewTopLeftRadiusRectangle.topLeftRadius * 2)
+
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.leftMargin: 1
+
+                        color: stackViewParent.color
+
+                        property real implicitTopLeftRadius: VLCStyle.mainView_topLeftRadius
+
+                        Component.onCompleted: {
+                            if (stackViewTopLeftRadiusRectangle.topLeftRadius !== undefined) // TODO: Directly set when minimum Qt is 6.7
+                                stackViewTopLeftRadiusRectangle.topLeftRadius = Qt.binding(() => stackViewTopLeftRadiusRectangle.implicitTopLeftRadius)
+                        }
+                    }
+                }
+
                 onCurrentItemChanged: {
                     if (currentItem) {
                         {
@@ -518,7 +555,7 @@ FocusScope {
 
             topPadding: 0
             leftPadding: 0
-            rightPadding: sidebarResizeHandle.borderWidth
+            rightPadding: sidebarResizeHandle.visualBorder.width
             bottomPadding: VLCStyle.applicationVerticalMargin + VLCStyle.margin_small
 
             safeAreaLeftMargin: VLCStyle.applicationHorizontalMargin
@@ -589,6 +626,8 @@ FocusScope {
 
                 panelObject: MainCtx.navigationPanel
                 atRight: true
+
+                visualBorder.visible: !topLeftCornerBackground.visible
 
                 minimumWidth: sidebar.minimumWidth
                 maximumWidth: sidebar.maximumWidth
@@ -669,7 +708,7 @@ FocusScope {
 
                 focus: true
 
-                leftPadding: playqueueResizeHandle.borderWidth
+                leftPadding: playqueueResizeHandle.visualBorder.width
                 rightPadding: VLCStyle.applicationHorizontalMargin
                 bottomPadding: VLCStyle.margin_normal + Math.max(VLCStyle.applicationVerticalMargin - g_mainDisplay.displayMargin, 0)
                 topPadding: VLCStyle.layoutTitle_top_padding
@@ -728,6 +767,8 @@ FocusScope {
 
         focus: !!item
 
+        property int _updateStatusOnDismissal: -1
+
         readonly property bool shouldShow: {
             if (!updateModelIsAvailable)
                 return false
@@ -735,6 +776,9 @@ FocusScope {
             if (UpdateModel.explicitCheck) {
                 return (UpdateModel.updateStatus !== UpdateModel.Unchecked)
             } else {
+                if (UpdateModel.updateStatus === _updateStatusOnDismissal)
+                    return false // already dismissed with the same status
+            
                 switch (UpdateModel.updateStatus) {
                     case UpdateModel.Unchecked:
                     case UpdateModel.Checking:
@@ -750,6 +794,10 @@ FocusScope {
         property alias toggleAnimation: heightBehavior.enabled
 
         function dismiss() {
+            // This could be also be an assertion:
+            if (updateModelIsAvailable)
+                _updateStatusOnDismissal = UpdateModel.updateStatus
+
             height = 0.0
         }
 
@@ -759,8 +807,9 @@ FocusScope {
         }
 
         onActiveChanged: {
-            if (updateModelIsAvailable && !active)
-                UpdateModel.resetStatus()
+            if (updateModelIsAvailable && !active) {
+                UpdateModel.explicitCheck = undefined // Resets the property
+            }
         }
 
         clip: (height < implicitHeight)
@@ -980,7 +1029,7 @@ FocusScope {
         required property QtObject panelObject
         property alias atRight: resizeHandle.atRight
 
-        property alias borderWidth: visualBorder.width
+        property alias visualBorder: visualBorder
 
         property alias minimumWidth: resizeHandle.minimumWidth
         property alias maximumWidth: resizeHandle.maximumWidth

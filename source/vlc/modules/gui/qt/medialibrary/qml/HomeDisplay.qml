@@ -39,8 +39,11 @@ Widgets.PageLoader {
         name: "favorites",
         component: favoritesComponent
     }, {
-        name: "newMedia",
-        component: newMediaComponent
+        name: "newVideo",
+        component: newVideoComponent
+    }, {
+        name: "newMusic",
+        component: newMusicComponent
     }]
 
     property int displayMarginBeginning: 0
@@ -138,24 +141,64 @@ Widgets.PageLoader {
     }
 
     Component {
-        id: newMediaComponent
+        id: newVideoComponent
 
         Widgets.PageExt {
-            id: newMediaPage
+            id: newVideoPage
 
-            title: qsTr("New Medias")
+            title: qsTr("New Videos")
+
+            VideoAll {
+                id: newVideo
+
+                anchors.fill: parent
+
+                focus: true
+
+                model: MLVideoModel {
+                    ml: MediaLib
+
+                    sortCriteria: newVideoPage.sort.criteria || "insertion"
+                    sortOrder: newVideoPage.sort.order
+                    searchPattern: newVideoPage.search.pattern
+                }
+
+                sectionProperty: model.sortCriteria === "title" ? "title_first_symbol" : ""
+
+                contextMenu: MLContextMenu {
+                    model: newVideo.model
+
+                    showPlayAsAudioAction: true
+                }
+
+                displayMarginBeginning: root.displayMarginBeginning
+                displayMarginEnd: root.displayMarginEnd
+
+                enableBeginningFade: root.enableBeginningFade
+                enableEndFade: root.enableEndFade
+            }
+        }
+    }
+
+    Component {
+        id: newMusicComponent
+
+        Widgets.PageExt {
+            id: newMusicPage
+
+            title: qsTr("New Music")
 
             MediaView {
                 focus: true
 
                 anchors.fill: parent
 
-                model: MLMediaModel {
+                model: MLAudioModel {
                     ml: MediaLib
 
-                    sortCriteria: newMediaPage.sort.criteria || "insertion"
-                    sortOrder: newMediaPage.sort.order
-                    searchPattern: newMediaPage.search.pattern
+                    sortCriteria: newMusicPage.sort.criteria || "insertion"
+                    sortOrder: newMusicPage.sort.order
+                    searchPattern: newMusicPage.search.pattern
                 }
 
                 displayMarginBeginning: root.displayMarginBeginning
