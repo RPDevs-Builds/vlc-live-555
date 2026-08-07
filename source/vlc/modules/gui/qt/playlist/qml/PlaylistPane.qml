@@ -59,7 +59,9 @@ T.Pane {
 
     verticalPadding: VLCStyle.margin_normal
 
+    Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Play Queue")
+    AccessibleCompat.id: "playqueuePane"
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
@@ -87,13 +89,15 @@ T.Pane {
         }
 
         onRequestInputItems: (indexes, data, resolve, reject) => {
-            resolve(root.model.getItemsForIndexes(root.selectionModel.selectedIndexesFlat))
+            resolve(root.model.getItemsForIndexes((indexes?.length > 0) ? indexes : root.selectionModel.selectedIndexesFlat))
         }
     }
 
     PlaylistContextMenu {
         id: contextMenu
         model: root.model
+        proxyModel: (root.contentItem?.listView?.model instanceof QtAbstractProxyModel) ? root.contentItem.listView.model
+                                                                                        : null
         selectionModel: root.selectionModel
         controler: MainPlaylistController
         ctx: MainCtx
@@ -129,8 +133,29 @@ T.Pane {
 
             Widgets.CaptionLabel {
                 color: theme.fg.secondary
-                visible: model.count !== 0
-                text: qsTr("%1 elements, %2").arg(model.count).arg(model.duration.formatLong())
+                visible: listView.count !== 0
+                text: {
+                    if (listView.count <= 0)
+                        return "" // Not visible otherwise
+
+                    let duration
+                    const model = listView.model
+                    if (model instanceof PlaylistListModel) {
+                        duration = model.duration
+                    } else {
+                        // Proxy model, we need to use `QAbstractItemModel` api:
+
+                        duration = []
+                        for (let i = 0; i < listView.count; ++i) {
+                            const itemDuration = model.data(model.index(i, 0), PlaylistListModel.DurationRole)
+                            console.assert(itemDuration !== undefined && itemDuration !== null) // typeof `vlcDuration`
+                            duration.push(itemDuration)
+                        }
+                        duration = duration[0].sum(duration)
+                    }
+
+                    return qsTr("%1 elements, %2").arg(listView.count).arg(duration.formatLong())
+                }
             }
         }
 
@@ -141,7 +166,7 @@ T.Pane {
         }
 
         RowLayout {
-            visible: model.count !== 0
+            visible: listView.count !== 0
 
             Layout.fillHeight: false
             Layout.leftMargin: VLCStyle.margin_normal
@@ -150,7 +175,7 @@ T.Pane {
             spacing: VLCStyle.margin_large
 
             Widgets.IconLabel {
-                // playlist cover column
+                // play queue cover column
                 Layout.preferredWidth: VLCStyle.icon_playlistArt
 
                 horizontalAlignment: Text.AlignHCenter
@@ -218,14 +243,69 @@ T.Pane {
 
             clip: !fadingEdge.implicitClipping && (height < contentHeight)
 
-            model: root.model
+            model: proxyModel ?? root.model
+
+            onWidthChanged: {
+                if (toolbar.searchBox.expanded) {
+                    if (width < toolbar.searchBox.textField.width)
+                        toolbar.searchBox.retract()
+                }
+            }
+
+            property QtSortFilterProxyModel proxyModel
+
+            function adjustFiltering() {
+                // Once text changes, we switch to the proxy model.
+                // We do not switch back to the source model after that.
+                if (!proxyModel) {
+                    proxyModel = proxyModelComponent.createObject(listView)
+                }
+
+                if (toolbar.searchBox.regexButtonToggled)
+                    proxyModel.setFilterRegularExpression(toolbar.searchBox.searchPattern)
+                else
+                    proxyModel.setFilterFixedString(toolbar.searchBox.searchPattern)
+            }
+
+            Component {
+                id: proxyModelComponent
+
+                QtSortFilterProxyModel {
+                    filterRole: PlaylistListModel.FilterRole
+
+                    sourceModel: root.model
+
+                    filterCaseSensitivity: toolbar.searchBox.caseSensitiveButtonToggled ? Qt.CaseSensitive
+                                                                                        : Qt.CaseInsensitive
+                }
+            }
 
             fadingEdge.backgroundColor: (root.background && (root.background.color.a >= 1.0)) ? root.background.color
                                                                                               : Qt.alpha(root.background.color, 0.0)
 
+            function mappedSelectedIndexes() : var {
+                let mappedSelectedIndexes
+
+                if (!listView.selectionModel)
+                    return [] // unlikely
+
+                const selectedIndexes = listView.selectionModel.selectedIndexesFlat
+                if (listView.proxyModel && listView.model === listView.proxyModel) {
+                    mappedSelectedIndexes = []
+                    for (let i = 0; i < selectedIndexes.length; ++i) {
+                        const mappedIndex = listView.model.mapToSource(listView.model.index(selectedIndexes[i], 0))
+                        mappedSelectedIndexes.push(mappedIndex.row)
+                    }
+                } else {
+                    mappedSelectedIndexes = selectedIndexes
+                }
+
+                return mappedSelectedIndexes
+            }
+
             isDropAcceptableFunc: function(drop, index) {
                 if (drop.source === dragItem)
-                    return Helpers.itemsMovable(selectionModel.sortedSelectedIndexesFlat, index)
+                    return Helpers.itemsMovable(listView.mappedSelectedIndexes(), index)
                 else if (Helpers.isValidInstanceOf(drop.source, Widgets.DragItem))
                     return true
                 else if (drop.hasUrls)
@@ -239,7 +319,7 @@ T.Pane {
 
                 // NOTE: Move implementation.
                 if (dragItem === item) {
-                    model.moveItemsPre(root.selectionModel.sortedSelectedIndexesFlat, index);
+                    root.model.moveItemsPre(listView.mappedSelectedIndexes(), index);
                     listView.forceActiveFocus();
                 // NOTE: Dropping medialibrary content into the queue.
                 } else if (Helpers.isValidInstanceOf(item, Widgets.DragItem)) {
@@ -303,6 +383,9 @@ T.Pane {
                         contentYBehavior.enabled = false
                     }
                 })
+
+                toolbar.searchBox.searchPatternChanged.connect(listView, listView.adjustFiltering)
+                toolbar.searchBox.regexButtonToggledChanged.connect(listView, listView.adjustFiltering)
             }
 
             Connections {
@@ -314,7 +397,7 @@ T.Pane {
                 }
 
                 function onModelReset() {
-                    if (listView.currentIndex === -1 && root.model.count > 0)
+                    if (listView.currentIndex === -1 && listView.count > 0)
                         listView.currentIndex = 0
                 }
             }
@@ -342,7 +425,23 @@ T.Pane {
                 }
             }
 
-            Keys.onDeletePressed: model.removeItems(selectionModel.selectedIndexesFlat)
+            Keys.onDeletePressed: {
+                let items
+
+                const selectedIndexes = selectionModel.selectedIndexesFlat
+                if (listView.proxyModel && listView.model === listView.proxyModel) {
+                    items = []
+                    for (let i = 0; i < selectedIndexes.length; ++i) {
+                        const mappedIndex = listView.proxyModel.mapToSource(listView.proxyModel.index(selectedIndexes[i], 0))
+                        items.push(mappedIndex.row)
+                    }
+                } else {
+                    items = selectedIndexes
+                }
+
+                if (items.length > 0)
+                    root.model.removeItems(items)
+            }
 
             Navigation.parentItem: root
 
@@ -365,7 +464,7 @@ T.Pane {
 
                 Binding on visible {
                     delayed: true
-                    value: (listView.model.count === 0 && !listView.footerItem.firstItemIndicatorVisible)
+                    value: (listView.count === 0 && !listView.footerItem.firstItemIndicatorVisible)
                 }
 
                 Widgets.IconLabel {
@@ -391,7 +490,10 @@ T.Pane {
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
 
-                    text: qsTr("No content yet")
+                    text: (listView.proxyModel &&
+                           listView.model === listView.proxyModel &&
+                           listView.count !== root.model.count) ? qsTr("No results")
+                                                                : qsTr("No content yet")
 
                     color: label.color
 
@@ -405,6 +507,8 @@ T.Pane {
                     verticalAlignment: Text.AlignVCenter
 
                     text: qsTr("Drag & Drop some content here!")
+                    visible: (listView.proxyModel && listView.model === listView.proxyModel) ? (listView.count === root.model.count)
+                                                                                             : true
 
                     color: label.color
 
@@ -421,6 +525,17 @@ T.Pane {
             Layout.fillWidth: true
             Layout.leftMargin: VLCStyle.margin_normal
             Layout.rightMargin: VLCStyle.margin_normal
+
+            searchBox.displayRegexToggleButton: true
+            searchBox.displayCaseSensitiveToggleButton: true
+
+            Connections {
+                target: contextMenu
+
+                function onDiscardedFilteredOutItems() {
+                    toolbar.searchBox.retract()
+                }
+            }
         }
     }
 

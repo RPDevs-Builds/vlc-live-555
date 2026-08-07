@@ -25,6 +25,8 @@
 #import <vlc_media_source.h>
 #import <vlc_preparser.h>
 
+#import "VLCMediaSourceNodeObservation.h"
+
 @class VLCInputItem;
 @class VLCInputNode;
 
@@ -33,6 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
 extern NSString *VLCMediaSourceChildrenReset;
 extern NSString *VLCMediaSourceChildrenAdded;
 extern NSString *VLCMediaSourceChildrenRemoved;
+extern NSString *VLCMediaSourcePreparsingStarted;
 extern NSString *VLCMediaSourcePreparsingEnded;
 
 @interface VLCMediaSource : NSObject
@@ -49,6 +52,8 @@ extern NSString *VLCMediaSourcePreparsingEnded;
 - (void)clearChildNodesForNode:(input_item_node_t*)inputNode;
 - (nullable NSError *)generateChildNodesForDirectoryNode:(VLCInputNode *)directoryInputNode
                                                  withUrl:(NSURL *)directoryUrl;
+- (nullable id<VLCMediaSourceNodeObservation>)observeInputNode:(VLCInputNode *)inputNode
+                                                      onChange:(void (^)(VLCMediaSourceNodeChange change))changeHandler;
 
 @property (nonatomic, readonly) NSString *mediaSourceDescription;
 @property (nonatomic, readonly) VLCInputNode *rootNode;

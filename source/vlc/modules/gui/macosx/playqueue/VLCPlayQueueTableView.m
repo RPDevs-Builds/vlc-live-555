@@ -49,6 +49,10 @@
     if (row != -1 && ![[self selectedRowIndexes] containsIndex: row])
         [self selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
 
+    const VLCPlayQueueContextMenuTarget target =
+        row != -1 ? VLCPlayQueueContextMenuTargetRow : VLCPlayQueueContextMenuTargetBackground;
+    [self.menuController prepareForContextMenuTarget:target];
+
     return self.menuController.playQueueMenu;
 }
 

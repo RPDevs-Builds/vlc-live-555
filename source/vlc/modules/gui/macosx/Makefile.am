@@ -7,7 +7,12 @@ actool_verbose__0 = $(actool_verbose_0)
 # so that it is properly rebuilt when its content changes.
 ASSET_CATALOG_DEPS = \
 	gui/macosx/Resources/Assets.xcassets/Contents.json \
-	gui/macosx/Resources/Assets.xcassets/VLCAccentColor.colorset/Contents.json
+	gui/macosx/Resources/Assets.xcassets/VLCAccentColor.colorset/Contents.json \
+	gui/macosx/Resources/Assets.xcassets/dropzone.imageset/Contents.json \
+	gui/macosx/Resources/Assets.xcassets/dropzone.imageset/dropzone-dark.png \
+	gui/macosx/Resources/Assets.xcassets/dropzone.imageset/dropzone-dark@2x.png \
+	gui/macosx/Resources/Assets.xcassets/dropzone.imageset/dropzone.png \
+	gui/macosx/Resources/Assets.xcassets/dropzone.imageset/dropzone@2x.png
 
 gui/macosx/Resources/Assets.car: gui/macosx/Resources/Assets.xcassets $(ASSET_CATALOG_DEPS)
 	$(AM_V_at)$(MKDIR_P) "gui/macosx/Resources"
@@ -98,6 +103,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/coreinteraction/VLCHotkeysController.m \
 	gui/macosx/coreinteraction/VLCVideoFilterHelper.h \
 	gui/macosx/coreinteraction/VLCVideoFilterHelper.m \
+	gui/macosx/extensions/NSAppearance+VLCAdditions.h \
+	gui/macosx/extensions/NSAppearance+VLCAdditions.m \
 	gui/macosx/extensions/NSAnimationContext+VLCAdditions.h \
 	gui/macosx/extensions/NSAnimationContext+VLCAdditions.m \
 	gui/macosx/extensions/NSArray+VLCAdditions.h \
@@ -185,6 +192,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryHeroView.m \
 	gui/macosx/library/VLCLibraryImageCache.h \
 	gui/macosx/library/VLCLibraryImageCache.m \
+	gui/macosx/library/VLCThumbnailRequest.h \
+	gui/macosx/library/VLCThumbnailRequest.m \
 	gui/macosx/library/VLCLibraryItemInternalMediaItemsDataSource.h \
 	gui/macosx/library/VLCLibraryItemInternalMediaItemsDataSource.m \
 	gui/macosx/library/VLCLibraryItemPresentingCapable.h \
@@ -315,6 +324,11 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/media-source/VLCLibraryMediaSourceViewController.m \
 	gui/macosx/library/media-source/VLCMediaSource.h \
 	gui/macosx/library/media-source/VLCMediaSource.m \
+	gui/macosx/library/media-source/VLCLocalMediaSource.h \
+	gui/macosx/library/media-source/VLCLocalMediaSource.m \
+	gui/macosx/library/media-source/VLCLocalMediaSourceNodeObservation.h \
+	gui/macosx/library/media-source/VLCLocalMediaSourceNodeObservation.m \
+	gui/macosx/library/media-source/VLCMediaSourceNodeObservation.h \
 	gui/macosx/library/media-source/VLCMediaSourceBaseDataSource.h \
 	gui/macosx/library/media-source/VLCMediaSourceBaseDataSource.m \
 	gui/macosx/library/media-source/VLCMediaSourceCollectionViewItem.h \
@@ -345,6 +359,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/main/CompatibilityFixes.m \
 	gui/macosx/main/VLCApplication.h \
 	gui/macosx/main/VLCApplication.m \
+	gui/macosx/main/VLCMain+Sparkle.h \
+	gui/macosx/main/VLCMain+Sparkle.m \
 	gui/macosx/main/VLCMain+OldPrefs.h \
 	gui/macosx/main/VLCMain+OldPrefs.m \
 	gui/macosx/main/VLCMain.h \
@@ -701,9 +717,6 @@ libmacosx_plugin_la_RES = \
 	gui/macosx/Resources/mainwindow/backward-6btns-pressed@2x.png \
 	gui/macosx/Resources/mainwindow/backward-6btns.png \
 	gui/macosx/Resources/mainwindow/backward-6btns@2x.png \
-	gui/macosx/Resources/mainwindow/dropzone-background.png \
-	gui/macosx/Resources/mainwindow/dropzone.png \
-	gui/macosx/Resources/mainwindow/dropzone@2x.png \
 	gui/macosx/Resources/mainwindow/effects-double-buttons-pressed.png \
 	gui/macosx/Resources/mainwindow/effects-double-buttons-pressed@2x.png \
 	gui/macosx/Resources/mainwindow/effects-double-buttons.png \

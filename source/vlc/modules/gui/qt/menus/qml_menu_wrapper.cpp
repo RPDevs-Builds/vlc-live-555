@@ -34,6 +34,7 @@
 #include <QSignalMapper>
 #include <QScreen>
 #include <QActionGroup>
+#include <QAbstractProxyModel>
 
 namespace
 {
@@ -1136,7 +1137,7 @@ void PlaylistContextMenu::popup(int selectedIndex, QPoint pos )
 
     if (m_selectionModel->hasSelection())
     {
-        action = m_menu->addAction( qtr("Save Playlist to File...") );
+        action = m_menu->addAction( qtr("Save Play Queue to File...") );
         connect(action, &QAction::triggered, []( ) {
             DialogsProvider::getInstance()->savePlayingToPlaylist();
         });
@@ -1153,7 +1154,7 @@ void PlaylistContextMenu::popup(int selectedIndex, QPoint pos )
 
     if (m_model->rowCount() > 0)
     {
-        action = m_menu->addAction( qtr("Clear play queue") );
+        action = m_menu->addAction( qtr("Clear the play queue") );
         action->setIcon(QIcon(":/menu/clear.svg"));
         connect(action, &QAction::triggered, [this]( ) {
             m_controler->clear();
@@ -1190,12 +1191,56 @@ void PlaylistContextMenu::popup(int selectedIndex, QPoint pos )
             addSortAction(qtr("%1 Descending").arg(label), key, PlaylistController::SORT_ORDER_DESC);
         }
 
-        action = m_menu->addAction( qtr("Shuffle the playlist") );
+        action = m_menu->addAction( qtr("Shuffle the play queue") );
         action->setIcon(ColorizedSvgIcon::colorizedIconForWidget(":/menu/ic_fluent_arrow_shuffle.svg", m_menu.get()));
         connect(action, &QAction::triggered, this, [this]( ) {
             m_controler->shuffle();
         });
 
+        if (m_proxyModel)
+        {
+            if (m_proxyModel->rowCount() != m_model->rowCount())
+            {
+                m_menu->addSeparator();
+
+                // Actions that are available when the view uses a proxy model:
+
+                action = m_menu->addAction( qtr("Discard the filtered out items"));
+                connect(action, &QAction::triggered, [this]( ) {
+                    bool proceed = true;
+
+                    if (const auto dp = DialogsProvider::getInstance())
+                    {
+                        proceed = dp->questionDialog(QStringLiteral("Discard the filtered out items"),
+                                                     QStringLiteral("Do you really want to discard the items that are not displayed at the moment?"));
+                    }
+
+                    const auto count = m_model->rowCount() - m_proxyModel->rowCount();
+
+                    if (proceed && (count > 0))
+                    {
+                        QList<int> items;
+                        items.reserve(count);
+
+                        for (int i = 0; i < m_model->rowCount(); ++i)
+                        {
+                            const auto mappedIndex = m_proxyModel->mapFromSource(m_model->index(i, 0));
+
+                            if (!mappedIndex.isValid() || !(m_proxyModel->checkIndex(mappedIndex, QAbstractItemModel::CheckIndexOption::IndexIsValid)))
+                            {
+                                items.push_back(i);
+                            }
+                        }
+
+                        if (items.count() > 0)
+                        {
+                            m_model->removeItems(items);
+                            emit discardedFilteredOutItems();
+                        }
+                    }
+                });
+            }
+        }
     }
 
     m_menu->popup(pos);

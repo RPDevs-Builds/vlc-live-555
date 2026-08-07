@@ -1401,14 +1401,14 @@ static void Ogg_DecodePacket( demux_t *p_demux,
         }
 
         /* Backup the ogg packet (likely an header packet) */
-        if( !b_xiph && p_oggpacket->bytes &&
-            p_oggpacket->bytes < SIZE_MAX - p_stream->i_headers )
+        if( !b_xiph && p_oggpacket->bytes > 0 &&
+            (size_t)p_oggpacket->bytes < SIZE_MAX - p_stream->i_headers )
         {
             p_stream->p_headers = realloc_or_free( p_stream->p_headers,
                                                    p_stream->i_headers + p_oggpacket->bytes );
             if( p_stream->p_headers )
             {
-                memcpy( &p_stream->p_headers[p_stream->i_headers], p_oggpacket->packet, p_oggpacket->bytes );
+                memcpy( (uint8_t*)p_stream->p_headers + p_stream->i_headers, p_oggpacket->packet, p_oggpacket->bytes );
                 p_stream->i_headers += p_oggpacket->bytes;
             }
             else
@@ -2896,7 +2896,10 @@ static bool Ogg_ReadSpeexHeader( logical_stream_t *p_stream,
     date_Init( &p_stream->dts, p_stream->fmt.audio.i_rate, 1 );
     oggpack_adv( &opb, 32 ); /* mode */
     oggpack_adv( &opb, 32 ); /* mode_bitstream_version */
-    p_stream->fmt.audio.i_channels = oggpack_read( &opb, 32 );
+    uint32_t channels = oggpack_read( &opb, 32 );
+    if (channels > UINT8_MAX)
+        return false;
+    p_stream->fmt.audio.i_channels = channels;
     fill_channels_info(&p_stream->fmt.audio);
     p_stream->fmt.i_bitrate = oggpack_read( &opb, 32 );
     p_stream->special.speex.i_framesize =
@@ -3214,7 +3217,7 @@ static void Ogg_ReadAnnodexHeader( demux_t *p_demux,
         }
 
         char debug_string[32] = {0};
-        strncpy(debug_string, &p_oggpacket->packet[42], __MIN(value_size, 31));
+        strncpy(debug_string, (const char*)&p_oggpacket->packet[42], __MIN(value_size, 31));
         msg_Dbg( p_demux, "AnxData packet info: %"PRId64" / %"PRId64", %d, ``%s''",
                  granule_rate_numerator, granule_rate_denominator,
                  p_stream->i_secondary_header_packets, debug_string );

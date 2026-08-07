@@ -1,7 +1,7 @@
 /*****************************************************************************
  * podcast.c : podcast playlist imports
  *****************************************************************************
- * Copyright (C) 2005-2009 VLC authors and VideoLAN
+ * Copyright (C) 2005-2026 VLC authors and VideoLAN
  *
  * Authors: Antoine Cellerier <dionoea -at- videolan -dot- org>
  *
@@ -114,6 +114,7 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
     char *psz_item_keywords = NULL;
     char *psz_item_subtitle = NULL;
     char *psz_item_summary = NULL;
+    char *psz_item_art_url = NULL;
     char *psz_art_url = NULL;
     const char *node;
     int i_type;
@@ -177,6 +178,16 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
                             msg_Dbg( p_demux,"unhandled attribute %s in <%s>",
                                      attr, node );
                     }
+                    else if( !strcmp( node, "itunes:image" ) &&
+                             !strcmp( attr, "href" ) && *value )
+                    {
+                        char **p = b_item ? &psz_item_art_url : &psz_art_url;
+
+                        free( *p );
+                        *p = strdup( value );
+                        if( *p != NULL )
+                            vlc_xml_decode( *p );
+                    }
                     else
                         msg_Dbg( p_demux,"unhandled attribute %s in <%s>",
                                  attr, node );
@@ -228,26 +239,40 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
     else if( !strcmp( psz_elname, name ) ) \
         input_item_AddInfo( p_current_input, _("Podcast Info"), \
                             info, "%s", node );
-                    ADD_GINFO( _("Podcast Link"), "link" )
-                    ADD_GINFO( _("Podcast Copyright"), "copyright" )
+#define ADD_GINFO_META( info, name, meta ) \
+    else if( !strcmp( psz_elname, name ) ) { \
+        input_item_AddInfo( p_current_input, _("Podcast Info"), \
+                            info, "%s", node ); \
+        input_item_SetMeta( p_current_input, (meta), node ); }
+                    ADD_GINFO_META( _("Podcast Link"), "link", vlc_meta_URL )
+                    ADD_GINFO_META( _("Podcast Copyright"), "copyright", vlc_meta_Copyright )
+                    ADD_GINFO_META( _("Podcast Language"), "language", vlc_meta_Language )
+                    ADD_GINFO_META( _("Podcast Author"), "itunes:author", vlc_meta_Artist )
                     ADD_GINFO( _("Podcast Category"), "itunes:category" )
                     ADD_GINFO( _("Podcast Keywords"), "itunes:keywords" )
                     ADD_GINFO( _("Podcast Subtitle"), "itunes:subtitle" )
 #undef ADD_GINFO
+#undef ADD_GINFO_META
                     else if( !strcmp( psz_elname, "itunes:summary" ) ||
                              !strcmp( psz_elname, "description" ) )
                     { /* <description> isn't standard iTunes podcast stuff */
                         input_item_AddInfo( p_current_input,
                             _( "Podcast Info" ), _( "Podcast Summary" ),
                             "%s", node );
+                        input_item_SetDescription( p_current_input, node );
                     }
                 }
                 else
                 {
                     if( !strcmp( psz_elname, "url" ) && *node )
                     {
-                        free( psz_art_url );
-                        psz_art_url = strdup( node );
+                        // fallback if no itunes artwork
+                        if( psz_art_url == NULL )
+                        {
+                            psz_art_url = strdup( node );
+                            if( psz_art_url != NULL )
+                                vlc_xml_decode( psz_art_url );
+                        }
                     }
                     else
                         msg_Dbg( p_demux, "unhandled text in element <%s>",
@@ -280,8 +305,9 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
                         FREENULL( psz_item_keywords );
                         FREENULL( psz_item_subtitle );
                         FREENULL( psz_item_summary );
-                        FREENULL( psz_art_url );
+                        FREENULL( psz_item_art_url );
                         FREENULL( psz_elname );
+                        b_item = false;
                         continue;
                     }
 
@@ -293,7 +319,10 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
                     FREENULL( psz_item_name );
 
                     if( p_input == NULL )
+                    {
+                        FREENULL( psz_item_art_url );
                         break; /* FIXME: meta data memory leaks? */
+                    }
 
                     /* Set the duration if available */
                     if( psz_item_duration )
@@ -322,12 +351,12 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
 #undef ADD_INFO
 #undef ADD_INFO_META
 
-                    /* Add the global art url to this item, if any */
-                    if( psz_art_url )
-                    {
-                        vlc_xml_decode( psz_art_url );
+                    /* Add the item art url if any, and the channel one otherwise */
+                    if( psz_item_art_url != NULL )
+                        input_item_SetArtURL( p_input, psz_item_art_url );
+                    else if( psz_art_url != NULL )
                         input_item_SetArtURL( p_input, psz_art_url );
-                    }
+                    FREENULL( psz_item_art_url );
 
                     if( psz_item_size )
                     {
@@ -356,6 +385,10 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
         msg_Warn( p_demux, "error while parsing data" );
     }
 
+    if( psz_art_url != NULL )
+        input_item_SetArtURL( p_current_input, psz_art_url );
+
+    free( psz_item_art_url );
     free( psz_art_url );
     free( psz_elname );
     xml_ReaderDelete( p_xml_reader );
@@ -374,6 +407,7 @@ error:
     free( psz_item_keywords );
     free( psz_item_subtitle );
     free( psz_item_summary );
+    free( psz_item_art_url );
     free( psz_art_url );
     free( psz_elname );
 
@@ -392,6 +426,8 @@ static vlc_tick_t strTimeToMTime( const char *psz )
         return vlc_tick_from_sec( ( h*60 + m )*60 + s );
     case 2:
         return vlc_tick_from_sec( h*60 + m );
+    case 1:
+        return vlc_tick_from_sec( h );
     default:
         return INPUT_DURATION_UNSET;
     }

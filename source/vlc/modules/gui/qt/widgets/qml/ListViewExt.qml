@@ -126,7 +126,11 @@ ListView {
     }
 
     component VerticalDropAreaLayout : ColumnLayout {
+        id: verticalDropAreaLayout
+
         spacing: 0
+
+        required property int index
 
         property alias higherDropArea: higherDropArea
         property alias lowerDropArea: lowerDropArea
@@ -163,6 +167,13 @@ ListView {
             }
         }
 
+        function mappedIndex() {
+            if (view?.model instanceof QtAbstractProxyModel)
+                return view.model.mapToSource(view.model.index(index, 0)).row
+            else
+                return index
+        }
+
         // NOTE: Nested inline components are not supported in QML as of Qt 6.8
 
         DropArea {
@@ -177,7 +188,7 @@ ListView {
                     return
                 }
 
-                if (isDropAcceptable && !isDropAcceptable(drag, index)) {
+                if (isDropAcceptable && !isDropAcceptable(drag, verticalDropAreaLayout.mappedIndex())) {
                     drag.accepted = false
                     return
                 }
@@ -185,7 +196,7 @@ ListView {
 
             onDropped: (drop) => {
                 console.assert(acceptDrop)
-                commonDrop(index, drop)
+                commonDrop(verticalDropAreaLayout.mappedIndex(), drop)
             }
         }
 
@@ -201,7 +212,7 @@ ListView {
                     return
                 }
 
-                if (isDropAcceptable && !isDropAcceptable(drag, index + 1)) {
+                if (isDropAcceptable && !isDropAcceptable(drag, verticalDropAreaLayout.mappedIndex() + 1)) {
                     drag.accepted = false
                     return
                 }
@@ -209,7 +220,7 @@ ListView {
 
             onDropped: (drop) => {
                 console.assert(acceptDrop)
-                commonDrop(index + 1, drop)
+                commonDrop(verticalDropAreaLayout.mappedIndex() + 1, drop)
             }
         }
     }
@@ -230,7 +241,7 @@ ListView {
             readonly property bool bottomContainsDrag: false
 
             onContainsDragChanged: {
-                if (root.model.count > 0) {
+                if (root.count > 0) {
                     root.updateItemContainsDrag(this, containsDrag)
                 } else if (!containsDrag && root.itemContainsDrag === this) {
                     // In case model count is changed somehow while
@@ -253,7 +264,7 @@ ListView {
 
                 color: "transparent"
 
-                visible: (root.model.count === 0 && (dropArea.containsDrag || dropArea.dropOperationOngoing))
+                visible: (root.count === 0 && (dropArea.containsDrag || dropArea.dropOperationOngoing))
 
                 opacity: 0.8
 
@@ -295,7 +306,12 @@ ListView {
                 onDropped: function(drop) {
                     console.assert(!!root.acceptDropFunc)
                     dropOperationOngoing = true
-                    root.acceptDropFunc(root.model.count, drop)
+                    let targetIndex
+                    if (root.model instanceof QtAbstractProxyModel)
+                        targetIndex = (root.model.mapToSource(root.model.index(root.count - 1, 0))?.row ?? 0) + 1
+                    else
+                        targetIndex = root.count
+                    root.acceptDropFunc(targetIndex, drop)
                         .then(() => { dropOperationOngoing = false })
                 }
             }
@@ -310,9 +326,9 @@ ListView {
         // does not have a "target" property, and wants a valid parent.
         enabled: !!root.acceptDropFunc
 
-        OpacityAnimator {
-            from: 0.0 // QTBUG-66475
-            to: 1.0
+        // WARNING: Do not use `OpacityAnimator` here, it is bugged.
+        NumberAnimation {
+            property: "opacity"
             duration: VLCStyle.duration_long
             easing.type: Easing.OutSine
         }
@@ -342,21 +358,29 @@ ListView {
     //          remove displaced seemingly are not affected from that
     //          issue. See QTBUG-131106, QTBUG-89158, ...
 
-    moveDisplaced: Transition {
+    component DefaultDisplacedTransition : Transition {
         // Transition is relevant when drag and drop is feasible.
         // Component approach can not be used here because `Transition`
         // does not have a "target" property, and wants a valid parent.
-        enabled: !!root.acceptDropFunc
+        enabled: !!view.acceptDropFunc
+
+        required property ListViewExt view
 
         NumberAnimation {
             // TODO: Use YAnimator >= Qt 6.0 (QTBUG-66475)
-            property: (root.orientation === ListView.Vertical) ? "y" : "x"
+            property: (view.orientation === ListView.Vertical) ? "y" : "x"
             duration: VLCStyle.duration_long
             easing.type: Easing.OutSine
         }
     }
 
-    removeDisplaced: moveDisplaced
+    moveDisplaced: DefaultDisplacedTransition {
+        view: root
+    }
+
+    removeDisplaced: DefaultDisplacedTransition {
+        view: root
+    }
 
     // Events
 

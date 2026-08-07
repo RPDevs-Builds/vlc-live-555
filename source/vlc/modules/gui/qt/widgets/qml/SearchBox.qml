@@ -17,6 +17,7 @@
  *****************************************************************************/
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Templates as T
 import QtQuick.Layouts
 
 
@@ -30,14 +31,38 @@ FocusScope {
     implicitWidth: iconButton.implicitWidth
     implicitHeight: iconButton.implicitHeight
 
+    property alias popup: popup
     property real maxSearchFieldWidth: Number.MAX_VALUE
     property alias buttonWidth: iconButton.implicitWidth
-    property alias searchPattern: textField.text
+    property string searchPattern
+    property alias regexButtonToggled: regexToggleButton.checked
+    property alias caseSensitiveButtonToggled: caseSensitiveToggleButton.checked
+    property alias compressSearchPatternChanges: searchPatternBinding.delayed
+    compressSearchPatternChanges: true
+    property alias displayRegexToggleButton: regexToggleButton.visible
+    displayRegexToggleButton: false
+    property alias displayCaseSensitiveToggleButton: caseSensitiveToggleButton.visible
+    displayCaseSensitiveToggleButton: false
+
+    Binding on searchPattern {
+        id: searchPatternBinding
+        value: textField.text
+    }
+
+    property bool popBelow: true
+    property alias toggleButton: iconButton
+    property alias textField: textField
+    readonly property bool expanded: (expandedState.state === "expanded")
 
     // public functions
 
     function expandAndFocus() {
         expandedState.state = "expanded"
+        textField.forceActiveFocus(Qt.ShortcutFocusReason)
+    }
+
+    function retract() {
+        expandedState.state = ""
     }
 
     StateGroup {
@@ -50,8 +75,9 @@ FocusScope {
                 name: "expanded"
 
                 PropertyChanges {
-                    target: textField
-                    height:  textField.implicitHeight
+                    target: popup
+                    explicit: true
+                    height: popup.implicitHeight
                 }
 
                 PropertyChanges {
@@ -65,6 +91,10 @@ FocusScope {
                 PropertyChanges {
                     target: textField
                     text: ""
+                }
+
+                PropertyChanges {
+                    target: popup
                     height: 0.0
                 }
 
@@ -77,14 +107,16 @@ FocusScope {
         ]
 
         transitions: Transition {
+            id: transition
+
             from: ""; to: "expanded"
             reversible: true
 
             onRunningChanged: {
-                // By forcing focus at the end of the transition, we avoid showing the caret
-                // momentarily outside the text field before the text field is fully expanded
-                if (!running && expandedState.state === "expanded")
-                    textField.forceActiveFocus(Qt.ShortcutFocusReason)
+                if (running)
+                    textField.clip = true
+                else
+                    textField.clip = false
             }
 
             NumberAnimation { property: "height"; easing.type: Easing.InOutSine; duration: VLCStyle.duration_long; }
@@ -108,107 +140,188 @@ FocusScope {
         focus: true
 
         Navigation.parentItem: root
-        Navigation.downItem: textField
+        Navigation.downItem: root.popBelow ? textField : null
+        Navigation.upItem: root.popBelow ? null : textField
 
         onClicked: {
             if (expandedState.state == "")
                 expandAndFocus()
             else
-                expandedState.state = ""
-        }
-    }
-
-    TextFieldExt {
-        id: textField
-
-        property bool _keyPressed: false
-
-        anchors.top: iconButton.bottom
-        anchors.right: iconButton.right
-
-        implicitWidth: VLCStyle.widthSearchInput
-        height: 0
-
-        visible: (height > 0)
-
-        padding: VLCStyle.dp(6)
-        leftPadding: padding + VLCStyle.dp(4)
-        rightPadding: (textField.width - clearButton.x)
-
-        radius: clearButton.radius
-
-        selectByMouse: true
-
-        placeholderText: qsTr("filter")
-
-        Navigation.parentItem: root
-        Navigation.upItem: iconButton
-        Navigation.rightItem: clearButton.visible ? clearButton : null
-        Navigation.cancelAction: function() {
-            expandedState.state = ""
-            iconButton.focusReason = Qt.ShortcutFocusReason
+                root.retract()
         }
 
-        Accessible.searchEdit: true
+        T.Popup {
+            id: popup
 
-        //ideally we should use Keys.onShortcutOverride but it doesn't
-        //work with TextField before 5.13 see QTBUG-68711
-        onActiveFocusChanged: {
-            if (activeFocus)
-                MainCtx.useGlobalShortcuts = false
-            else
-                MainCtx.useGlobalShortcuts = true
-        }
+            x: -width + parent.width
+            y: root.popBelow ? parent.height : -height
 
-        Keys.priority: Keys.AfterItem
+            implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                                    implicitContentWidth + leftPadding + rightPadding)
+            implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                                     implicitContentHeight + topPadding + bottomPadding)
 
-        Keys.onPressed: (event) => {
-            _keyPressed = true
+            closePolicy: Popup.NoAutoClose
 
-            //we don't want Navigation.cancelAction to match Backspace
-            if (event.matches(StandardKey.Backspace))
-                event.accepted = true
+            height: 0
+            visible: (height > 0)
 
-            Navigation.defaultKeyAction(event)
-        }
+            onOpened: {
+                textField.forceActiveFocus(iconButton.focusReason)
+            }
 
-        Keys.onReleased: (event) => {
-            if (_keyPressed === false)
-                return
+            onClosed: {
+                textField.focus = false
+                focus = false
+                iconButton.focus = true
+            }
 
-            _keyPressed = false
+            contentItem: TextFieldExt {
+                id: textField
 
-            //we don't want Navigation.cancelAction to match Backspace
-            if (event.matches(StandardKey.Backspace))
-                event.accepted = true
+                property bool _keyPressed: false
 
-            Navigation.defaultKeyReleaseAction(event)
-        }
+                colorContext.palette: theme.palette
 
-        Widgets.IconToolButton {
-            id: clearButton
+                implicitWidth: VLCStyle.widthSearchInput
 
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.right: parent.right
-            anchors.rightMargin: VLCStyle.margin_xxsmall
+                padding: VLCStyle.dp(6)
+                leftPadding: padding + VLCStyle.dp(4)
+                rightPadding: leftPadding + (insideRow.visible ? insideRow.width : 0.0)
 
-            font.pixelSize: VLCStyle.icon_banner
-            text: VLCIcons.close
+                radius: clearButton.radius
 
-            description: qsTr("Clear")
+                selectByMouse: true
 
-            visible: (textField.text.length > 0)
+                placeholderText: qsTr("filter")
 
-            onVisibleChanged: {
-                if (!visible && parent.visible) {
-                    parent.focus = true
+                Navigation.parentItem: root
+                Navigation.upItem: root.popBelow ? iconButton : null
+                Navigation.downItem: root.popBelow ? null : iconButton
+                Navigation.rightItem: caseSensitiveToggleButton.visible ? caseSensitiveToggleButton
+                                                                        : (regexToggleButton.visible ? regexToggleButton
+                                                                                                     : (clearButton.visible ? clearButton : null))
+                Navigation.cancelAction: function() {
+                    root.retract()
+                    iconButton.focusReason = Qt.ShortcutFocusReason
+                }
+
+                Accessible.searchEdit: true
+
+                //ideally we should use Keys.onShortcutOverride but it doesn't
+                //work with TextField before 5.13 see QTBUG-68711
+                onActiveFocusChanged: {
+                    if (activeFocus)
+                        MainCtx.useGlobalShortcuts = false
+                    else
+                        MainCtx.useGlobalShortcuts = true
+                }
+
+                Keys.priority: Keys.AfterItem
+
+                Keys.onPressed: (event) => {
+                    _keyPressed = true
+
+                    //we don't want Navigation.cancelAction to match Backspace
+                    if (event.matches(StandardKey.Backspace))
+                        event.accepted = true
+
+                    Navigation.defaultKeyAction(event)
+                }
+
+                Keys.onReleased: (event) => {
+                    if (_keyPressed === false)
+                        return
+
+                    _keyPressed = false
+
+                    //we don't want Navigation.cancelAction to match Backspace
+                    if (event.matches(StandardKey.Backspace))
+                        event.accepted = true
+
+                    Navigation.defaultKeyReleaseAction(event)
+                }
+
+                Row {
+                    id: insideRow
+
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: parent.right
+                    anchors.rightMargin: VLCStyle.margin_xxsmall
+
+                    spacing: VLCStyle.margin_xxsmall
+
+                    visible: parent.height > height
+
+                    Widgets.IconToolButton {
+                        id: caseSensitiveToggleButton
+
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        // Animating font properties with native rendering is probably not a good idea:
+                        font.pixelSize: 0.6 * (contentItem.renderType === Text.QtRendering ? textField.height
+                                                                                           : textField.implicitHeight)
+                        text: VLCIcons.ic_fluent_text_change_case_24_regular
+
+                        description: qsTr("Case sensitive")
+
+                        onClicked: {
+                            checked = !checked
+                        }
+
+                        Navigation.parentItem: textField
+                        Navigation.leftItem: textField
+                        Navigation.rightItem: regexToggleButton
+                    }
+
+                    Widgets.IconToolButton {
+                        id: regexToggleButton
+
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        // Animating font properties with native rendering is probably not a good idea:
+                        font.pixelSize: 0.6 * (contentItem.renderType === Text.QtRendering ? textField.height
+                                                                                           : textField.implicitHeight)
+                        text: VLCIcons.regex
+
+                        description: qsTr("Use regular expression")
+
+                        onClicked: {
+                            checked = !checked
+                        }
+
+                        Navigation.parentItem: textField
+                        Navigation.leftItem: caseSensitiveToggleButton
+                        Navigation.rightItem: clearButton
+                    }
+
+                    Widgets.IconToolButton {
+                        id: clearButton
+
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        // Animating font properties with native rendering is probably not a good idea:
+                        font.pixelSize: 0.6 * (contentItem.renderType === Text.QtRendering ? textField.height
+                                                                                           : textField.implicitHeight)
+                        text: VLCIcons.close
+
+                        description: qsTr("Clear")
+
+                        visible: (textField.text.length > 0)
+
+                        onVisibleChanged: {
+                            if (activeFocus && !visible && parent.visible) {
+                                textField.focus = true
+                                textField.focusReason = focusReason
+                            }
+                        }
+                        onClicked: textField.clear()
+
+                        Navigation.parentItem: textField
+                        Navigation.leftItem: regexToggleButton
+                    }
                 }
             }
-            onClicked: textField.clear()
-
-            Navigation.parentItem: textField
-            Navigation.leftItem: textField
         }
     }
-
 }

@@ -63,8 +63,6 @@ const NSTimeInterval HOLD_RECOGNITION_TIME_INTERVAL=0.4;
 
 @implementation AppleRemote
 
-#pragma public interface
-
 - (id)init
 {
     self = [super init];
@@ -432,7 +430,7 @@ static AppleRemote* sharedInstance=nil;
 /*  Callback method for the device queue
 Will be called for any event of any type (cookie) to which we subscribe
 */
-static void QueueCallbackFunction(void* target,  IOReturn result, void* refcon, void* sender) {
+static void QueueCallbackFunction(void* target,  IOReturn result, void* __unused refcon, void* __unused sender) {
     AppleRemote* remote = (__bridge AppleRemote*)target;
 
     IOHIDEventStruct event;
@@ -524,8 +522,6 @@ static void QueueCallbackFunction(void* target,  IOReturn result, void* refcon, 
 - (BOOL) initializeCookies {
     IOHIDDeviceInterface122** handle = (IOHIDDeviceInterface122**)hidDeviceInterface;
     IOHIDElementCookie      cookie;
-    long                    usage;
-    long                    usagePage;
     id                      object;
     NSDictionary*           element;
     CFArrayRef              elementsRef;
@@ -557,16 +553,6 @@ static void QueueCallbackFunction(void* target,  IOReturn result, void* refcon, 
             if (object == 0 || CFGetTypeID((__bridge CFTypeRef)(object)) != CFNumberGetTypeID()) continue;
             cookie = (IOHIDElementCookie) [object longValue];
 
-            //Get usage
-            object = [element valueForKey: (NSString*)CFSTR(kIOHIDElementUsageKey) ];
-            if (object == nil || ![object isKindOfClass:[NSNumber class]]) continue;
-            usage = [object longValue];
-
-            //Get usage page
-            object = [element valueForKey: (NSString*)CFSTR(kIOHIDElementUsagePageKey) ];
-            if (object == nil || ![object isKindOfClass:[NSNumber class]]) continue;
-            usagePage = [object longValue];
-
             [mutableAllCookies addObject: [NSNumber numberWithInt:(int)cookie]];
         }
         _allCookies = [[NSArray alloc] initWithArray: mutableAllCookies];
@@ -582,7 +568,6 @@ static void QueueCallbackFunction(void* target,  IOReturn result, void* refcon, 
 }
 
 - (BOOL) openDevice {
-    HRESULT  result;
 
     IOHIDOptionsType openMode = kIOHIDOptionsTypeNone;
     if ([self openInExclusiveMode]) openMode = kIOHIDOptionsTypeSeizeDevice;
@@ -591,7 +576,7 @@ static void QueueCallbackFunction(void* target,  IOReturn result, void* refcon, 
     if (ioReturnValue == KERN_SUCCESS) {
         queue = (*hidDeviceInterface)->allocQueue(hidDeviceInterface);
         if (queue) {
-            result = (*queue)->create(queue, 0, 12);    //depth: maximum number of elements in queue before oldest elements in queue begin to be lost.
+            (*queue)->create(queue, 0, 12);    //depth: maximum number of elements in queue before oldest elements in queue begin to be lost.
 
             NSUInteger cookieCount = [_allCookies count];
             for(NSUInteger i=0; i<cookieCount; i++) {

@@ -24,6 +24,7 @@
 
 #import "VLCLibraryMediaSourceViewNavigationStack.h"
 #import "VLCMediaSource.h"
+#import "VLCLocalMediaSource.h"
 #import "VLCMediaSourceDataSource.h"
 #import "VLCMediaSourceDeviceCollectionViewItem.h"
 #import "VLCMediaSourceProvider.h"
@@ -37,6 +38,7 @@
 #import "library/VLCInputNodePathControl.h"
 #import "library/VLCInputNodePathControlItem.h"
 #import "library/VLCLibraryCollectionViewSupplementaryElementView.h"
+#import "library/VLCLibraryImageCache.h"
 #import "library/VLCLibraryTableCellView.h"
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryWindowPersistentPreferences.h"
@@ -49,6 +51,7 @@
 #import "views/VLCUIUnits.h"
 
 NSString * const VLCMediaSourceBaseDataSourceNodeChanged = @"VLCMediaSourceBaseDataSourceNodeChanged";
+NSString * const VLCMediaSourceTableTagsColumnIdentifier = @"VLCMediaSourceTableTagsColumn";
 
 @interface VLCLANDeviceRecord : NSObject
 @property (readonly) VLCMediaSource *mediaSource;
@@ -155,7 +158,15 @@ NSString * const VLCMediaSourceBaseDataSourceNodeChanged = @"VLCMediaSourceBaseD
     NSNib * const tableCellViewNib = [[NSNib alloc] initWithNibNamed:NSStringFromClass(VLCLibraryTableCellView.class) bundle:nil];
     [self.tableView registerNib:tableCellViewNib forIdentifier:VLCLibraryTableCellViewIdentifier];
 
+    [self updateTableColumnVisibility];
     [self reloadViews];
+}
+
+- (void)updateTableColumnVisibility
+{
+    NSTableColumn * const tagsColumn =
+        [self.tableView tableColumnWithIdentifier:VLCMediaSourceTableTagsColumnIdentifier];
+    tagsColumn.hidden = self.mediaSourceMode == VLCMediaSourceModeInternet;
 }
 
 - (void)reloadViews
@@ -239,6 +250,7 @@ NSString * const VLCMediaSourceBaseDataSourceNodeChanged = @"VLCMediaSourceBaseD
         return;
     }
     _mediaSourceMode = mediaSourceMode;
+    [self updateTableColumnVisibility];
     [self loadMediaSources];
     [self returnHome];
 }
@@ -298,8 +310,6 @@ NSString * const VLCMediaSourceBaseDataSourceNodeChanged = @"VLCMediaSourceBaseD
 
         const enum input_item_type_e inputType = childRootInput.inputType;
         const BOOL isStream = childRootInput.isStream;
-        
-        NSURL * const artworkURL = childRootInput.artworkURL;
 
         NSImage *placeholder;
         if (mediaSource.category == SD_CAT_LAN) {
@@ -326,8 +336,15 @@ NSString * const VLCMediaSourceBaseDataSourceNodeChanged = @"VLCMediaSourceBaseD
             }
         }
         NSAssert(placeholder != nil, @"Placeholder image should not be nil");
-        
-        if (artworkURL) {
+
+        NSURL * const artworkURL = childRootInput.artworkURL;
+        if (childRootInput.radioCountryCodeForFlagArtwork) {
+            viewItem.mediaImageView.image = placeholder;
+            [VLCLibraryImageCache thumbnailForInputItem:childRootInput
+                                         withCompletion:^(const NSImage * const thumbnail) {
+                viewItem.mediaImageView.image = (NSImage *)thumbnail;
+            }];
+        } else if (artworkURL) {
             [viewItem.mediaImageView setImageURL:artworkURL placeholderImage:placeholder];
         } else {
             viewItem.mediaImageView.image = placeholder;
@@ -435,7 +452,13 @@ referenceSizeForHeaderInSection:(NSInteger)section
             VLCInputItem * const currentNodeInput = _lanDeviceSnapshot[row].inputNode.inputItem;
             NSURL * const artworkURL = currentNodeInput.artworkURL;
             NSImage * const placeholder = NSImage.VLCDefaultAppIconImage;
-            if (artworkURL) {
+            if (currentNodeInput.radioCountryCodeForFlagArtwork) {
+                cellView.representedImageView.image = placeholder;
+                [VLCLibraryImageCache thumbnailForInputItem:currentNodeInput
+                                             withCompletion:^(const NSImage * const thumbnail) {
+                    cellView.representedImageView.image = (NSImage *)thumbnail;
+                }];
+            } else if (artworkURL) {
                 [cellView.representedImageView setImageURL:artworkURL placeholderImage:placeholder];
             } else {
                 cellView.representedImageView.image = placeholder;
@@ -745,8 +768,10 @@ referenceSizeForHeaderInSection:(NSInteger)section
 - (void)browseFolderByMrl:(NSString *)mrl
 {
     vlc_preparser_t *p_preparser = getNetworkPreparser();
-    VLCMediaSource * const mediaSource =
-        [[VLCMediaSource alloc] initWithFolderMrl:mrl andPreparser:p_preparser];
+    NSURL * const folderURL = [NSURL URLWithString:mrl];
+    VLCMediaSource * const mediaSource = folderURL.isFileURL
+        ? [[VLCLocalMediaSource alloc] initWithFolderMrl:mrl andPreparser:p_preparser]
+        : [[VLCMediaSource alloc] initWithFolderMrl:mrl andPreparser:p_preparser];
     if (mediaSource == nil) {
         NSLog(@"Could not create valid media source for mrl: %@", mrl);
         return;

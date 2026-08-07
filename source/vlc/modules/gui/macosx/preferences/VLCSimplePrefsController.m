@@ -199,7 +199,7 @@ static NSString* VLCHotkeysSettingToolbarIdentifier = @"Hotkeys Settings Item Id
 
 #ifdef HAVE_SPARKLE
     [_intf_updateCheckbox bind:@"value"
-                   toObject:[SUUpdater sharedUpdater]
+                   toObject:VLCMain.sharedInstance.sparkleUpdaterController.updater
                 withKeyPath:@"automaticallyChecksForUpdates"
                     options:nil];
 #else
@@ -622,7 +622,7 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
     const char *pref = NULL;
     NSUserDefaults * const defaults = NSUserDefaults.standardUserDefaults;
     pref = [[defaults objectForKey:@"language"] UTF8String];
-    for (int x = 0; x < ARRAY_SIZE(language_map); x++) {
+    for (size_t x = 0; x < ARRAY_SIZE(language_map); x++) {
         [_intf_languagePopup addItemWithTitle:toNSStr(language_map[x].name)];
         if (pref) {
             if (!strcmp(language_map[x].iso, pref))
@@ -654,8 +654,9 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
 
 
 #ifdef HAVE_SPARKLE
-    if ([[SUUpdater sharedUpdater] lastUpdateCheckDate] != NULL)
-        [_intf_last_updateLabel setStringValue: [NSString stringWithFormat: _NS("Last check on: %@"), [[[SUUpdater sharedUpdater] lastUpdateCheckDate] descriptionWithLocale: [[NSUserDefaults standardUserDefaults] dictionaryRepresentation]]]];
+    NSDate * const lastUpdateCheckDate = VLCMain.sharedInstance.sparkleUpdaterController.updater.lastUpdateCheckDate;
+    if (lastUpdateCheckDate != NULL)
+        [_intf_last_updateLabel setStringValue: [NSString stringWithFormat: _NS("Last check on: %@"), [lastUpdateCheckDate descriptionWithLocale: [[NSUserDefaults standardUserDefaults] dictionaryRepresentation]]]];
     else
         [_intf_last_updateLabel setStringValue: _NS("No check was performed yet.")];
 #endif
@@ -915,7 +916,7 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
     }];
 }
 
-static inline void save_int_list(intf_thread_t * p_intf, id object, const char * name)
+static inline void save_int_list(intf_thread_t * __unused p_intf, id object, const char * name)
 {
     NSNumber *p_valueobject = (NSNumber *)[[object selectedItem] representedObject];
     if (p_valueobject) {
@@ -924,7 +925,7 @@ static inline void save_int_list(intf_thread_t * p_intf, id object, const char *
     }
 }
 
-static inline void save_string_list(intf_thread_t * p_intf, id object, const char * name)
+static inline void save_string_list(intf_thread_t * __unused p_intf, id object, const char * name)
 {
     NSString *p_stringobject = (NSString *)[[object selectedItem] representedObject];
     if (p_stringobject) {
@@ -943,7 +944,7 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
         [defaults removeObjectForKey:@"NSForceRightToLeftWritingDirection"];
         [defaults removeObjectForKey:@"AppleTextDirection"];
     } else {
-        for(int i = 0; i < ARRAY_SIZE(language_map); i++) {
+        for(size_t i = 0; i < ARRAY_SIZE(language_map); i++) {
             if (!strcmp(language_map[i].iso, [isoCode UTF8String])) {
                 [defaults setBool:language_map[i].isRightToLeft forKey:@"NSForceRightToLeftWritingDirection"];
                 [defaults setBool:language_map[i].isRightToLeft forKey:@"AppleTextDirection"];

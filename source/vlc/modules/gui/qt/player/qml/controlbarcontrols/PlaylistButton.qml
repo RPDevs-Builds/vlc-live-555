@@ -21,10 +21,12 @@ import QtQuick
 import VLC.MainInterface
 import VLC.Widgets as Widgets
 import VLC.Style
+import VLC.Util
 
 
 Widgets.IconToolButton {
     id: playlistBtn
+
     text: VLCIcons.playlist
     onClicked: {
         MainCtx.playqueuePanel.visible = !MainCtx.playqueuePanel.visible
@@ -34,5 +36,7 @@ Widgets.IconToolButton {
     }
     checked: MainCtx.playqueuePanel.visible
 
-    description: qsTr("Playlist")
+    description: qsTr("Play Queue")
+
+    AccessibleCompat.id: "playqueueButton"
 }

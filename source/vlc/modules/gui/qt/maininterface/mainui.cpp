@@ -56,6 +56,7 @@
 #include "util/textureproviderindirection.hpp"
 #include "util/sgmanipulator.hpp"
 #include "util/pointingtooltipattached.hpp"
+#include "util/accessible_compat_attached.hpp"
 
 #include "dialogs/help/aboutmodel.hpp"
 #include "dialogs/dialogs_provider.hpp"
@@ -86,9 +87,14 @@
 
 #include "videosurface.hpp"
 #include "mainctx.hpp"
+#ifdef _WIN32
+#include "mainctx_win32.hpp"
+#endif
 #include "mainctx_submodels.hpp"
 
 #include <QScreen>
+#include <QAbstractProxyModel>
+#include <QMessageBox>
 
 static bool g_qmlTypesAreRegistered = false;
 
@@ -226,12 +232,17 @@ void MainUI::registerQMLTypes()
 
         // @uri VLC.MainInterface
         qmlRegisterSingletonInstance<MainCtx>(uri, versionMajor, versionMinor, "MainCtx", m_mainCtx);
+#ifdef _WIN32
+        assert(dynamic_cast<MainCtxWin32*>(m_mainCtx));
+        qmlRegisterAnonymousType<MainCtxWin32>(uri, versionMajor);
+#endif
         qmlRegisterTypesAndRevisions<SearchCtx>(uri, versionMajor);
         qmlRegisterTypesAndRevisions<SortCtx>(uri, versionMajor);
         qmlRegisterUncreatableType<UINotifier>(uri, versionMajor, versionMinor, "UINotifier", "");
         qmlRegisterSingletonInstance<UINotifier>(uri, versionMajor, versionMinor, "UINotifier", new UINotifier(m_mainCtx, m_mainCtx));
         qmlRegisterSingletonInstance<NavigationHistory>(uri, versionMajor, versionMinor, "History", new NavigationHistory(this));
         qmlRegisterUncreatableType<QAbstractItemModel>(uri, versionMajor, versionMinor, "QtAbstractItemModel", "");
+        qmlRegisterUncreatableType<QAbstractProxyModel>(uri, versionMajor, versionMinor, "QtAbstractProxyModel", "");
         qmlRegisterUncreatableType<QWindow>(uri, versionMajor, versionMinor, "QtWindow", "");
         qmlRegisterUncreatableType<QScreen>(uri, versionMajor, versionMinor, "QtScreen", "");
         qmlRegisterType<VideoSurface>(uri, versionMajor, versionMinor, "VideoSurface");
@@ -242,6 +253,8 @@ void MainUI::registerQMLTypes()
         qmlRegisterTypesAndRevisions<CSDMenu>( uri, versionMajor);
         qmlRegisterUncreatableType<NavigationAttached>( uri, versionMajor, versionMinor, "Navigation", "Navigation is only available via attached properties");
         qmlRegisterTypesAndRevisions<AboutModel>( uri, versionMajor );
+        qmlRegisterTypesAndRevisions<QSortFilterProxyModelForeign>( uri, versionMajor );
+        qmlRegisterUncreatableType<QMessageBox>( uri, versionMajor, versionMinor, "QtMessageBox", "QtMessageBox is uncreatable, use DialogsProvider instead." );
 #ifdef UPDATE_CHECK
         qmlRegisterSingletonInstance<UpdateModel>( uri, versionMajor, versionMinor, "UpdateModel", m_mainCtx->getUpdateModel() );
 #endif
@@ -421,6 +434,7 @@ void MainUI::registerQMLTypes()
         qmlRegisterType<TextureProviderObserver>( uri, versionMajor, versionMinor, "TextureProviderObserver" );
         qmlRegisterType<TextureProviderIndirection>( uri, versionMajor, versionMinor, "TextureProviderIndirection" );
         qmlRegisterType<SGManipulator>( uri, versionMajor, versionMinor, "SGManipulator" );
+        qmlRegisterTypesAndRevisions<AccessibleCompatAttached>( uri, versionMajor );
 
         qmlRegisterModule(uri, versionMajor, versionMinor);
         qmlProtectModule(uri, versionMajor);

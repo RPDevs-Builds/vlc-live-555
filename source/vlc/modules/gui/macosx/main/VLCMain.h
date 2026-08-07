@@ -41,6 +41,7 @@ typedef struct vlc_preparser_t vlc_preparser_t;
 
 intf_thread_t *getIntf(void);
 vlc_preparser_t *getNetworkPreparser();
+vlc_preparser_t *getThumbnailer();
 
 extern NSString *VLCConfigurationChangedNotification;
 extern NSString * const kVLCPreferencesVersion;
@@ -66,6 +67,9 @@ extern NSString * const kVLCPreferencesVersion;
 @class VLCPlayQueueController;
 @class VLCVideoOutputProvider;
 @class VLCDetachedAudioWindow;
+#ifdef HAVE_SPARKLE
+@class SPUStandardUpdaterController;
+#endif
 
 @interface VLCMain : NSObject
 
@@ -94,5 +98,10 @@ extern NSString * const kVLCPreferencesVersion;
 @property (readonly) VLCDetachedAudioWindow *detachedAudioWindow;
 @property (readonly) id<MTLDevice> metalDevice;
 @property (readonly) id<MTLLibrary> metalLibrary;
+#ifdef HAVE_SPARKLE
+@property (readonly) SPUStandardUpdaterController *sparkleUpdaterController;
+#endif
+
+- (int)processIsTranslated;
 
 @end

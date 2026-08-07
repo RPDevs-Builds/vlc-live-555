@@ -67,13 +67,9 @@
     }
 }
 
-- (void)mouseUp:(NSEvent *)event
+- (void)commitCurrentValue
 {
-    [super mouseUp:event];
-
-    if (self.isHovering) {
-        self.originalValue = self.doubleValue;
-    }
+    self.originalValue = self.doubleValue;
 }
 
 - (void)setDoubleValue:(double)doubleValue

@@ -63,10 +63,10 @@ extern "C" char **environ;
 #include <QOperatingSystemVersion>
 #include <QThreadPool>
 #include "util/asynctask.hpp"
-#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
 #include <rhi/qrhi.h>
 #include <QOffscreenSurface>
-#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #endif
 
 #include "qt.hpp"
@@ -155,17 +155,17 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
 #define NOTIFICATION_TEXT N_( "Show notification popup on track change" )
 #define NOTIFICATION_LONGTEXT N_( \
     "Show a notification popup with the artist and track name when " \
-    "the current playlist item changes, when VLC is minimized or hidden." )
+    "the current play queue item changes, when VLC is minimized or hidden." )
 
 #define OPACITY_TEXT N_( "Windows opacity between 0.1 and 1" )
 #define OPACITY_LONGTEXT N_( "Sets the windows opacity between 0.1 and 1 " \
-                             "for main interface, playlist and extended panel."\
+                             "for main interface, play queue and extended panel."\
                              " This option only works with Windows and " \
                              "X11 with composite extensions." )
 
 #define OPACITY_FS_TEXT N_( "Fullscreen controller opacity between 0.1 and 1" )
 #define OPACITY_FS_LONGTEXT N_( "Sets the fullscreen controller opacity between 0.1 and 1 " \
-                             "for main interface, playlist and extended panel."\
+                             "for main interface, play queue and extended panel."\
                              " This option only works with Windows and " \
                              "X11 with composite extensions." )
 
@@ -256,7 +256,7 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
 #define QT_COMPOSITOR_LONGTEXT N_("Select Qt video integration backend. Use with care, the interface may not start if an incompatible compositor is selected")
 
 #define SMOOTH_SCROLLING_TEXT N_( "Use smooth scrolling in Flickable based views" )
-#define SMOOTH_SCROLLING_LONGTEXT N_( "Deactivating this option will disable smooth scrolling in Flickable based views (such as the Playqueue). " \
+#define SMOOTH_SCROLLING_LONGTEXT N_( "Deactivating this option will disable smooth scrolling in Flickable based views (such as the Play Queue). " \
                                       "This option is only respected with a scroll handler, see option `qt-use-scroll-handler`." )
 
 #define SCROLL_HANDLER_TEXT N_( "Use Kirigami scroll handler for Flickable based views" )
@@ -854,7 +854,6 @@ static void *Thread( void *obj )
 #endif
     Q_INIT_RESOURCE( shaders );
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     // NOTE:  Qt declarative 6.8.0 initializes scenegraph_shaders,
     //        but not scenegraph_curve_shaders. Curve shaders
     //        are used in particular cases even when curve
@@ -862,12 +861,8 @@ static void *Thread( void *obj )
     //        observed with underlined text on Windows which lead
     //        access violation in the scene graph thread.
     Q_INIT_RESOURCE( scenegraph_curve_shaders );
-#endif
 
     Q_INIT_RESOURCE( qmake_QtQml );
-#if QT_VERSION < QT_VERSION_CHECK(6, 8, 0)
-    Q_INIT_RESOURCE( qmake_QtQml_Base );
-#endif
     Q_INIT_RESOURCE( qmake_QtQml_Models );
     Q_INIT_RESOURCE( qmake_QtQml_WorkerScript );
     Q_INIT_RESOURCE( qmake_QtQuick );
@@ -879,13 +874,8 @@ static void *Thread( void *obj )
     Q_INIT_RESOURCE( qmake_QtQuick_Layouts );
     Q_INIT_RESOURCE( qmake_QtQuick_Templates );
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     Q_INIT_RESOURCE( QuickControls2Basic_raw_qml_0 );
     Q_INIT_RESOURCE( qtquickcontrols2basicstyle );
-#else
-    Q_INIT_RESOURCE( qtquickcontrols2basicstyleplugin_raw_qml_0 );
-    Q_INIT_RESOURCE( qtquickcontrols2basicstyleplugin );
-#endif
 
     // Q_INIT_RESOURCE( qtquickshapes_shaders );
 #endif
@@ -981,11 +971,23 @@ static void *Thread( void *obj )
 
         // TODO: Investigate if we should use D3D12. Currently it is not the default by
         //       Qt (as of Qt 6.8), and is not as battle tested as the default D3D11.
+#ifndef NDEBUG
+        const bool d3d11SdkLayersAvailable = []() {
+            std::unique_ptr<std::remove_pointer_t<HMODULE>, BOOL WINAPI (*)(HMODULE)>
+                d3d11sdklayerslib(::LoadLibraryEx(TEXT("d3d11_1sdklayers.dll"), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32), ::FreeLibrary);
+
+            if (d3d11sdklayerslib)
+                return true;
+            else
+                return false;
+        }();
+#endif
 
         {
             QRhiD3D11InitParams params;
 #ifndef NDEBUG
-            params.enableDebugLayer = true;
+            if (d3d11SdkLayersAvailable)
+                params.enableDebugLayer = true;
 #endif
             if (QRhi::probe(QRhi::D3D11, &params))
             {
@@ -1019,7 +1021,8 @@ static void *Thread( void *obj )
             // as what `::probe()` does, at least for DirectX:
             QRhiD3D11InitParams params;
 #ifndef NDEBUG
-            params.enableDebugLayer = true;
+            if (d3d11SdkLayersAvailable)
+                params.enableDebugLayer = true;
 #endif
             QRhi *rhi = QRhi::create(QRhi::D3D11, &params, QRhi::PreferSoftwareRenderer);
             if (rhi)
@@ -1040,7 +1043,7 @@ static void *Thread( void *obj )
     static constexpr QLatin1String graphicsApiRhiSoftwareKey {"graphics-api-rhi-software"};
     if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND") &&
         qEnvironmentVariableIsEmpty("QT_QUICK_BACKEND") &&
-        (QT_VERSION < QT_VERSION_CHECK(6, 4, 0) || !uint(qEnvironmentVariableIntValue("QSG_RHI_PREFER_SOFTWARE_RENDERER"))))
+        !uint(qEnvironmentVariableIntValue("QSG_RHI_PREFER_SOFTWARE_RENDERER")))
     {
         const auto enableRhiSoftwareRenderer = []() {
             // We could use `QQuickGraphicsConfiguration::setPreferSoftwareDevice()`, but this

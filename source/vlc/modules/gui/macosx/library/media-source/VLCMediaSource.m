@@ -21,6 +21,7 @@
  *****************************************************************************/
 
 #import "VLCMediaSource.h"
+#include <Foundation/Foundation.h>
 
 #import "extensions/NSString+Helpers.h"
 #import "library/VLCInputItem.h"
@@ -37,6 +38,7 @@
 NSString *VLCMediaSourceChildrenReset = @"VLCMediaSourceChildrenReset";
 NSString *VLCMediaSourceChildrenAdded = @"VLCMediaSourceChildrenAdded";
 NSString *VLCMediaSourceChildrenRemoved = @"VLCMediaSourceChildrenRemoved";
+NSString *VLCMediaSourcePreparsingStarted = @"VLCMediaSourcePreparsingStarted";
 NSString *VLCMediaSourcePreparsingEnded = @"VLCMediaSourcePreparsingEnded";
 
 static void cb_children_reset(vlc_media_tree_t * __unused p_tree,
@@ -323,6 +325,9 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         return nil;
     }
 
+    [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourcePreparsingStarted
+                                                      object:self];
+
     if (inputNode.inputItem.inputType == ITEM_TYPE_DIRECTORY &&
         [inputNode.inputItem.MRL hasPrefix:@"file://"]) {
         NSURL *dirUrl = [NSURL URLWithString:inputNode.inputItem.MRL];
@@ -331,6 +336,12 @@ static const char *const remoteBrowseDescription = "Remote Browse";
 
     vlc_media_tree_Preparse(_p_mediaSource->tree, _p_preparser,
                             inputNode.inputItem.vlcInputItem);
+    return nil;
+}
+
+- (nullable id<VLCMediaSourceNodeObservation>)observeInputNode:(VLCInputNode *const __unused)inputNode
+                                                      onChange:(void (^const __unused)(VLCMediaSourceNodeChange change))changeHandler
+{
     return nil;
 }
 
@@ -459,6 +470,8 @@ static const char *const remoteBrowseDescription = "Remote Browse";
             if (self.didFinishGeneratingChildNodesForNodeHandler) {
                 self.didFinishGeneratingChildNodesForNodeHandler(directoryNode);
             }
+            [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourcePreparsingEnded
+                                                              object:self];
             return error;
         }
 
@@ -511,6 +524,8 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         if (self.didFinishGeneratingChildNodesForNodeHandler) {
             self.didFinishGeneratingChildNodesForNodeHandler(directoryNode);
         }
+        [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourcePreparsingEnded
+                                                          object:self];
     }
 
     return nil;
@@ -624,6 +639,5 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         
     });
 }
-
 
 @end

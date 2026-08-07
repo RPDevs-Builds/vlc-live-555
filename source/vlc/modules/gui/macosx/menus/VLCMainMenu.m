@@ -114,6 +114,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     __strong VLCTimeSelectionPanelController *_timeSelectionPanel;
     __strong VLCCustomCropArWindowController *_customARController;
 }
+
 @end
 
 @implementation VLCMainMenu
@@ -144,7 +145,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
 
 #ifdef HAVE_SPARKLE
     [_checkForUpdate setAction:@selector(checkForUpdates:)];
-    [_checkForUpdate setTarget:[SUUpdater sharedUpdater]];
+    [_checkForUpdate setTarget:VLCMain.sharedInstance.sparkleUpdaterController];
 #else
     [_checkForUpdate setEnabled:NO];
 #endif
@@ -153,12 +154,16 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [self setupKeyboardShortcuts];
 
     /* configure playback / controls menu */
+    self.fileMenu.delegate = self;
     self.controlsMenu.delegate = self;
+    self.audioMenu.delegate = self;
+    self.videoMenu.delegate = self;
     self.subtitlesMenu.delegate = self;
     [_rendererNoneItem setState:NSOnState];
     _rendererMenuController = [[VLCRendererMenuController alloc] init];
     _rendererMenuController.rendererNoneItem = _rendererNoneItem;
     _rendererMenuController.rendererMenu = _rendererMenu;
+    _rendererMenuController.rendererMenuItem = _rendererMenuItem;
     _playQueueSortingController = [[VLCPlayQueueSortingMenuController alloc] init];
     _sortPlayQueue.submenu = _playQueueSortingController.playQueueSortingMenu;
     _recentStreamsMenuController =
@@ -294,6 +299,10 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [_voutMenumute matchKeyEquivalentsOfMenuItem:_mute];
     [_voutMenufullscreen matchKeyEquivalentsOfMenuItem:_fullscreenItem];
     [_voutMenusnapshot matchKeyEquivalentsOfMenuItem:_snapshot];
+
+    [self updateVideoSubmenuEnablement];
+    [self updateAudioSubmenuEnablement];
+    [self updateRecentMenuEnablement];
 }
 
 - (void)setupMenu:(NSMenu *)menu withIntList:(char *)psz_name andSelector:(SEL)selector
@@ -693,6 +702,46 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
 
 #pragma mark - Interface update
 
+- (void)updateVideoSubmenuEnablement
+{
+    vout_thread_t * const p_vout = _playerController.videoOutputThreadForKeyWindow;
+    const BOOL enabled = p_vout != NULL &&
+                         _playerController.currentMedia != nil &&
+                         _playerController.activeVideoPlayback;
+
+    _aspect_ratio.enabled = enabled;
+    _crop.enabled = enabled;
+    _deinterlace.enabled = enabled;
+    _deinterlace_mode.enabled = enabled;
+    _postprocessing.enabled = enabled;
+    _screen.enabled = enabled;
+    _videotrack.enabled = enabled && _playerController.videoTracks.count > 0;
+
+    if (p_vout != NULL)
+        vout_Release(p_vout);
+}
+
+- (void)updateAudioSubmenuEnablement
+{
+    audio_output_t * const p_aout = _playerController.mainAudioOutput;
+    const BOOL enabled = p_aout != NULL &&
+                         _playerController.currentMedia != nil &&
+                         _playerController.playerState != VLC_PLAYER_STATE_STOPPED;
+
+    _audiotrack.enabled = enabled && _playerController.audioTracks.count > 0;
+    _channels.enabled = enabled;
+    _visual.enabled = enabled;
+
+    if (p_aout != NULL)
+        aout_Release(p_aout);
+}
+
+- (void)updateRecentMenuEnablement
+{
+    _open_recent.enabled = NSDocumentController.sharedDocumentController.recentDocumentURLs.count > 0;
+    _recent_streams.enabled = _recentStreamsMenuController.hasEntries;
+}
+
 - (void)mediaItemChanged:(NSNotification *)notification
 {
     [self updateTrackHandlingMenus:notification];
@@ -702,6 +751,9 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
         [self rebuildAoutMenu];
         [self rebuildVoutMenu];
     }
+
+    [self updateVideoSubmenuEnablement];
+    [self updateAudioSubmenuEnablement];
 }
 
 - (void)rebuildAoutMenu
@@ -727,6 +779,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
 - (void)voutListChanged:(NSNotification *)aNotification
 {
     [self rebuildVoutMenu];
+    [self updateVideoSubmenuEnablement];
 }
 
 - (void)rebuildVoutMenu
@@ -794,11 +847,22 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
         [menuItem setTarget: self];
     }
     [[submenu itemWithTag: var_InheritInteger(getIntf(), "macosx-vdev")] setState: NSOnState];
+    [self updateVideoSubmenuEnablement];
 }
 
 - (void)updateSubtitlesMenu:(NSNotification *)notification
 {
     const BOOL enabled = [self validateUserInterfaceItem:self.openSubtitleFile];
+    const BOOL hasSubtitleTracks = _playerController.subtitleTracks.count > 0;
+
+    self.subtitleSize.enabled = enabled;
+    self.subtitle_track.enabled = enabled && hasSubtitleTracks;
+    self.subtitle_textcolor.enabled = enabled;
+    self.subtitle_outlinethickness.enabled = enabled;
+    self.subtitle_bgopacity.enabled = enabled;
+    self.subtitle_bgcolor.enabled = enabled;
+    self.teletext.enabled = enabled && _playerController.teletextMenuAvailable;
+
     self.subtitleSizeSlider.enabled = enabled;
 
     const unsigned int scaleFactor = _playerController.subtitleTextScalingFactor;
@@ -1035,6 +1099,8 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
                    category:SPU_ES];
 
     [self updateSubtitlesMenu:notification];
+    [self updateVideoSubmenuEnablement];
+    [self updateAudioSubmenuEnablement];
 }
 
 - (void)rebuildTracksMenu:(NSMenu *)menu
@@ -1611,6 +1677,9 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
 
 - (void)playbackStateChanged:(NSNotification *)aNotification
 {
+    [self updateVideoSubmenuEnablement];
+    [self updateAudioSubmenuEnablement];
+
     switch (_playerController.playerState) {
         case VLC_PLAYER_STATE_PLAYING:
             [self setPause];
@@ -1963,6 +2032,19 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
 - (void)menuWillOpen:(NSMenu *)menu
 {
     [_rendererMenuController startRendererDiscoveries];
+    [_rendererMenuController updateRendererMenuItemEnablement];
+
+    if (menu == self.fileMenu) {
+        [self updateRecentMenuEnablement];
+    }
+
+    if (menu == self.audioMenu) {
+        [self updateAudioSubmenuEnablement];
+    }
+
+    if (menu == self.videoMenu) {
+        [self updateVideoSubmenuEnablement];
+    }
 
     if (@available(macOS 10.16, *)) {
 
@@ -1985,6 +2067,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
         }
 
         if (menu == _subtitlesMenu) {
+            [self updateSubtitlesMenu:nil];
             _subtitle_bgopacity_view_offset_constraint.constant = menuItemOffset;
             _subtitleSizeViewOffsetConstraint.constant = menuItemOffset;
         }
@@ -2076,7 +2159,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
         return _playerController.currentMedia != nil && _playerController.teletextMenuAvailable;
     } else if (mi == self.voutMenuAudiotrack) {
         return _playerController.audioTracks.count > 0;
-    } else if (mi == self.voutMenuVideotrack) {
+    } else if (mi == self.videotrack || mi == self.voutMenuVideotrack) {
         return _playerController.videoTracks.count > 0;
     } else if (mi == self.voutMenuSubtitlestrack) {
         return _playerController.subtitleTracks.count > 0;

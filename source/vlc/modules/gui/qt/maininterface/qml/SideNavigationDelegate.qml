@@ -35,6 +35,8 @@ T.ItemDelegate {
 
     property bool showText: true
 
+    property real radius: VLCStyle.button_radius
+
     // Settings
 
     implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
@@ -44,9 +46,30 @@ T.ItemDelegate {
 
     padding: VLCStyle.margin_xxsmall
 
+    leftInset: VLCStyle.margin_xxsmall
+    rightInset: VLCStyle.margin_xxsmall
+
+    topInset: VLCStyle.margin_xxxsmall
+    bottomInset: VLCStyle.margin_xxxsmall
+
     // Accessible
 
     Accessible.onPressAction: control.clicked()
+    AccessibleCompat.id: {
+        if (model.depth !== 0 || !model.uri || model.uri.length === 0) return "";
+        const navBarIds = {
+            "home": "homeNavBar",
+            "video": "videoNavBar",
+            "music": "musicNavBar",
+            "network": "browseNavBar",
+            "discover": "discoverNavBar"
+        }
+        const id = navBarIds[model.uri[0]]
+        if (id !== undefined)
+            return id
+        else
+            return ""
+    }
 
     // Tooltip
 
@@ -73,14 +96,18 @@ T.ItemDelegate {
         color: theme.bg.primary
         border.color: visualFocus ? theme.visualFocus : "transparent"
 
+        radius: control.radius
+
         Widgets.CurrentIndicator {
             anchors {
                 left: parent.left
                 leftMargin: VLCStyle.margin_xxxsmall
                 verticalCenter: parent.verticalCenter
             }
-            implicitHeight: parent.height * 3 / 4
+            implicitHeight: parent.height / 2
             visible: control.checked
+
+            radius: control.radius / 2
         }
     }
 

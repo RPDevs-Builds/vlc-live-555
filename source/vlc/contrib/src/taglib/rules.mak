@@ -1,33 +1,21 @@
 # TagLib
 
-TAGLIB_VERSION := 2.1
+TAGLIB_VERSION := 2.3
 TAGLIB_URL := $(GITHUB)/taglib/taglib/releases/download/v$(TAGLIB_VERSION)/taglib-$(TAGLIB_VERSION).tar.gz
-
-UTFCPP_VERSION := 3.2.5
-UTFCPP_URL := $(GITHUB)/nemtrif/utfcpp/archive/refs/tags/v$(UTFCPP_VERSION).tar.gz
 
 PKGS += taglib
 ifeq ($(call need_pkg,"taglib >= 1.9"),)
 PKGS_FOUND += taglib
 endif
 
+DEPS_taglib := utfcpp $(DEPS_utfcpp)
+
 $(TARBALLS)/taglib-$(TAGLIB_VERSION).tar.gz:
 	$(call download_pkg,$(TAGLIB_URL),taglib)
 
-$(TARBALLS)/utfcpp-$(UTFCPP_VERSION).tar.gz:
-	$(call download_pkg,$(UTFCPP_URL),utfcpp)
-
-.sum-taglib: taglib-$(TAGLIB_VERSION).tar.gz utfcpp-$(UTFCPP_VERSION).tar.gz
-
-.sum-utfcpp: .sum-taglib
-	touch $@
+.sum-taglib: taglib-$(TAGLIB_VERSION).tar.gz
 
 taglib: taglib-$(TAGLIB_VERSION).tar.gz .sum-taglib
-	$(UNPACK)
-	$(APPLY) $(SRC)/taglib/0001-Fix-std-ostream-not-defined-on-Android-NDK-29.0.1403.patch
-	$(MOVE)
-
-taglib/3rdparty/utfcpp: utfcpp-$(UTFCPP_VERSION).tar.gz .sum-utfcpp taglib
 	$(UNPACK)
 	$(MOVE)
 
@@ -37,7 +25,7 @@ TAGLIB_CONF += -DPLATFORM_WINRT=ON
 endif
 
 
-.taglib: taglib taglib/3rdparty/utfcpp toolchain.cmake
+.taglib: taglib toolchain.cmake
 	$(CMAKECLEAN)
 	$(HOSTVARS_CMAKE) $(CMAKE) $(TAGLIB_CONF)
 	+$(CMAKEBUILD)

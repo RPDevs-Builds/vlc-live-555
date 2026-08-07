@@ -27,6 +27,7 @@
 #import "library/VLCInputItem.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryModel.h"
+#import "library/VLCThumbnailRequest.h"
 
 #import "main/VLCMain.h"
 
@@ -34,23 +35,60 @@
 
 #import <ImageIO/ImageIO.h>
 
+#import <vlc_configuration.h>
+#import <vlc_hash.h>
+#import <vlc_preparser.h>
+#import <vlc_strings.h>
+
 NSUInteger kVLCMaximumLibraryImageCacheSize = 500;
 /* 256 MB cost limit based on estimated pixel data size per image */
 static const NSUInteger kVLCLibraryImageCacheCostLimit = 256 * 1024 * 1024;
+static const NSTimeInterval kVLCThumbnailCacheMaximumAge = 30 * 24 * 60 * 60;
 uint32_t kVLCDesiredThumbnailWidth = 512;
 uint32_t kVLCDesiredThumbnailHeight = 512;
 float kVLCDefaultThumbnailPosition = .15;
 const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
-
 
 @interface VLCLibraryImageCache()
 {
     NSCache *_imageCache;
     NSImage *_noArtImage;
     vlc_medialibrary_t *_p_libraryInstance;
+    NSString *_thumbnailCacheDirectory;
+    NSMutableDictionary<NSString *, VLCThumbnailRequest *> *_pendingThumbnailRequests;
 }
 
+- (void)thumbnailRequest:(VLCThumbnailRequest *)request
+     didFinishWithStatus:(int)status
+                 results:(const bool *)results
+             resultCount:(size_t)resultCount;
+
 @end
+
+static void vlcThumbnailerToFilesOnEnded(vlc_preparser_req *req,
+                                         int status,
+                                         const bool *results,
+                                         size_t resultCount,
+                                         void *data)
+{
+    VLCThumbnailRequest * const request = (__bridge VLCThumbnailRequest *)data;
+    [request.imageCache thumbnailRequest:request
+                     didFinishWithStatus:status
+                                 results:results
+                             resultCount:resultCount];
+    vlc_preparser_req_Release(req);
+}
+
+static NSString *thumbnailHashForString(NSString *string)
+{
+    NSData * const data = [string dataUsingEncoding:NSUTF8StringEncoding];
+    char hash[VLC_HASH_MD5_DIGEST_HEX_SIZE];
+    vlc_hash_md5_t md5;
+    vlc_hash_md5_Init(&md5);
+    vlc_hash_md5_Update(&md5, data.bytes, data.length);
+    vlc_hash_FinishHex(&md5, hash);
+    return [NSString stringWithUTF8String:hash];
+}
 
 @implementation VLCLibraryImageCache
 
@@ -105,6 +143,28 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
         _imageCache.countLimit = kVLCMaximumLibraryImageCacheSize;
         _imageCache.totalCostLimit = kVLCLibraryImageCacheCostLimit;
         _noArtImage = NSImage.VLCNoArtImage;
+        _pendingThumbnailRequests = NSMutableDictionary.dictionary;
+
+        char * const cacheDirectory = config_GetUserDir(VLC_CACHE_DIR);
+        if (cacheDirectory != NULL) {
+            NSString * const thumbnailCacheDirectory =
+                [NSString stringWithFormat:@"%s/macosx-thumbnails", cacheDirectory];
+            free(cacheDirectory);
+
+            NSError *error = nil;
+            if ([NSFileManager.defaultManager createDirectoryAtPath:thumbnailCacheDirectory
+                                        withIntermediateDirectories:YES
+                                                         attributes:@{NSFilePosixPermissions: @0700}
+                                                              error:&error]) {
+                _thumbnailCacheDirectory = [thumbnailCacheDirectory copy];
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    [self pruneStoredThumbnailCache];
+                });
+            } else {
+                NSLog(@"Failed to create thumbnail cache directory %@: %@",
+                      thumbnailCacheDirectory, error);
+            }
+        }
 
         NSNotificationCenter * const notificationCenter = [NSNotificationCenter defaultCenter];
         [notificationCenter addObserver:self
@@ -126,6 +186,106 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)pruneStoredThumbnailCache
+{
+    if (_thumbnailCacheDirectory == nil) {
+        return;
+    }
+
+    @synchronized (self) {
+        NSArray<NSString *> * const cachedFiles =
+            [NSFileManager.defaultManager contentsOfDirectoryAtPath:_thumbnailCacheDirectory
+                                                              error:NULL];
+        NSDate * const now = NSDate.date;
+
+        for (NSString * const cachedFile in cachedFiles) {
+            if (![cachedFile.pathExtension isEqualToString:@"jpg"]) {
+                continue;
+            }
+
+            NSString * const cachedPath =
+                [_thumbnailCacheDirectory stringByAppendingPathComponent:cachedFile];
+            NSDictionary * const attributes =
+                [NSFileManager.defaultManager attributesOfItemAtPath:cachedPath error:NULL];
+            NSDate * const modificationDate = attributes[NSFileModificationDate];
+            if (modificationDate != nil &&
+                [now timeIntervalSinceDate:modificationDate] > kVLCThumbnailCacheMaximumAge) {
+                [NSFileManager.defaultManager removeItemAtPath:cachedPath error:NULL];
+            }
+        }
+    }
+}
+
+- (nullable NSString *)thumbnailPathForInputItem:(VLCInputItem *)inputItem
+                                        cacheKey:(NSString *)cacheKey
+{
+    if (_thumbnailCacheDirectory == nil || inputItem.path.length == 0 || cacheKey.length == 0) {
+        return nil;
+    }
+
+    NSString * const sourceKey = inputItem.path;
+    NSString * const sourceHash = thumbnailHashForString(sourceKey);
+    NSDictionary * const sourceAttributes =
+        [NSFileManager.defaultManager attributesOfItemAtPath:inputItem.path error:NULL];
+    NSDate * const modificationDate = sourceAttributes[NSFileModificationDate];
+    NSNumber * const sourceSize = sourceAttributes[NSFileSize];
+    NSString * const identifier = [NSString stringWithFormat:@"%@-%@-%llu-%.6f-%ux%u-%.6f",
+                                   sourceKey,
+                                   cacheKey,
+                                   sourceSize.unsignedLongLongValue,
+                                   modificationDate.timeIntervalSince1970,
+                                   kVLCDesiredThumbnailWidth,
+                                   kVLCDesiredThumbnailHeight,
+                                   kVLCDefaultThumbnailPosition];
+    NSString * const thumbnailHash = thumbnailHashForString(identifier);
+
+    return [_thumbnailCacheDirectory stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"%@-%@.jpg", sourceHash, thumbnailHash]];
+}
+
+- (nullable NSImage *)thumbnailFromCacheForInputItem:(VLCInputItem *)inputItem
+                                            cacheKey:(NSString *)cacheKey
+{
+    NSString * const thumbnailPath = [self thumbnailPathForInputItem:inputItem
+                                                            cacheKey:cacheKey];
+    if (thumbnailPath == nil) {
+        return nil;
+    }
+
+    [self removeStaleThumbnailFilesForInputItem:inputItem
+                                       cacheKey:cacheKey
+                                    keepingPath:thumbnailPath];
+    NSImage * const image = [[NSImage alloc] initWithContentsOfFile:thumbnailPath];
+    if (image == nil && [NSFileManager.defaultManager fileExistsAtPath:thumbnailPath]) {
+        [NSFileManager.defaultManager removeItemAtPath:thumbnailPath error:NULL];
+    }
+    return image;
+}
+
+- (void)removeStaleThumbnailFilesForInputItem:(VLCInputItem *)inputItem
+                                     cacheKey:(NSString *)cacheKey
+                                  keepingPath:(NSString *)keepingPath
+{
+    if (_thumbnailCacheDirectory == nil || inputItem.path.length == 0 || cacheKey.length == 0) {
+        return;
+    }
+
+    NSString * const sourceKey = inputItem.path;
+    NSString * const sourcePrefix = [thumbnailHashForString(sourceKey) stringByAppendingString:@"-"];
+    NSArray<NSString *> * const cachedFiles =
+        [NSFileManager.defaultManager contentsOfDirectoryAtPath:_thumbnailCacheDirectory error:NULL];
+    for (NSString * const cachedFile in cachedFiles) {
+        if (![cachedFile hasPrefix:sourcePrefix] || ![cachedFile.pathExtension isEqualToString:@"jpg"]) {
+            continue;
+        }
+
+        NSString * const cachedPath = [_thumbnailCacheDirectory stringByAppendingPathComponent:cachedFile];
+        if (![cachedPath isEqualToString:keepingPath]) {
+            [NSFileManager.defaultManager removeItemAtPath:cachedPath error:NULL];
+        }
+    }
 }
 
 + (instancetype)sharedImageCache
@@ -175,7 +335,7 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             NSImage * const image =
                 [VLCLibraryImageCache downsampledImageFromURL:artworkURL
-                                                maxPixelSize:kVLCDesiredThumbnailWidth];
+                                                 maxPixelSize:kVLCDesiredThumbnailWidth];
             if (image) {
                 const NSUInteger cost = [VLCLibraryImageCache costForImage:image];
                 [self->_imageCache setObject:image forKey:artworkMRL cost:cost];
@@ -214,10 +374,37 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
     [VLCLibraryImageCache.sharedImageCache imageForInputItem:inputItem withCompletion:completionHandler];
 }
 
+- (void)imageForCountryCode:(NSString *)countryCode
+             withCompletion:(void(^)(const NSImage * _Nullable))completionHandler
+{
+    NSString * const normalizedCountryCode = countryCode.uppercaseString;
+    NSString * const cacheKey = [@"flag://" stringByAppendingString:normalizedCountryCode];
+    NSImage * const cachedImage = [_imageCache objectForKey:cacheKey];
+    if (cachedImage) {
+        completionHandler(cachedImage);
+        return;
+    }
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        const NSSize imageSize =
+            NSMakeSize(kVLCDesiredThumbnailWidth, kVLCDesiredThumbnailHeight);
+        NSImage * const image = [NSImage flagImageForCountryCode:normalizedCountryCode
+                                                           size:imageSize];
+        if (image) {
+            const NSUInteger cost = [VLCLibraryImageCache costForImage:image];
+            [self->_imageCache setObject:image forKey:cacheKey cost:cost];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completionHandler(image);
+        });
+    });
+}
+
 - (void)imageForInputItem:(VLCInputItem *)inputItem 
            withCompletion:(nonnull void (^)(const NSImage * _Nonnull))completionHandler
 {
-    NSImage * const cachedImage = [_imageCache objectForKey:inputItem.MRL];
+    NSString * const memoryCacheKey = inputItem.MRL;
+    NSImage * const cachedImage = [_imageCache objectForKey:memoryCacheKey];
     if (cachedImage) {
         completionHandler(cachedImage);
         return;
@@ -225,42 +412,210 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
     [self generateImageForInputItem:inputItem withCompletion:completionHandler];
 }
 
-- (void)generateImageForInputItem:(VLCInputItem *)inputItem
-                   withCompletion:(void(^)(const NSImage *))completionHandler
+- (void)generateArtworkForInputItem:(VLCInputItem *)inputItem
+                     withCompletion:(void(^)(const NSImage *))completionHandler
 {
     NSURL * const artworkURL = inputItem.artworkURL;
     const NSSize imageSize = NSMakeSize(kVLCDesiredThumbnailWidth, kVLCDesiredThumbnailHeight);
+    NSString * const memoryCacheKey = inputItem.MRL;
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSImage * const image = artworkURL ?
-            [VLCLibraryImageCache downsampledImageFromURL:artworkURL
-                                            maxPixelSize:kVLCDesiredThumbnailWidth] : nil;
+        NSImage * const image = artworkURL
+            ? [VLCLibraryImageCache downsampledImageFromURL:artworkURL
+                                               maxPixelSize:kVLCDesiredThumbnailWidth]
+            : nil;
 
         if (image) {
             const NSUInteger cost = [VLCLibraryImageCache costForImage:image];
-            [self->_imageCache setObject:image forKey:inputItem.MRL cost:cost];
+            [self->_imageCache setObject:image forKey:memoryCacheKey cost:cost];
             dispatch_async(dispatch_get_main_queue(), ^{
                 completionHandler(image);
             });
             return;
         }
 
-        [inputItem thumbnailWithSize:imageSize completionHandler:^(NSImage * const thumbnail) {
-            if (thumbnail) {
-                const NSUInteger cost = [VLCLibraryImageCache costForImage:thumbnail];
-                [self->_imageCache setObject:thumbnail forKey:inputItem.MRL cost:cost];
+        if (inputItem.inputType == ITEM_TYPE_FILE &&
+            !inputItem.isStream &&
+            input_item_Playable(inputItem.path.UTF8String)) {
+            NSImage * const cachedThumbnail =
+                [self thumbnailFromCacheForInputItem:inputItem
+                                            cacheKey:memoryCacheKey];
+            if (cachedThumbnail != nil) {
+                const NSUInteger cost = [VLCLibraryImageCache costForImage:cachedThumbnail];
+                [self->_imageCache setObject:cachedThumbnail forKey:memoryCacheKey cost:cost];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    completionHandler(cachedThumbnail);
+                });
+                return;
+            }
+
+            [self generateVLCThumbnailForInputItem:inputItem
+                                          cacheKey:inputItem.MRL
+                                        completion:^(NSImage * const thumbnail) {
+                if (thumbnail != nil) {
+                    const NSUInteger cost = [VLCLibraryImageCache costForImage:thumbnail];
+                    [self->_imageCache setObject:thumbnail forKey:memoryCacheKey cost:cost];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        completionHandler(thumbnail);
+                    });
+                    return;
+                }
+
+                [inputItem thumbnailWithSize:imageSize completionHandler:^(NSImage * const quickLookThumbnail) {
+                    if (quickLookThumbnail) {
+                        const NSUInteger cost = [VLCLibraryImageCache costForImage:quickLookThumbnail];
+                        [self->_imageCache setObject:quickLookThumbnail forKey:memoryCacheKey cost:cost];
+                    } else {
+                        NSLog(@"Failed to generate thumbnail for input item %@", inputItem.MRL);
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        completionHandler(quickLookThumbnail ?: self->_noArtImage);
+                    });
+                }];
+            }];
+            return;
+        }
+
+        if (inputItem.isStream || inputItem.path.length == 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completionHandler(self->_noArtImage);
+            });
+            return;
+        }
+
+        [inputItem thumbnailWithSize:imageSize completionHandler:^(NSImage * const quickLookThumbnail) {
+            if (quickLookThumbnail) {
+                const NSUInteger cost = [VLCLibraryImageCache costForImage:quickLookThumbnail];
+                [self->_imageCache setObject:quickLookThumbnail forKey:memoryCacheKey cost:cost];
             } else {
                 NSLog(@"Failed to generate thumbnail for input item %@", inputItem.MRL);
             }
             dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(thumbnail ?: self->_noArtImage);
+                completionHandler(quickLookThumbnail ?: self->_noArtImage);
             });
         }];
     });
 }
 
+- (void)generateImageForInputItem:(VLCInputItem *)inputItem
+                   withCompletion:(void(^)(const NSImage *))completionHandler
+{
+    NSString * const radioCountryCode = inputItem.radioCountryCodeForFlagArtwork;
+    if (!radioCountryCode) {
+        [self generateArtworkForInputItem:inputItem withCompletion:completionHandler];
+        return;
+    }
+
+    [self imageForCountryCode:radioCountryCode
+               withCompletion:^(const NSImage * const flagImage) {
+        if (flagImage) {
+            completionHandler(flagImage);
+            return;
+        }
+        [self generateArtworkForInputItem:inputItem withCompletion:completionHandler];
+    }];
+}
+
+- (void)generateVLCThumbnailForInputItem:(VLCInputItem *)inputItem
+                                cacheKey:(NSString *)cacheKey
+                              completion:(VLCThumbnailCompletion)completion
+{
+    VLCThumbnailRequest *request;
+    @synchronized (self) {
+        request = _pendingThumbnailRequests[cacheKey];
+        if (request != nil) {
+            [request.completionHandlers addObject:[completion copy]];
+            return;
+        }
+
+        request = [[VLCThumbnailRequest alloc] init];
+        request.imageCache = self;
+        request.cacheKey = cacheKey;
+        request.thumbnailPath = [self thumbnailPathForInputItem:inputItem
+                                                       cacheKey:cacheKey];
+        request.completionHandlers = [NSMutableArray arrayWithObject:[completion copy]];
+        _pendingThumbnailRequests[cacheKey] = request;
+    }
+
+    vlc_preparser_t * const thumbnailer = getThumbnailer();
+    if (thumbnailer == NULL || request.thumbnailPath == nil) {
+        [self thumbnailRequest:request
+           didFinishWithStatus:VLC_EGENERIC
+                       results:NULL
+                   resultCount:0];
+        return;
+    }
+
+    struct vlc_thumbnailer_arg thumbnailerArgument = {
+        .seek = {
+            .type = VLC_THUMBNAILER_SEEK_POS,
+            .pos = kVLCDefaultThumbnailPosition,
+            .speed = VLC_THUMBNAILER_SEEK_FAST,
+        },
+        .hw_dec = false,
+    };
+    const struct vlc_thumbnailer_output output = {
+        .format = VLC_THUMBNAILER_FORMAT_JPEG,
+        .width = kVLCDesiredThumbnailWidth,
+        .height = kVLCDesiredThumbnailHeight,
+        .crop = true,
+        .file_path = request.thumbnailPath.fileSystemRepresentation,
+        .creat_mode = 0600,
+    };
+    static const struct vlc_thumbnailer_to_files_cbs callbacks = {
+        .on_ended = vlcThumbnailerToFilesOnEnded,
+    };
+
+    vlc_preparser_req * const requestHandle = vlc_preparser_GenerateThumbnailToFiles(
+        thumbnailer,
+        inputItem.vlcInputItem,
+        &thumbnailerArgument,
+        &output,
+        1,
+        &callbacks,
+        (__bridge void *)request);
+    if (requestHandle == NULL) {
+        [self thumbnailRequest:request
+           didFinishWithStatus:VLC_EGENERIC
+                       results:NULL
+                   resultCount:0];
+    }
+}
+
+- (void)thumbnailRequest:(VLCThumbnailRequest *)request
+     didFinishWithStatus:(int)status
+                 results:(const bool *)results
+             resultCount:(size_t)resultCount
+{
+    NSArray<VLCThumbnailCompletion> *completionHandlers;
+    @synchronized (self) {
+        [_pendingThumbnailRequests removeObjectForKey:request.cacheKey];
+        completionHandlers = [request.completionHandlers copy];
+    }
+
+    if (status == -EINTR) {
+        for (VLCThumbnailCompletion completion in completionHandlers) {
+            completion(nil);
+        }
+        return;
+    }
+
+    NSImage *image = nil;
+    if (status == VLC_SUCCESS && resultCount == 1 && results != NULL && results[0]) {
+        image = [[NSImage alloc] initWithContentsOfFile:request.thumbnailPath];
+    }
+
+    if (image == nil && request.thumbnailPath != nil) {
+        [NSFileManager.defaultManager removeItemAtPath:request.thumbnailPath error:NULL];
+    }
+
+    for (VLCThumbnailCompletion completion in completionHandlers) {
+        completion(image);
+    }
+}
+
 + (void)thumbnailForPlayQueueItem:(VLCPlayQueueItem *)playQueueItem
-                  withCompletion:(nonnull void (^)(const NSImage * _Nonnull))completionHandler
+                   withCompletion:(nonnull void (^)(const NSImage * _Nonnull))completionHandler
 {
     return [VLCLibraryImageCache.sharedImageCache imageForInputItem:playQueueItem.inputItem
                                                      withCompletion:completionHandler];

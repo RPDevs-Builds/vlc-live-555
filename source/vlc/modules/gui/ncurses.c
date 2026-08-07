@@ -91,6 +91,7 @@ vlc_module_begin ()
 
 vlc_module_end()
 
+#include "audio_filter/equalizer_presets.h"
 #include "eject.c"
 
 /*****************************************************************************
@@ -106,8 +107,11 @@ enum
     BOX_SEARCH,
     BOX_OPEN,
     BOX_BROWSE,
+    BOX_FSEARCH,
     BOX_META,
-    BOX_STATS
+    BOX_STATS,
+    BOX_EQUALIZER,
+    BOX_PRESETS,
 };
 
 static const char box_title[][19] = {
@@ -119,8 +123,11 @@ static const char box_title[][19] = {
     [BOX_SEARCH]    = " Playlist ",
     [BOX_OPEN]      = " Playlist ",
     [BOX_BROWSE]    = " Browse ",
+    [BOX_FSEARCH]   = " Browse ",
     [BOX_META]      = " Meta-information ",
     [BOX_STATS]     = " Stats ",
+    [BOX_EQUALIZER] = " Equalizer ",
+    [BOX_PRESETS]   = " Presets ",
 };
 
 enum
@@ -136,6 +143,7 @@ enum
     C_CATEGORY,
     C_FOLDER,
     C_PROGRESS,
+    C_BANDS,
     /* XXX: new elements here ! */
 
     C_PLAYLIST,
@@ -185,6 +193,7 @@ struct intf_sys_t
 
     /* Search Box context */
     char            search_chain[20];
+    char            fsearch_chain[255];
 
     /* Open Box Context */
     char            open_chain[50];
@@ -201,6 +210,13 @@ struct intf_sys_t
     pl_item_names               pl_item_names;
     bool                        need_update;
     bool                        plidx_follow;
+
+    /* Equalizer context */
+    audio_output_t * paout;
+    int preset_id; // 0 - NB_PRESETS-1
+    float bands[EQZ_BANDS_MAX];
+    float preamp;
+    bool eq_enabled;
 };
 
 /*****************************************************************************
@@ -371,19 +387,23 @@ playlist_on_items_updated(vlc_playlist_t *playlist,
     ((intf_sys_t *)userdata)->need_update = true;
 }
 
+/****************************************************************************
+ * Search
+ ****************************************************************************/
+
 /* Playlist suxx */
-static int SubSearchPlaylist(intf_sys_t *sys, char *searchstring,
-                             int i_start, int i_stop)
+static int SubSearchIn(intf_sys_t *sys, char *searchstring,
+                             int i_start, int i_stop, const char * (*getter)(intf_sys_t *, int))
 {
     for (int i = i_start + 1; i < i_stop; i++)
-        if (strcasestr(sys->pl_item_names.data[i], searchstring))
+        if (strcasestr(getter(sys, i), searchstring))
             return i;
     return -1;
 }
 
-static void SearchPlaylist(intf_sys_t *sys)
+static void SearchIn(intf_sys_t *sys, const char * (*getter)(intf_sys_t *, int), size_t size, char search_chain[])
 {
-    char *str = sys->search_chain;
+    char *str = search_chain;
     int i_first = sys->box_idx;
     if (i_first < 0)
         i_first = 0;
@@ -391,14 +411,38 @@ static void SearchPlaylist(intf_sys_t *sys)
     if (!str || !*str)
         return;
 
-    int i_item = SubSearchPlaylist(sys, str, i_first + 1,
-                                   sys->pl_item_names.size);
+    int i_item = SubSearchIn(sys, str, i_first + 1, size, getter);
     if (i_item < 0)
-        i_item = SubSearchPlaylist(sys, str, 0, i_first);
+        i_item = SubSearchIn(sys, str, 0, i_first, getter);
 
-    if (i_item > 0) {
+    if (i_item >= 0) {
         sys->box_idx = i_item;
         CheckIdx(sys);
+    }
+}
+
+static const char * FileSearchGetter(intf_sys_t * sys, int index)
+{
+    return sys->dir_entries[index]->path;
+}
+
+static const char * PlaylistSearchGetter(intf_sys_t * sys, int index)
+{
+    return sys->pl_item_names.data[index];
+}
+
+static void Search(intf_sys_t *sys)
+{
+    switch (sys->box_type)
+    {
+        case BOX_BROWSE:
+        case BOX_FSEARCH:
+            SearchIn(sys, FileSearchGetter, sys->n_dir_entries, sys->fsearch_chain);
+            break;
+        case BOX_PLAYLIST:
+        case BOX_SEARCH:
+            SearchIn(sys, PlaylistSearchGetter, sys->pl_item_names.size, sys->search_chain);
+            break;
     }
 }
 
@@ -429,6 +473,9 @@ static const struct { short f; short b; } default_color_pairs[] =
 
     /* progress bar */
     [C_PROGRESS]    = { COLOR_WHITE,    COLOR_WHITE},
+
+    /* bands */
+    [C_BANDS]       = { COLOR_CYAN,     COLOR_WHITE },
 
     /* jamaican playlist, for rastafari sisters & brothers! */
     [C_PLAYLIST]    = { COLOR_GREEN,    COLOR_BLACK },
@@ -472,6 +519,8 @@ static const char * element_names[] = {
   [C_FOLDER] = "folder",
 
   [C_PROGRESS] = "progress",
+
+  [C_BANDS] = "bands",
 };
 
 static int get_element_id_from_string(const char * string) {
@@ -945,6 +994,7 @@ static int DrawHelp(intf_thread_t *intf)
     H(_(" P                      Show/Hide playlist box"));
     H(_(" B                      Show/Hide filebrowser"));
     H(_(" S                      Show/Hide statistics box"));
+    H(_(" E                      Show/Hide equalizer box"));
     H(_(" Esc                    Close Add/Search entry"));
     H(_(" Ctrl-l                 Refresh the screen"));
     H("");
@@ -972,6 +1022,13 @@ static int DrawHelp(intf_thread_t *intf)
     H(_(" <pageup>,<pagedown>    Navigate through the box page by page"));
     /* xgettext: You can use ↖ and ↘ characters */
     H(_(" <start>,<end>          Navigate to start/end of box"));
+    H("");
+
+    if (sys->color) color_set(C_CATEGORY, NULL);
+    H(_("[Equalizer]"));
+    if (sys->color) color_set(C_DEFAULT, NULL);
+    H(_(" +                      Increase value or enable field"));
+    H(_(" -                      Decrease value or disable field"));
     H("");
 
     if (sys->color) color_set(C_CATEGORY, NULL);
@@ -1023,6 +1080,54 @@ static int DrawBrowse(intf_thread_t *intf)
     }
 
     return sys->n_dir_entries;
+}
+
+static void DrawBandsBar(intf_sys_t * sys, int y, int v, float dB)
+{
+    if (sys->color)
+        color_set(C_BANDS, NULL);
+    DrawEmptyLine(y + sys->box_y, 20, 40);
+    attron(A_REVERSE);
+    DrawEmptyLine(y + sys->box_y, 20, v + 20);
+    attroff(A_REVERSE);
+    if (sys->color) {
+        color_set(C_DEFAULT, NULL);
+    }
+    if (y == sys->box_idx) attron(A_REVERSE);
+    mvnprintw(y + sys->box_y, 65, COLS-66, "%c%.1fdB", dB > 0 ? '+' : dB < 0 ? '-' : ' ', fabs(dB));
+    if (y == sys->box_idx) attroff(A_REVERSE);
+}
+
+static int DrawEqualizer(intf_thread_t *intf)
+{
+    intf_sys_t *sys = intf->p_sys;
+    int ret_size = 0;
+
+    MainBoxWrite(sys, ret_size++, _("Enabled: %c"), sys->eq_enabled ? 'x' : ' ');
+    MainBoxWrite(sys, ret_size, _("Preamp:"));
+    DrawBandsBar(sys, ret_size, sys->preamp, sys->preamp);
+    ret_size++;
+    MainBoxWrite(sys, ret_size++, _("Preset: %s (press + or - to open list)"), preset_list_text[sys->preset_id]);
+    MainBoxWrite(sys, ret_size++, _("Press + or - here to save"));
+    for (int i = 0; i < EQZ_BANDS_MAX; i++)
+    {
+        MainBoxWrite(sys, ret_size, _("%.1fHz Band:"), f_vlc_frequency_table_10b[i]);
+        DrawBandsBar(sys, ret_size, sys->bands[i], sys->bands[i]);
+        ret_size++;
+    }
+
+    return ret_size;
+}
+
+static int DrawPresets(intf_thread_t *intf)
+{
+    intf_sys_t * sys = intf->p_sys;
+    int ret_size = 0;
+    for (int i = 0; i < NB_PRESETS; i++)
+    {
+        MainBoxWrite(sys, ret_size++, "%s", preset_list_text[i]); 
+    }
+    return ret_size;
 }
 
 static int DrawPlaylist(intf_thread_t *intf)
@@ -1222,6 +1327,8 @@ static void FillTextBox(intf_sys_t *sys)
     DrawEmptyLine(7, 1, width);
     if (sys->box_type == BOX_OPEN)
         mvnprintw(7, 1, width, _("Open: %s"), sys->open_chain);
+    else if (sys->box_type == BOX_FSEARCH)
+        mvnprintw(7, 1, width, _("Find: %s"), sys->fsearch_chain);
     else
         mvnprintw(7, 1, width, _("Find: %s"), sys->search_chain);
 }
@@ -1235,15 +1342,18 @@ static void FillBox(intf_thread_t *intf)
         [BOX_META]      = DrawMeta,
         [BOX_STATS]     = DrawStats,
         [BOX_BROWSE]    = DrawBrowse,
+        [BOX_FSEARCH]   = DrawBrowse,
         [BOX_PLAYLIST]  = DrawPlaylist,
         [BOX_SEARCH]    = DrawPlaylist,
         [BOX_OPEN]      = DrawPlaylist,
         [BOX_LOG]       = DrawMessages,
+        [BOX_EQUALIZER] = DrawEqualizer,
+        [BOX_PRESETS]   = DrawPresets,
     };
 
     sys->box_lines_total = draw[sys->box_type](intf);
 
-    if (sys->box_type == BOX_SEARCH || sys->box_type == BOX_OPEN)
+    if (sys->box_type == BOX_SEARCH || sys->box_type == BOX_OPEN || sys->box_type == BOX_FSEARCH)
         FillTextBox(sys);
 }
 
@@ -1363,13 +1473,295 @@ static void AddItem(intf_thread_t *intf, const char *path)
     input_item_Release(item);
 }
 
+static void EqualizerDeinit(intf_sys_t * sys);
 static inline void BoxSwitch(intf_sys_t *sys, int box)
 {
     int previous_box_type = sys->box_type;
     sys->box_type = (sys->box_type == box) ? sys->previous_box_type : box;
     sys->previous_box_type = previous_box_type;
+    if (sys->previous_box_type == BOX_EQUALIZER || sys->previous_box_type == BOX_PRESETS)
+        if (sys->box_type != BOX_EQUALIZER && sys->box_type != BOX_PRESETS)
+            EqualizerDeinit(sys);
     sys->box_start = 0;
     sys->box_idx = 0;
+}
+
+static void EqualizerUpdateBands(intf_sys_t * sys, char * bands_str)
+{
+    int bytes_read = 0;
+    for (int i = 0; i < EQZ_BANDS_MAX; i++)
+    {
+        lldiv_t d;
+        int read_now = 0;
+        if (sscanf(bands_str + bytes_read, "%lld.%llu %n", &d.quot, &d.rem, &read_now) != 2)
+            return;
+        bytes_read += read_now;
+        sys->bands[i] = (float)d.quot + (float)d.rem / 10000000.f;
+    }
+}
+
+static void EqualizerUpdatePreset(intf_sys_t * sys, const char * newname)
+{
+    for (int i = 0; i < NB_PRESETS; i++)
+    {
+        if (strcmp(newname, preset_list[i]) == 0)
+        {
+            sys->preset_id = i;
+            break;
+        }
+    }
+}
+
+// Initial sync
+static void EqualizerLoad(intf_sys_t * sys)
+{
+#define EnsureBegin(x) \
+{ \
+    char * var = NULL;\
+    if (sys->paout) \
+        var = var_GetString(sys->paout, x); \
+    if (!var) \
+        var = config_GetPsz(x); \
+    if (var) \
+    {
+#define EnsureEnd() \
+        free(var); \
+    } \
+}
+
+
+    EnsureBegin("equalizer-bands")
+    EqualizerUpdateBands(sys, var);
+    EnsureEnd();
+
+    if (sys->paout)
+        sys->preamp = var_GetFloat(sys->paout, "equalizer-preamp");
+
+    EnsureBegin("audio-filter")
+    sys->eq_enabled = strstr(var, "equalizer");
+    EnsureEnd()
+
+    EnsureBegin("equalizer-preset")
+    EqualizerUpdatePreset(sys, var);
+    EnsureEnd();
+}
+
+static int AudioFilterCallback(vlc_object_t * pobj, const char * pvar, vlc_value_t old, vlc_value_t new, void *vsys)
+{
+    (void)pobj, (void)pvar, (void)old;
+    intf_sys_t * sys = (intf_sys_t *)vsys;
+    sys->eq_enabled = new.psz_string && strstr(new.psz_string, "equalizer");
+    return VLC_SUCCESS;
+}
+
+static int EqualizerBandsCallback(vlc_object_t * pobj, const char * pvar, vlc_value_t old, vlc_value_t new, void *vsys)
+{
+    (void)pobj, (void)pvar, (void)old;
+    intf_sys_t * sys = (intf_sys_t *)vsys;
+
+    if (new.psz_string)
+        EqualizerUpdateBands(sys, new.psz_string);
+    return VLC_SUCCESS;
+}
+
+static int EqualizerPreampCallback(vlc_object_t * pobj, const char * pvar, vlc_value_t old, vlc_value_t new, void *vsys)
+{
+    (void)pobj, (void)pvar, (void)old;
+    intf_sys_t * sys = (intf_sys_t *)vsys;
+
+    sys->preamp = new.f_float;
+    return VLC_SUCCESS;
+}
+
+static int EqualizerPresetCallback(vlc_object_t * pobj, const char * pvar, vlc_value_t old, vlc_value_t new, void *vsys)
+{
+    (void)pobj, (void)pvar, (void)old;
+    intf_sys_t * sys = (intf_sys_t *)vsys;
+    if (new.psz_string)
+        EqualizerUpdatePreset(sys, new.psz_string);
+    return VLC_SUCCESS;
+}
+
+// Add var callbacks to sys paout
+static void EqualizerSysPaoutInit(intf_sys_t * sys)
+{
+    if (!sys->paout)
+        return;
+
+    if (!var_Type(sys->paout, "equalizer-bands"))
+        var_Create(sys->paout, "equalizer-bands", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
+    if (!var_Type(sys->paout, "equalizer-preamp"))
+        var_Create(sys->paout, "equalizer-preamp", VLC_VAR_FLOAT | VLC_VAR_DOINHERIT);
+    var_AddCallback(sys->paout, "audio-filter", AudioFilterCallback, sys);
+    var_AddCallback(sys->paout, "equalizer-bands", EqualizerBandsCallback, sys);
+    var_AddCallback(sys->paout, "equalizer-preamp", EqualizerPreampCallback, sys);
+    var_AddCallback(sys->paout, "equalizer-preset", EqualizerPresetCallback, sys);
+}
+
+// Deals with initialization
+static void EqualizerEnter(intf_sys_t * sys)
+{
+    vlc_player_t * player = vlc_playlist_GetPlayer(sys->playlist);
+    audio_output_t* paout = vlc_player_aout_Hold(player);
+    if (!sys->paout)
+    {
+        sys->paout = paout;
+        EqualizerSysPaoutInit(sys);
+        EqualizerLoad(sys);
+        return;
+    }
+    if (sys->paout == paout)
+    {
+        aout_Release(paout);
+        return;
+    }
+    if (sys->paout != paout)
+    {
+        EqualizerDeinit(sys);
+
+        sys->paout = paout;
+        EqualizerSysPaoutInit(sys);
+        EqualizerLoad(sys);
+    }
+}
+
+// Remove var callbacks
+static void EqualizerDeinit(intf_sys_t * sys)
+{
+    if (!sys->paout)
+        return;
+    var_DelCallback(sys->paout, "audio-filter", AudioFilterCallback, sys);
+    var_DelCallback(sys->paout, "equalizer-bands", EqualizerBandsCallback, sys);
+    var_DelCallback(sys->paout, "equalizer-preamp", EqualizerPreampCallback, sys);
+    var_DelCallback(sys->paout, "equalizer-preset", EqualizerPresetCallback, sys);
+    aout_Release(sys->paout);
+    sys->paout = NULL;
+}
+
+static void EqualizerEnable(intf_sys_t * sys, int diff, audio_output_t * paout)
+{
+    (void)diff, (void)paout;
+    vlc_player_t * player = vlc_playlist_GetPlayer(sys->playlist);
+    if (diff > 0) {
+        vlc_player_aout_EnableFilter(player, "equalizer", true);
+    }
+    else if (diff < 0) {
+        vlc_player_aout_EnableFilter(player, "equalizer", false);
+    }
+}
+
+static void EqualizerPreamp(intf_sys_t * sys, int diff, audio_output_t * paout)
+{
+    sys->preamp += diff;
+    sys->preamp = sys->preamp > 20 ? 20 : sys->preamp;
+    sys->preamp = sys->preamp < -20 ? -20 : sys->preamp;
+    var_SetFloat(paout, "equalizer-preamp", sys->preamp);
+}
+
+static void EqualizerPreset(intf_sys_t * sys, int diff, audio_output_t * paout)
+{
+    (void)diff, (void)paout;
+    BoxSwitch(sys, BOX_PRESETS);
+}
+
+static void EqualizerSaveConfig(intf_sys_t * sys, int diff, audio_output_t * paout)
+{
+    (void)sys, (void)diff;
+    char * internal;
+#define save_var(x) \
+    if ((internal = var_GetString(paout, x))) { \
+        config_PutPsz(x, internal); \
+        free(internal); \
+    }
+
+    save_var("audio-filter");
+    save_var("equalizer-preset");
+    save_var("equalizer-bands");
+    config_PutFloat("equalizer-preamp", var_GetFloat(paout, "equalizer-preamp"));
+#undef save_var
+}
+
+static void EqualizerSetBands(intf_sys_t * sys, audio_output_t * paout)
+{
+    char *bands = NULL;
+
+    for (unsigned i = 0; i < EQZ_BANDS_MAX; i++)
+    {
+        char *psz;
+
+        lldiv_t d = lldiv(lroundf(sys->bands[i] * 10000000.f), 10000000);
+
+        if (asprintf(&psz, "%s %lld.%07llu", i ? bands : "", d.quot, d.rem) == -1)
+            psz = NULL;
+
+        free(bands);
+        if (psz == NULL)
+            return;
+        bands = psz;
+    }
+
+    var_SetString(paout, "equalizer-bands", bands);
+    free(bands);
+}
+
+static void EqualizerBand(intf_sys_t * sys, int diff, audio_output_t * paout)
+{
+    float * band = &sys->bands[sys->box_idx - 4];
+    *band += diff;
+    *band = *band > 20 ? 20 : *band;
+    *band = *band < -20 ? -20 : *band;
+    EqualizerSetBands(sys, paout);
+}
+
+static bool HandleEqualizerKey(intf_thread_t *intf, int key)
+{
+    intf_sys_t *sys = intf->p_sys;
+
+    static void (* const handle[])(intf_sys_t *, int, audio_output_t * paout) = {
+        [0] = EqualizerEnable,
+        [1] = EqualizerPreamp,
+        [2] = EqualizerPreset,
+        [3] = EqualizerSaveConfig,
+    };
+
+    bool handled = false;
+    switch(key)
+    {
+        case '+':
+            handled = true;
+            if (sys->box_idx <= 3)
+                handle[sys->box_idx](sys, 1, sys->paout);
+            else
+                EqualizerBand(sys, 1, sys->paout);
+            break;
+        case '-':
+            handled = true;
+            if (sys->box_idx <= 3)
+                handle[sys->box_idx](sys, -1, sys->paout);
+            else
+                EqualizerBand(sys, -1, sys->paout);
+            break;
+    }
+    return handled;
+}
+
+static bool HandlePresetsKey(intf_thread_t *intf, int key)
+{
+    intf_sys_t * sys = intf->p_sys;
+
+    switch (key)
+    {
+        case KEY_ENTER:
+        case '\r':
+        case '\n':
+        case ' ':
+            sys->preset_id = sys->box_idx;
+            if (sys->paout)
+                var_SetString(sys->paout, "equalizer-preset", preset_list[sys->preset_id]);
+            BoxSwitch(sys, BOX_EQUALIZER);
+            return true;
+    }
+    return false;
 }
 
 static bool HandlePlaylistKey(intf_thread_t *intf, int key)
@@ -1435,7 +1827,7 @@ static bool HandlePlaylistKey(intf_thread_t *intf, int key)
         return true;
 
     case ';':
-        SearchPlaylist(sys);
+        Search(sys);
         return true;
 
     case 'g':
@@ -1489,6 +1881,10 @@ static bool HandleBrowseKey(intf_thread_t *intf, int key)
         ReadDir(intf);
         return true;
 
+    case ';':
+        Search(sys);
+        return true;
+
     case KEY_ENTER:
     case '\r':
     case '\n':
@@ -1528,12 +1924,16 @@ static void OpenSelection(intf_thread_t *intf)
 
 static void HandleEditBoxKey(intf_thread_t *intf, int key, int box)
 {
+#define SEARCH_SIZE (search ? sizeof sys->search_chain \
+                              : fsearch ? sizeof sys->fsearch_chain \
+                              : sizeof sys->open_chain)
     intf_sys_t *sys = intf->p_sys;
     bool search = box == BOX_SEARCH;
-    char *str = search ? sys->search_chain: sys->open_chain;
+    bool fsearch = box == BOX_FSEARCH;
+    char *str = search ? sys->search_chain: fsearch ? sys->fsearch_chain: sys->open_chain;
     size_t len = strlen(str);
 
-    assert(box == BOX_SEARCH || box == BOX_OPEN);
+    assert(box == BOX_SEARCH || box == BOX_OPEN || box == BOX_FSEARCH);
 
     switch(key)
     {
@@ -1543,12 +1943,12 @@ static void HandleEditBoxKey(intf_thread_t *intf, int key, int box)
     case KEY_ENTER:
     case '\r':
     case '\n':
-        if (search)
-            SearchPlaylist(sys);
+        if (search || fsearch)
+            Search(sys);
         else
             OpenSelection(intf);
 
-        sys->box_type = BOX_PLAYLIST;
+        sys->box_type = sys->previous_box_type;
         return;
 
     case 0x1b: /* ESC */
@@ -1570,21 +1970,27 @@ static void HandleEditBoxKey(intf_thread_t *intf, int key, int box)
             sys->box_type = BOX_PLAYLIST;
         return;
 
+    case 'w' & 037: // expanded from CTRL('w')
+        for (int i = 0; (unsigned long)i < SEARCH_SIZE; i++)
+        {
+            str[i] = 0;
+        }
+        break;
+
     case KEY_BACKSPACE:
     case 0x7f:
         RemoveLastUTF8Entity(str, len);
         break;
 
     default:
-        if (len + 1 < (search ? sizeof sys->search_chain
-                              : sizeof sys->open_chain)) {
+        if (len + 1 < SEARCH_SIZE) {
             str[len + 0] = key;
             str[len + 1] = '\0';
         }
     }
 
-    if (search)
-        SearchPlaylist(sys);
+    if (search || fsearch)
+        Search(sys);
 }
 
 static void HandleCommonKey(intf_thread_t *intf, vlc_player_t *player, int key)
@@ -1614,10 +2020,14 @@ static void HandleCommonKey(intf_thread_t *intf, vlc_player_t *player, int key)
     case 'P': BoxSwitch(sys, BOX_PLAYLIST);   return;
     case 'B': BoxSwitch(sys, BOX_BROWSE);     return;
     case 'S': BoxSwitch(sys, BOX_STATS);      return;
+    case 'E': EqualizerEnter(sys); BoxSwitch(sys, BOX_EQUALIZER);  return;
 
-    case '/': /* Search */
+    case '/': /* Search playlist or in file browser */
         sys->plidx_follow = false;
-        BoxSwitch(sys, BOX_SEARCH);
+        if (sys->box_type == BOX_BROWSE)
+            BoxSwitch(sys, BOX_FSEARCH);
+        else
+            BoxSwitch(sys, BOX_SEARCH);
         return;
 
     case 'A': /* Open */
@@ -1768,7 +2178,7 @@ static void HandleKey(intf_thread_t *intf)
     if (key == -1)
         return;
 
-    if (box == BOX_SEARCH || box == BOX_OPEN) {
+    if (box == BOX_SEARCH || box == BOX_OPEN || box == BOX_FSEARCH) {
         HandleEditBoxKey(intf, key, sys->box_type);
         return;
     }
@@ -1790,6 +2200,12 @@ static void HandleKey(intf_thread_t *intf)
         return;
 
     if (box == BOX_PLAYLIST && HandlePlaylistKey(intf, key))
+        return;
+
+    if (box == BOX_EQUALIZER && HandleEqualizerKey(intf, key))
+        return;
+
+    if (box == BOX_PRESETS && HandlePresetsKey(intf, key))
         return;
 
     if (HandleListKey(intf, key))
@@ -1945,6 +2361,8 @@ static void Close(vlc_object_t *p_this)
 
     atomic_store_explicit(&sys->alive, false, memory_order_relaxed);
     vlc_join(sys->thread, NULL);
+
+    EqualizerDeinit(sys);
 
     vlc_playlist_t *playlist = sys->playlist;
     vlc_playlist_Lock(playlist);

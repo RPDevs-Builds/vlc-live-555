@@ -31,6 +31,10 @@ import VLC.Dialogs
 FocusScope {
     id: g_mainDisplay
 
+    Accessible.role: Accessible.Pane
+    Accessible.name: qsTr("Main display")
+    AccessibleCompat.id: "mainDisplay"
+
     // Properties
 
     property bool hasMiniPlayer: miniPlayer.visible
@@ -946,8 +950,19 @@ FocusScope {
             visible: g_mainDisplay._showMiniPlayer && MainCtx.hasEmbededVideo
             enabled: g_mainDisplay._showMiniPlayer && MainCtx.hasEmbededVideo
 
-            dragXMin: 0
-            dragXMax: g_mainDisplay.width - playerPip.width
+            Binding on visible {
+                id: visibleBinding
+                when: false
+                delayed: true
+                value: g_mainDisplay._showMiniPlayer && MainCtx.hasEmbededVideo
+            }
+
+            Component.onCompleted: {
+                Qt.callLater(() => { visibleBinding.when = true })
+            }
+
+            dragXMin: VLCStyle.applicationHorizontalMargin
+            dragXMax: g_mainDisplay.width - playerPip.width - VLCStyle.applicationHorizontalMargin
             dragYMin: localTopbar.y + localTopbar.height
             dragYMax: loaderUpdatePane.y - playerPip.height
 

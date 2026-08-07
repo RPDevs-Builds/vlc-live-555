@@ -84,6 +84,13 @@ vlc_tests += {
 endif
 
 vlc_tests += {
+    'name' : 'test_modules_demux_json',
+    'sources' : files('demux/json.c'),
+    'suite' : ['modules', 'test_modules'],
+    'link_with' : [vlc_json_lib, libvlccore],
+}
+
+vlc_tests += {
     'name' : 'test_modules_demux_libmp4',
     'sources' : files(
         'demux/libmp4.c',
@@ -137,6 +144,15 @@ vlc_tests += {
 vlc_tests += {
     'name' : 'test_modules_codec_cea708_integration',
     'sources' : files('codec/cea708_integration.c'),
+    'suite' : ['modules', 'test_modules'],
+    'link_with' : [libvlc, libvlccore],
+    'module_depends' : vlc_plugins_targets.keys()
+}
+
+vlc_tests += {
+    'name' : 'test_modules_codec_cea708',
+    'sources' : files('codec/cea708.c',
+                      '../../modules/codec/cea708.c'),
     'suite' : ['modules', 'test_modules'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : vlc_plugins_targets.keys()

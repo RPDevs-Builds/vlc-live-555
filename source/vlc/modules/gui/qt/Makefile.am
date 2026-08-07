@@ -305,6 +305,7 @@ libqt_plugin_la_SOURCES = \
 	playlist/playlist_model.hpp \
 	playlist/playlist_model_p.hpp \
 	util/asynctask.hpp \
+	util/accessible_compat_attached.cpp util/accessible_compat_attached.hpp \
 	util/audio_device_model.cpp  \
 	util/audio_device_model.hpp \
 	util/workerthreadset.hpp util/workerthreadset.cpp \
@@ -498,6 +499,7 @@ nodist_libqt_plugin_la_SOURCES = \
 	playlist/playlist_item.moc.cpp \
 	playlist/playlist_model.moc.cpp \
 	util/asynctask.moc.cpp \
+	util/accessible_compat_attached.moc.cpp \
 	util/audio_device_model.moc.cpp \
 	util/workerthreadset.moc.cpp \
 	util/base_model.moc.cpp \
@@ -800,7 +802,7 @@ libqt_plugin_la_RES = \
 	pixmaps/addons/addon_score.svg \
 	pixmaps/icons/active_indicator.svg \
 	pixmaps/icons/add.svg \
-	pixmaps/icons/album_cover.svg \
+	pixmaps/icons/ic_album_cover.svg \
 	pixmaps/icons/ic_aspect_ratio.svg \
 	pixmaps/icons/atob.svg \
 	pixmaps/icons/ic_audiosub.svg \
@@ -830,8 +832,8 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/ic_fluent_full_screen_maximize.svg \
 	pixmaps/icons/ic_fluent_grid.svg \
 	pixmaps/icons/history.svg \
-	pixmaps/icons/home.svg \
-	pixmaps/icons/info.svg \
+	pixmaps/icons/ic_fluent_home.svg \
+	pixmaps/icons/ic_fluent_info.svg \
 	pixmaps/icons/ic_fluent_apps_list.svg \
 	pixmaps/icons/ic_fluent_more_vertical.svg \
 	pixmaps/icons/multiselect.svg \
@@ -863,11 +865,11 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/ic_fluent_skip_back_10.svg \
 	pixmaps/icons/ic_fluent_skip_forward_10.svg \
 	pixmaps/icons/ic_fluent_camera.svg \
-	pixmaps/icons/space.svg \
+	pixmaps/icons/ic_fluent_spacebar.svg \
 	pixmaps/icons/ic_fluent_stop.svg \
 	pixmaps/icons/stream.svg \
 	pixmaps/icons/sync.svg \
-	pixmaps/icons/time.svg \
+	pixmaps/icons/ic_fluent_clock.svg \
 	pixmaps/icons/ic_fluent_globe.svg \
 	pixmaps/icons/topbar_filter.svg \
 	pixmaps/icons/ic_fluent_music_note_2.svg \
@@ -876,8 +878,8 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/ic_fluent_filmstrip.svg \
 	pixmaps/icons/ic_fluent_chevron_up.svg \
 	pixmaps/icons/ic_fluent_chevron_down.svg \
-	pixmaps/icons/tv.svg \
-	pixmaps/icons/tvtelx.svg \
+	pixmaps/icons/ic_fluent_tv.svg \
+	pixmaps/icons/ic_tvtelx.svg \
 	pixmaps/icons/visualization.svg \
 	pixmaps/icons/volume_high.svg \
 	pixmaps/icons/volume_low.svg \
@@ -890,6 +892,8 @@ libqt_plugin_la_RES = \
 	pixmaps/icons/window_restore.svg \
 	pixmaps/icons/ic_fluent_arrow_download_24_regular.svg \
 	pixmaps/icons/ic_fluent_arrow_sync_24_regular.svg \
+	pixmaps/icons/regex.svg \
+	pixmaps/icons/ic_fluent_text_change_case_24_regular.svg \
 	pixmaps/menu/add.svg \
 	pixmaps/menu/capture-card.svg \
 	pixmaps/menu/clear.svg \

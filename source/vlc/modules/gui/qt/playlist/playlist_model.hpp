@@ -44,7 +44,8 @@ class PlaylistListModel : public QAbstractListModel
 public:
     enum Roles
     {
-        TitleRole = Qt::UserRole,
+        TitleRole = Qt::DisplayRole,
+        FilterRole = Qt::UserRole,
         DurationRole,
         IsCurrentRole,
         ArtistRole,
@@ -53,6 +54,7 @@ public:
         UrlRole,
         PreparsedRole
     };
+    Q_ENUM(Roles);
 
     PlaylistListModel(QObject *parent = nullptr);
     PlaylistListModel(vlc_playlist_t *playlist, QObject *parent = nullptr);

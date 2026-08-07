@@ -94,31 +94,7 @@ const CGFloat VLCMediaItemCollectionViewItemMaximumDisplayedProgress = 0.95;
     self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
     self.highlightBox.borderColor = NSColor.VLCAccentColor;
     self.unplayedIndicatorTextField.textColor = NSColor.VLCAccentColor;
-
-    [self updateColoredAppearance:self.view.effectiveAppearance];
     [self prepareForReuse];
-}
-
-#pragma mark - dynamic appearance
-
-- (void)viewDidChangeEffectiveAppearance
-{
-    [self updateColoredAppearance:self.view.effectiveAppearance];
-}
-
-- (void)updateColoredAppearance:(NSAppearance *)appearance
-{
-    NSParameterAssert(appearance);
-    BOOL isDark = NO;
-    if (@available(macOS 10.14, *)) {
-        isDark = 
-            [appearance.name isEqualToString:NSAppearanceNameDarkAqua] ||
-            [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
-    }
-
-    self.mediaTitleTextField.textColor = isDark 
-        ? NSColor.VLClibraryDarkTitleColor
-        : NSColor.VLClibraryLightTitleColor;
 }
 
 #pragma mark - view representation

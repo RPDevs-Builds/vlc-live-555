@@ -243,7 +243,7 @@ int InitAudioDec( vlc_object_t *obj )
 {
     decoder_t *p_dec = (decoder_t *)obj;
     const AVCodec *codec;
-    AVCodecContext *avctx = ffmpeg_AllocContext( p_dec, &codec );
+    AVCodecContext *avctx = ffmpeg_AllocContext( p_dec, &codec, false );
     if( avctx == NULL )
         return VLC_EGENERIC;
 
@@ -681,6 +681,7 @@ static void SetupOutputFormat( decoder_t *p_dec, bool b_trust )
             p_dec->fmt_out.audio.i_channels = channel_count;
 
             aout_FormatPrepare(&p_dec->fmt_out.audio);
+            p_sys->b_extract = false;
             return;
         }
 
@@ -689,7 +690,7 @@ static void SetupOutputFormat( decoder_t *p_dec, bool b_trust )
         for( unsigned i = 0; pi_channels_map[i][0]
          && i_channels_src < channel_count; i++ )
         {
-            if( (channel_layout_mask & pi_channels_map[i][0]) && pi_channels_map[i][1] )
+            if( channel_layout_mask & pi_channels_map[i][0] )
                 pi_order_src[i_channels_src++] = pi_channels_map[i][1];
         }
 

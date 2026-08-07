@@ -200,7 +200,7 @@ typedef NS_ENUM(NSUInteger, VLCMediaLibraryParentGroupType) {
 @property (readonly) NSString *artistName;
 @property (readonly) NSString *genreString; // Lazy loaded for performance
 @property (readonly) int64_t artistID;
-@property (readonly) unsigned int duration;
+@property (readonly) int64_t duration;
 @property (readonly) unsigned int year;
 
 @end
@@ -288,6 +288,7 @@ typedef NS_ENUM(NSUInteger, VLCMediaLibraryParentGroupType) {
 
 - (void)removeMediaItemsAtPositions:(NSArray<NSNumber *> *)positions;
 - (BOOL)appendMediaItems:(NSArray<VLCMediaLibraryMediaItem *> *)mediaItems;
+- (BOOL)renameTo:(NSString *)name;
 
 @end
 

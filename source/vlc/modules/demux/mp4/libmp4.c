@@ -151,22 +151,23 @@ static char *mp4_getstringz( uint8_t **restrict in, uint64_t *restrict size )
     if( *size == 0 )
         return NULL;
 
-    if( *in == 0 ) /* Null string stored */
+    size_t len = strnlen( (const char *)*in, *size );
+    if( len == 0 ) /* Null string stored */
     {
         *in += 1;
         *size -= 1;
         return NULL;
     }
 
-    size_t len = strnlen( (const char *)*in, *size );
-    if( len == 0 || len >= *size )
-        return NULL;
-
-    len++;
-
-    char *ret = malloc( len );
+    const bool b_terminated = len < *size;
+    char *ret = malloc( len + 1 );
     if( likely(ret != NULL) )
+    {
         memcpy( ret, *in, len );
+        ret[len] = 0; // ensure termination
+    }
+    if( b_terminated ) // terminated
+        len++;
     *in += len;
     *size -= len;
     return ret;
@@ -5246,6 +5247,7 @@ static const struct
     { ATOM_atID,    MP4_ReadBox_Metadata,    ATOM_ilst }, /* iTunes */
     { ATOM_cnID,    MP4_ReadBox_Metadata,    ATOM_ilst }, /* iTunes */
     { ATOM_covr,    MP4_ReadBoxContainer,    ATOM_ilst },
+    { ATOM_cpil,    MP4_ReadBox_Metadata,    ATOM_ilst },
     { ATOM_desc,    MP4_ReadBox_Metadata,    ATOM_ilst },
     { ATOM_disk,    MP4_ReadBox_Metadata,    ATOM_ilst },
     { ATOM_flvr,    MP4_ReadBox_Metadata,    ATOM_ilst },

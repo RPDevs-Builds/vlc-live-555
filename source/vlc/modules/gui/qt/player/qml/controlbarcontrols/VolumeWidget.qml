@@ -62,18 +62,22 @@ T.Pane {
 
             focus: true
             paintOnly: root.paintOnly
-            text:
-                if( _player.muted )
-                    VLCIcons.volume_muted
-                else if ( _player.volume === 0 )
-                    VLCIcons.volume_zero
-                else if ( _player.volume < .33 )
-                    VLCIcons.volume_low
-                else if( _player.volume <= .66 )
-                    VLCIcons.volume_medium
+            text: {
+                if (_player.muted)
+                    return VLCIcons.volume_muted
+                else if (_player.volume === 0)
+                    return VLCIcons.volume_zero
+                else if (_player.volume < .33)
+                    return VLCIcons.volume_low
+                else if (_player.volume <= .66)
+                    return VLCIcons.volume_medium
                 else
-                    VLCIcons.volume_high
+                    return VLCIcons.volume_high
+            }
             description: qsTr("Mute")
+
+            AccessibleCompat.id: "muteButton"
+
             onClicked: Player.muted = !Player.muted
 
             Accessible.onIncreaseAction: {
@@ -138,6 +142,7 @@ T.Pane {
             }
 
             Accessible.name: qsTr("Volume")
+            AccessibleCompat.id: "volumeSlider"
 
             Keys.onPressed: (event) => {
                 if (KeyHelper.matchOk(event)) {

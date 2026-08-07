@@ -39,6 +39,7 @@
 #include <vlc_replay_gain.h>
 #include <assert.h>
 #include <limits.h>
+#include <stdckdint.h>
 #include <math.h>
 #include "meta.h"
 #include "attachments.h"
@@ -1520,6 +1521,9 @@ static block_t * MP4_RTPHintToFrame( demux_t *p_demux, block_t *p_block, uint32_
         /* skip packet constructor */
         p_slice += CONSTRUCTORSIZE;
 
+        if( sample_cons.length == 0 )
+            continue;
+
         /* check that is RTPsampleconstructor, referencing itself and no weird audio stuff */
         if( sample_cons.type != 2||sample_cons.trackrefindex != -1
             ||sample_cons.samplesperblock != 1||sample_cons.bytesperblock != 1 )
@@ -1529,15 +1533,24 @@ static block_t * MP4_RTPHintToFrame( demux_t *p_demux, block_t *p_block, uint32_
         }
 
         /* slice doesn't fit in buffer */
-        if( sample_cons.sampleoffset + sample_cons.length > p_block->i_buffer)
+        size_t slice_size;
+        if( ckd_add( &slice_size, sample_cons.sampleoffset, sample_cons.length ) ||
+            slice_size > p_block->i_buffer )
         {
             msg_Err(p_demux, "Sample buffer is smaller than sample" );
             goto error;
         }
 
+        size_t realloc_size;
+        if( ckd_add( &realloc_size, i_payload, sample_cons.length ) ||
+            ckd_add( &realloc_size, realloc_size, 4 ) )
+        {
+            goto error;
+        }
+
         block_t *p_realloc = ( p_newblock ) ?
-                             block_Realloc( p_newblock, 0, i_payload + sample_cons.length + 4 ):
-                             block_Alloc( i_payload + sample_cons.length + 4 );
+                             block_TryRealloc( p_newblock, 0, realloc_size ):
+                             block_Alloc( realloc_size );
         if( !p_realloc )
             goto error;
 
@@ -1548,7 +1561,7 @@ static block_t * MP4_RTPHintToFrame( demux_t *p_demux, block_t *p_block, uint32_
         uint8_t i_type = (*p_src) & ((1<<5)-1);
 
         const uint8_t synccode[4] = { 0, 0, 0, 1 };
-        if( memcmp( p_src, synccode, 4 ) )
+        if( sample_cons.length < 4 || memcmp( p_src, synccode, 4 ) )
         {
             if( i_type == 7 || i_type == 8 )
                 *p_dst++=0;
@@ -1595,6 +1608,7 @@ static block_t * MP4_RTPHint_Convert( demux_t *p_demux, block_t *p_block, vlc_fo
         if( i_packets == 1 && i_skip < p_block->i_buffer )
         {
             p_block->p_buffer += i_skip;
+            p_block->i_buffer -= i_skip;
             p_converted = p_block;
         }
         else
@@ -3904,13 +3918,14 @@ static void MP4_TrackSetup( demux_t *p_demux, mp4_track_t *p_track,
             MP4_Box_t *p_sdp;
 
             /* parse the sdp message to find out whether the RTP stream contained audio or video */
-            if( !( p_sdp  = MP4_BoxGet( p_box_trak, "udta/hnti/sdp " ) ) )
+            if( !( p_sdp  = MP4_BoxGet( p_box_trak, "udta/hnti/sdp " ) ) ||
+                !BOXDATA(p_sdp)->psz_text )
             {
                 msg_Warn( p_demux, "Didn't find sdp box to determine stream type" );
                 return;
             }
 
-            memcpy( sdp_media_type, BOXDATA(p_sdp)->psz_text, 7 );
+            strncpy( sdp_media_type, BOXDATA(p_sdp)->psz_text, 7 );
             if( !strcmp(sdp_media_type, "m=audio") )
             {
                 msg_Dbg( p_demux, "Found audio Rtp: %s", sdp_media_type );

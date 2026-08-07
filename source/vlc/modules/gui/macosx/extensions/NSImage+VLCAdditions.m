@@ -22,8 +22,66 @@
 
 #import "NSImage+VLCAdditions.h"
 
+#import "NSString+Helpers.h"
+
 #import <QuickLook/QuickLook.h>
 #import <QuickLookThumbnailing/QuickLookThumbnailing.h>
+#import <vlc_block.h>
+#import <vlc_picture.h>
+
+static NSImage *ImageFromEmoji(NSString *emoji, NSSize size)
+{
+    const NSInteger pixelsWide = MAX((NSInteger)ceil(size.width), 1);
+    const NSInteger pixelsHigh = MAX((NSInteger)ceil(size.height), 1);
+    NSBitmapImageRep * const bitmapImageRep =
+        [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                               pixelsWide:pixelsWide
+                                               pixelsHigh:pixelsHigh
+                                            bitsPerSample:8
+                                          samplesPerPixel:4
+                                                 hasAlpha:YES
+                                                 isPlanar:NO
+                                           colorSpaceName:NSCalibratedRGBColorSpace
+                                              bytesPerRow:0
+                                             bitsPerPixel:0];
+    if (!bitmapImageRep) {
+        return nil;
+    }
+    bitmapImageRep.size = size;
+
+    NSGraphicsContext * const context =
+        [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmapImageRep];
+    if (!context) {
+        return nil;
+    }
+
+    NSGraphicsContext * const previousContext = NSGraphicsContext.currentContext;
+    NSGraphicsContext.currentContext = context;
+    [context saveGraphicsState];
+    [NSColor.whiteColor setFill];
+    NSRectFill(NSMakeRect(0., 0., size.width, size.height));
+
+    const CGFloat initialFontSize = MIN(size.width, size.height);
+    NSDictionary *attributes = @{ NSFontAttributeName : [NSFont systemFontOfSize:initialFontSize] };
+    NSSize emojiSize = [emoji sizeWithAttributes:attributes];
+    if (emojiSize.width > size.width || emojiSize.height > size.height) {
+        const CGFloat scale = MIN(size.width / emojiSize.width, size.height / emojiSize.height);
+        const CGFloat fontSize = floor(initialFontSize * scale);
+        attributes = @{ NSFontAttributeName : [NSFont systemFontOfSize:MAX(fontSize, 1.)] };
+        emojiSize = [emoji sizeWithAttributes:attributes];
+    }
+
+    const NSPoint point = NSMakePoint((size.width - emojiSize.width) / 2.,
+                                     (size.height - emojiSize.height) / 2.);
+    [emoji drawAtPoint:point withAttributes:attributes];
+    [context flushGraphics];
+    [context restoreGraphicsState];
+    NSGraphicsContext.currentContext = previousContext;
+
+    NSImage * const image = [[NSImage alloc] initWithSize:size];
+    [image addRepresentation:bitmapImageRep];
+    return image;
+}
 
 @implementation NSImage(VLCAdditions)
 
@@ -187,8 +245,24 @@
     return [NSImage imageNamed:@"repeatOff"];
 }
 
-+ (void)quickLookPreviewForLocalPath:(NSString *)path 
-                            withSize:(NSSize)size 
++ (nullable NSImage *)flagImageForCountryCode:(NSString *)countryCode
+                                         size:(NSSize)size
+{
+    if (size.width <= 0 || size.height <= 0) {
+        return nil;
+    }
+
+    NSString * const uppercaseCountryCode = countryCode.uppercaseString;
+    NSString * const emoji = flagEmojiStringForCountryCode(uppercaseCountryCode);
+    if (emoji == nil) {
+        return nil;
+    }
+
+    return ImageFromEmoji(emoji, size);
+}
+
++ (void)quickLookPreviewForLocalPath:(NSString *)path
+                            withSize:(NSSize)size
                    completionHandler:(void (^)(NSImage *))completionHandler
 {
     NSURL * const pathUrl = [NSURL fileURLWithPath:path];
@@ -274,13 +348,68 @@
     return image;
 }
 
++ (NSImage *)imageFromVLCPicture:(picture_t *)picture
+                       vlcObject:(vlc_object_t *)object
+                            size:(NSSize)size
+{
+    if (picture == NULL || object == NULL) {
+        return nil;
+    }
+
+    block_t *block = NULL;
+    video_format_t format;
+    const int exportStatus = picture_Export(object,
+                                            &block,
+                                            &format,
+                                            picture,
+                                            VLC_CODEC_ARGB,
+                                            (int)size.width,
+                                            (int)size.height,
+                                            true);
+    if (exportStatus != VLC_SUCCESS || block == NULL) {
+        return nil;
+    }
+
+    const NSUInteger bytesPerRow = (NSUInteger)format.i_width * 4;
+    const NSUInteger expectedSize = bytesPerRow * (NSUInteger)format.i_height;
+    if (block->i_buffer < expectedSize) {
+        block_Release(block);
+        return nil;
+    }
+
+    NSBitmapImageRep * const bitmap = [[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:NULL
+                      pixelsWide:format.i_width
+                      pixelsHigh:format.i_height
+                   bitsPerSample:8
+                 samplesPerPixel:4
+                        hasAlpha:YES
+                        isPlanar:NO
+                  colorSpaceName:NSDeviceRGBColorSpace
+                    bitmapFormat:NSBitmapFormatThirtyTwoBitLittleEndian
+                     bytesPerRow:bytesPerRow
+                    bitsPerPixel:32];
+    if (bitmap == nil) {
+        block_Release(block);
+        return nil;
+    }
+
+    memcpy(bitmap.bitmapData, block->p_buffer, expectedSize);
+    block_Release(block);
+
+    NSImage * const image = [[NSImage alloc]
+        initWithSize:NSMakeSize(format.i_width, format.i_height)];
+    [image addRepresentation:bitmap];
+    return image;
+}
+
 + (instancetype)compositeImageWithImages:(NSArray<NSImage *> * const)images
                                   frames:(NSArray<NSValue *> * const)frames
                                     size:(const NSSize)size
 {
     return [NSImage imageWithSize:size
                           flipped:NO
-                   drawingHandler:^BOOL(const NSRect dstRect) {
+                   drawingHandler:^BOOL(const NSRect __unused dstRect) {
 
         NSUInteger counter = 0;
         for (NSValue * const rectValue in frames) {
@@ -310,7 +439,7 @@
         [image lockFocus];
         [color set];
         const NSRect imageRect = {NSZeroPoint, image.size};
-        NSRectFillUsingOperation(imageRect, NSCompositeSourceIn);
+        NSRectFillUsingOperation(imageRect, NSCompositingOperationSourceIn);
         [image unlockFocus];
     }
 

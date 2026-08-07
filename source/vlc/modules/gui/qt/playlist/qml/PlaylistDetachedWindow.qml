@@ -34,7 +34,7 @@ Window {
     width: 350
     minimumWidth: playlistView.minimumWidth
 
-    title: qsTr("Playlist")
+    title: qsTr("Play Queue")
     color: theme.bg.primary
 
     onVisibleChanged: {
@@ -49,6 +49,14 @@ Window {
 
     onClosing: {
         MainCtx.playqueuePanel.visible = false
+    }
+
+    Component.onCompleted: {
+        if (MainCtx.createWindowWithoutRedirectionSurface) { // Win32
+            const ret = MainCtx.createWindowWithoutRedirectionSurface(this)
+            if (!ret)
+                console.debug("MainCtx::createWindowWithoutRedirectionSurface(): returned false for window", this)
+        }
     }
 
     PlaylistPane {

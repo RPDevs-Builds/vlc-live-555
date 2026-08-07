@@ -150,8 +150,8 @@ static void displayProgressCallback(void *p_data,
     }
 }
 
-static void cancelCallback(void *p_data,
-                           vlc_dialog_id *p_id)
+static void cancelCallback(void * __unused p_data,
+                           vlc_dialog_id * __unused p_id)
 {
     @autoreleasepool {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -279,7 +279,7 @@ static void updateProgressCallback(void *p_data,
                    type:(vlc_dialog_question_type)questionType
              cancelText:(NSString *)cancelText
             action1Text:(NSString *)action1Text
-            action2Text:(NSString *)action2Text;
+            action2Text:(NSString *)action2Text
 {
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:title];

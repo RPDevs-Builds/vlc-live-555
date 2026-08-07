@@ -24,6 +24,7 @@
 
 #import <QuartzCore/QuartzCore.h>
 
+#import "extensions/NSAppearance+VLCAdditions.h"
 #import "extensions/NSColor+VLCAdditions.h"
 #import "extensions/NSFont+VLCAdditions.h"
 #import "extensions/NSImage+VLCAdditions.h"
@@ -79,7 +80,6 @@
     [self.tableView reloadData];
 
     self.openMediaButton.title = _NS("Open media...");
-    self.dragDropImageBackgroundBox.fillColor = NSColor.VLClibrarySeparatorLightColor;
 
     // Allow the drop zone image to shrink when the sidebar is contracted
     for (NSView * const subview in self.dragDropView.subviews) {
@@ -98,9 +98,6 @@
             break;
         }
     }
-    [self.dragDropImageBackgroundBox.topAnchor
-        constraintGreaterThanOrEqualToAnchor:self.dragDropView.topAnchor
-                                    constant:VLCUIUnits.smallSpacing].active = YES;
     [self.dragDropView.bottomAnchor
         constraintGreaterThanOrEqualToAnchor:self.openMediaButton.bottomAnchor
                                     constant:VLCUIUnits.smallSpacing].active = YES;
@@ -263,21 +260,15 @@
 {
     [super updateColorsBasedOnAppearance:appearance];
 
-    BOOL isDark = NO;
-    if (@available(macOS 10.14, *)) {
-        isDark = [appearance.name isEqualToString:NSAppearanceNameDarkAqua] || 
-                 [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
-    }
+    const BOOL isDark = appearance.shouldShowDarkAppearance;
 
     // If we try to pull the view's effectiveAppearance we are going to get the previous 
     // appearance's name despite responding to the effectiveAppearance change (???) so it is a
     // better idea to pull from the general system theme preference, which is always up-to-date
     if (isDark) {
         self.bottomButtonsSeparator.borderColor = NSColor.VLClibrarySeparatorDarkColor;
-        self.dragDropImageBackgroundBox.hidden = NO;
     } else {
         self.bottomButtonsSeparator.borderColor = NSColor.VLClibrarySeparatorLightColor;
-        self.dragDropImageBackgroundBox.hidden = YES;
     }
 }
 
