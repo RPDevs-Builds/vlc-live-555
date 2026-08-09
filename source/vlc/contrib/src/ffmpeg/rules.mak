@@ -1,22 +1,24 @@
 # FFmpeg
 
-FFMPEG_HASH=ec47a3b95f88fc3f820b900038ac439e4eb3fede
-FFMPEG_MAJVERSION := 8.1
-FFMPEG_REVISION := 2
-FFMPEG_VERSION := $(FFMPEG_MAJVERSION).$(FFMPEG_REVISION)
-# FFMPEG_VERSION := $(FFMPEG_MAJVERSION)
-FFMPEG_BRANCH=release/$(FFMPEG_MAJVERSION)
+# FFMPEG_HASH=ec47a3b95f88fc3f820b900038ac439e4eb3fede
+FFMPEG_MAJVERSION := 9.0
+FFMPEG_REVISION := 0
+# FFMPEG_VERSION := $(FFMPEG_MAJVERSION).$(FFMPEG_REVISION)
+FFMPEG_VERSION := $(FFMPEG_MAJVERSION)
+# FFMPEG_BRANCH=release/$(FFMPEG_MAJVERSION)
 FFMPEG_URL := https://ffmpeg.org/releases/ffmpeg-$(FFMPEG_VERSION).tar.xz
-FFMPEG_GITURL := https://code.ffmpeg.org/FFmpeg/FFmpeg.git
+# FFMPEG_GITURL := https://code.ffmpeg.org/FFmpeg/FFmpeg.git
 FFMPEG_LAVC_MIN := 57.37.100
 
-FFMPEG_BASENAME := $(subst .,_,$(subst \,_,$(subst /,_,$(FFMPEG_HASH))))
+# FFMPEG_BASENAME := $(subst .,_,$(subst \,_,$(subst /,_,$(FFMPEG_HASH))))
 
 # bsf=vp9_superframe is needed to mux VP9 inside webm/mkv
 FFMPEGCONF = --prefix="$(PREFIX)" --enable-static --disable-shared \
 	--extra-ldflags="$(LDFLAGS)" \
 	--cc="$(CC)" \
 	--host-cc="$(BUILDCC)" \
+	--host-cflags="$(BUILDCFLAGS)" \
+	--host-cppflags="$(BUILDCPPFLAGS)" \
 	--pkg-config="$(PKG_CONFIG)" \
 	--disable-doc \
 	--disable-encoder=vorbis \
@@ -220,8 +222,8 @@ endif
 
 FFMPEGCONF += --nm="$(NM)" --ar="$(AR)" --ranlib="$(RANLIB)"
 
-$(TARBALLS)/ffmpeg-$(FFMPEG_BASENAME).tar.xz:
-	$(call download_git,$(FFMPEG_GITURL),$(FFMPEG_BRANCH),$(FFMPEG_HASH))
+# $(TARBALLS)/ffmpeg-$(FFMPEG_BASENAME).tar.xz:
+# 	$(call download_git,$(FFMPEG_GITURL),$(FFMPEG_BRANCH),$(FFMPEG_HASH))
 
 # .sum-ffmpeg: $(TARBALLS)/ffmpeg-$(FFMPEG_BASENAME).tar.xz
 # 	$(call check_githash,$(FFMPEG_HASH))
@@ -242,6 +244,7 @@ ffmpeg: ffmpeg-$(FFMPEG_VERSION).tar.xz .sum-ffmpeg
 	$(APPLY) $(SRC)/ffmpeg/0001-fix-mf_utils-compilation-with-mingw64.patch
 	$(APPLY) $(SRC)/ffmpeg/0011-avcodec-videotoolboxenc-disable-calls-on-unsupported.patch
 	$(APPLY) $(SRC)/ffmpeg/avcodec-fix-compilation-visionos.patch
+	$(APPLY) $(SRC)/ffmpeg/0009-swscale-x86-use-HOSTCPPFLAGS-instead-of-CPPFLAGS-for.patch
 	$(MOVE)
 
 .ffmpeg: ffmpeg

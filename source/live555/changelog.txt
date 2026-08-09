@@ -1,4 +1,4 @@
-2026.08.06:
+2026.08.07:
 - Fixed old code in "GroupsockHelper.cpp" that was using hardcoded numeric error numbers
   (intended to work around bugs in Linux that might not exist anymore) with textual error names.
 2026.07.23:
