@@ -71,11 +71,12 @@ check_PROGRAMS = \
 	test_src_video_output_opengl \
 	test_src_video_output_spu \
 	test_modules_lua_extension \
-	test_modules_lua_playlist_parser \
 	test_modules_misc_medialibrary \
 	test_modules_packetizer_helpers \
 	test_modules_packetizer_hxxx \
 	test_modules_packetizer_h264 \
+	test_modules_packetizer_h266 \
+	test_modules_packetizer_h266_nal \
 	test_modules_packetizer_hevc \
 	test_modules_packetizer_mpegvideo \
 	test_modules_codec_hxxx_helper \
@@ -112,6 +113,10 @@ endif
 
 if HAVE_DARWIN
 check_PROGRAMS += test_src_misc_image_cvpx
+endif
+
+if BUILD_LUA
+check_PROGRAMS += test_modules_lua_playlist_parser
 endif
 
 
@@ -346,6 +351,13 @@ test_modules_packetizer_hxxx_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_modules_packetizer_h264_SOURCES = modules/packetizer/h264.c \
 				modules/packetizer/packetizer.h
 test_modules_packetizer_h264_LDADD = $(LIBVLCCORE) $(LIBVLC)
+test_modules_packetizer_h266_SOURCES = modules/packetizer/h266.c \
+				modules/packetizer/packetizer.h
+test_modules_packetizer_h266_LDADD = $(LIBVLCCORE) $(LIBVLC)
+test_modules_packetizer_h266_nal_SOURCES = modules/packetizer/h266_nal.c \
+				           ../modules/packetizer/h266_nal.c \
+				           ../modules/packetizer/h266_nal.h
+test_modules_packetizer_h266_nal_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_modules_packetizer_hevc_SOURCES = modules/packetizer/hevc.c \
 				modules/packetizer/packetizer.h
 test_modules_packetizer_hevc_LDADD = $(LIBVLCCORE) $(LIBVLC)

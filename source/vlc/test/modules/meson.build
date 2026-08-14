@@ -11,7 +11,8 @@ vlc_tests += {
     'sources' : files('lua/playlist_parser.c'),
     'suite' : ['modules', 'test_modules'],
     'link_with' : [libvlc, libvlccore],
-    'module_depends' : ['lua'] 
+    'module_depends' : ['lua'],
+    'enabled' : lua_dep.found() and get_option('lua').enabled(),
 }
 
 if not (host_system == 'windows') # missing mkdtemp()
@@ -52,6 +53,25 @@ vlc_tests += {
 vlc_tests += {
     'name' : 'test_modules_packetizer_hevc',
     'sources' : files('packetizer/hevc.c'),
+    'suite' : ['modules', 'test_modules'],
+    'link_with' : [libvlc, libvlccore],
+    'module_depends' : vlc_plugins_targets.keys()
+}
+
+vlc_tests += {
+    'name' : 'test_modules_packetizer_h266',
+    'sources' : files('packetizer/h266.c'),
+    'suite' : ['modules', 'test_modules'],
+    'link_with' : [libvlc, libvlccore],
+    'module_depends' : vlc_plugins_targets.keys()
+}
+
+vlc_tests += {
+    'name' : 'test_modules_packetizer_h266_nal',
+    'sources' : files(
+        'packetizer/h266_nal.c',
+        '../../modules/packetizer/h266_nal.c'
+      ),
     'suite' : ['modules', 'test_modules'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : vlc_plugins_targets.keys()

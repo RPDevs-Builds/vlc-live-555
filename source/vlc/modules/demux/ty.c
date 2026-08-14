@@ -229,9 +229,9 @@ typedef struct
 
   xds_t       xds;
 
-  int             i_cur_chunk;
+  uint64_t        i_cur_chunk;
   int             i_stuff_cnt;
-  size_t          i_stream_size;      /* size of input stream (if known) */
+  uint64_t        i_stream_size;      /* size of input stream (if known) */
   //uint64_t        l_program_len;      /* length of this stream in msec */
   bool      b_seekable;         /* is this stream seekable? */
   bool      b_have_master;      /* are master chunks present? */
@@ -254,9 +254,9 @@ typedef struct
   vlc_tick_t      lastVideoPTS;
 
   ty_rec_hdr_t    *rec_hdrs;          /* record headers array */
-  int             i_cur_rec;          /* current record in this chunk */
-  int             i_num_recs;         /* number of recs in this chunk */
-  int             i_seq_rec;          /* record number where seq start is */
+  size_t          i_cur_rec;          /* current record in this chunk */
+  size_t          i_num_recs;         /* number of recs in this chunk */
+  size_t          i_seq_rec;          /* record number where seq start is */
   ty_seq_table_t  *seq_table;         /* table of SEQ entries from mstr chk */
   bool      eof;
   bool      b_first_chunk;
@@ -270,7 +270,7 @@ static int ty_stream_seek_pct(demux_t *p_demux, double seek_pct);
 static int ty_stream_seek_time(demux_t *, uint64_t);
 
 static ty_rec_hdr_t *parse_chunk_headers( const uint8_t *p_buf,
-                                          int i_num_recs, int *pi_payload_size);
+                                          size_t i_num_recs, int *pi_payload_size);
 static int probe_stream(demux_t *p_demux);
 static int analyze_chunk(demux_t *p_demux, const uint8_t *p_chunk);
 static int  parse_master(demux_t *p_demux);
@@ -506,7 +506,6 @@ static int Control(demux_t *p_demux, int i_query, va_list args)
 {
     demux_sys_t *p_sys = p_demux->p_sys;
     double f, *pf;
-    int64_t i64;
 
     /*msg_Info(p_demux, "control cmd %d", i_query);*/
     switch( i_query )
@@ -517,10 +516,10 @@ static int Control(demux_t *p_demux, int i_query, va_list args)
 
     case DEMUX_GET_POSITION:
         /* arg is 0.0 - 1.0 percent of overall file position */
-        if( ( i64 = p_sys->i_stream_size ) > 0 )
+        if( p_sys->i_stream_size != 0 )
         {
             pf = va_arg( args, double* );
-            *pf = ((double)1.0) * vlc_stream_Tell( p_demux->s ) / (double) i64;
+            *pf = ((double)1.0) * vlc_stream_Tell( p_demux->s ) / (double) p_sys->i_stream_size;
             return VLC_SUCCESS;
         }
         return VLC_EGENERIC;
@@ -529,7 +528,7 @@ static int Control(demux_t *p_demux, int i_query, va_list args)
         /* arg is 0.0 - 1.0 percent of overall file position */
         f = va_arg( args, double );
         /* msg_Dbg(p_demux, "Control - set position to %2.3f", f); */
-        if ((i64 = p_sys->i_stream_size) > 0)
+        if (p_sys->i_stream_size != 0)
             return ty_stream_seek_pct(p_demux, f);
         return VLC_EGENERIC;
     case DEMUX_GET_TIME:
@@ -1059,20 +1058,18 @@ static bool DemuxRecCc( demux_t *p_demux, ty_rec_hdr_t *rec_hdr, block_t *p_bloc
 static int ty_stream_seek_pct(demux_t *p_demux, double seek_pct)
 {
     demux_sys_t *p_sys = p_demux->p_sys;
-    int64_t seek_pos = p_sys->i_stream_size * seek_pct;
+    const uint64_t seek_pos = p_sys->i_stream_size * seek_pct;
     uint64_t l_skip_amt;
-    unsigned i_cur_part;
 
     /* if we're not seekable, there's nothing to do */
     if (!p_sys->b_seekable)
         return VLC_EGENERIC;
 
     /* figure out which part & chunk we want & go there */
-    i_cur_part = seek_pos / TIVO_PART_LENGTH;
     p_sys->i_cur_chunk = seek_pos / CHUNK_SIZE;
 
     /* try to read the part header (master chunk) if it's there */
-    if (vlc_stream_Seek( p_demux->s, i_cur_part * TIVO_PART_LENGTH ) ||
+    if (vlc_stream_Seek( p_demux->s, (seek_pos / TIVO_PART_LENGTH) * TIVO_PART_LENGTH ) ||
         parse_master(p_demux) != VLC_SUCCESS)
     {
         /* can't seek stream */
@@ -1090,18 +1087,18 @@ static int ty_stream_seek_pct(demux_t *p_demux, double seek_pct)
     get_chunk_header(p_demux);
 
     /* seek within the chunk to get roughly to where we want */
-    p_sys->i_cur_rec = (int)
+    p_sys->i_cur_rec = (size_t)
       ((double) ((seek_pos % CHUNK_SIZE) / (double) (CHUNK_SIZE)) * p_sys->i_num_recs);
-    msg_Dbg(p_demux, "Seeked to file pos %"PRId64, seek_pos);
-    msg_Dbg(p_demux, " (chunk %d, record %d)",
-             p_sys->i_cur_chunk - 1, p_sys->i_cur_rec);
+    msg_Dbg(p_demux, "Seeked to file pos %"PRIu64, seek_pos);
+    msg_Dbg(p_demux, " (chunk %" PRIu64 ", record %zu)",
+             p_sys->i_cur_chunk ? p_sys->i_cur_chunk - 1 : 0, p_sys->i_cur_rec);
 
     /* seek to the start of this record's data.
      * to do that, we have to skip past all prior records */
     l_skip_amt = 0;
-    for ( int i=0; i<p_sys->i_cur_rec; i++)
+    for ( size_t i=0; i<p_sys->i_cur_rec; i++)
         l_skip_amt += p_sys->rec_hdrs[i].l_rec_size;
-    if( vlc_stream_Seek(p_demux->s, ((p_sys->i_cur_chunk-1) * CHUNK_SIZE) +
+    if( vlc_stream_Seek(p_demux->s, ((p_sys->i_cur_chunk ? p_sys->i_cur_chunk - 1 : 0) * CHUNK_SIZE) +
                         (p_sys->i_num_recs * REC_SIZE) + l_skip_amt + 4) != VLC_SUCCESS )
         return VLC_EGENERIC;
 
@@ -1589,7 +1586,7 @@ static int ty_stream_seek_time(demux_t *p_demux, uint64_t l_seek_time)
             p_sys->i_stuff_cnt = 0;
             get_chunk_header(p_demux);
             // check ty PTS for the SEQ entry in this chunk
-            if (p_sys->i_seq_rec < 0 || p_sys->i_seq_rec >= p_sys->i_num_recs) {
+            if (p_sys->i_seq_rec >= p_sys->i_num_recs) {
                 msg_Err(p_demux, "no SEQ hdr in chunk; table had one.");
                 /* Seek to beginning of original chunk & reload it */
                 if(vlc_stream_Seek(p_demux->s, (l_cur_pos / CHUNK_SIZE) * CHUNK_SIZE) != VLC_SUCCESS)
@@ -1624,7 +1621,7 @@ static int ty_stream_seek_time(demux_t *p_demux, uint64_t l_seek_time)
        so we need to skip past any stream data prior to the seq_rec
        in this chunk */
     i_skip_cnt = 0;
-    for (int j=0; j<p_sys->i_seq_rec; j++)
+    for (size_t j=0; j<p_sys->i_seq_rec; j++)
         i_skip_cnt += p_sys->rec_hdrs[j].l_rec_size;
     if(vlc_stream_Read(p_demux->s, NULL, i_skip_cnt) != i_skip_cnt)
         return VLC_EGENERIC;
@@ -1901,13 +1898,14 @@ static int analyze_chunk(demux_t *p_demux, const uint8_t *p_chunk)
 /* =========================================================================== */
 static int get_chunk_header(demux_t *p_demux)
 {
-    int i_readSize, i_num_recs;
+    int i_readSize;
+    size_t i_num_recs;
     uint8_t *p_hdr_buf;
     const uint8_t *p_peek;
     demux_sys_t *p_sys = p_demux->p_sys;
     int i_payload_size;             /* sum of all records' sizes */
 
-    msg_Dbg(p_demux, "parsing ty chunk #%d", p_sys->i_cur_chunk );
+    msg_Dbg(p_demux, "parsing ty chunk #%" PRIu64, p_sys->i_cur_chunk );
 
     /* if we have left-over filler space from the last chunk, get that */
     if (p_sys->i_stuff_cnt > 0) {
@@ -1973,7 +1971,7 @@ static int get_chunk_header(demux_t *p_demux)
     p_hdr_buf = malloc(i_num_recs * REC_SIZE);
     if (p_hdr_buf == NULL)
         return VLC_ENOMEM;
-    if (vlc_stream_Read(p_demux->s, p_hdr_buf, i_num_recs * REC_SIZE) < i_num_recs * REC_SIZE) {
+    if (vlc_stream_Read(p_demux->s, p_hdr_buf, i_num_recs * REC_SIZE) < (ssize_t)(i_num_recs * REC_SIZE)) {
         free( p_hdr_buf );
         p_sys->eof = true;
         return 0;
@@ -1997,9 +1995,9 @@ static int get_chunk_header(demux_t *p_demux)
 
 
 static ty_rec_hdr_t *parse_chunk_headers( const uint8_t *p_buf,
-                                          int i_num_recs, int *pi_payload_size)
+                                          size_t i_num_recs, int *pi_payload_size)
 {
-    int i;
+    size_t i;
     ty_rec_hdr_t *p_hdrs, *p_rec_hdr;
 
     *pi_payload_size = 0;

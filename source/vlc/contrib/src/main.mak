@@ -650,9 +650,6 @@ QT_CMAKE_CONFIG += -DQT_NO_PACKAGE_VERSION_CHECK=TRUE
 endif
 
 ##### fontconfig
-ifdef HAVE_ANDROID
-BUILD_WITH_FONTCONFIG := 1
-else
 ifdef HAVE_DARWIN_OS
 BUILD_WITH_FONTCONFIG := 0
 else
@@ -663,7 +660,6 @@ ifdef HAVE_EMSCRIPTEN
 BUILD_WITH_FONTCONFIG := 0
 else
 BUILD_WITH_FONTCONFIG := 1
-endif
 endif
 endif
 endif
@@ -763,7 +759,7 @@ package: install
 ifneq ($(notdir $(PREFIX)),$(HOST))
 	(cd tmp && mv $(notdir $(PREFIX)) $(HOST))
 endif
-	tar -c -C tmp $(HOST)/ | zstd --quiet --force --threads=0 -12 -o ../vlc-contrib-$(HOST)-$(DATE).tar.zst
+	tar -c -C tmp $(HOST)/ | zstd --quiet --force --threads=0 -12 -c > ../vlc-contrib-$(HOST)-$(DATE).tar.zst
 
 list:
 	@echo All packages:
