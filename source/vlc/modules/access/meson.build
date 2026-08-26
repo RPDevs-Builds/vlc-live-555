@@ -227,6 +227,15 @@ vlc_modules += {
     'dependencies' : [m_lib]
 }
 
+# libnoidea
+libnoidea_dep = dependency('libnoidea', required: get_option('ndi'))
+vlc_modules += {
+    'name' : 'noidea',
+    'sources' : files('ndi.c'),
+    'dependencies' : [libnoidea_dep, socket_libs],
+    'enabled' : libnoidea_dep.found(),
+}
+
 
 ## Screen grab plugins
 
@@ -339,6 +348,15 @@ if libbluray_dep.found()
         'sources' : files('bluray.c'),
         'dependencies' : [libbluray_dep]
     }
+
+    if host_system == 'windows'
+        # BD-J JAR
+        # install_subdir(libbluray_dep.get_variable(pkgconfig: 'prefix') / 'share/java', install_dir : plugins_path)
+        install_data(libbluray_dep.get_variable(pkgconfig: 'prefix') / 'share/java/libbluray-j2se-' + libbluray_dep.version() + '.jar',
+                    install_dir : plugins_path )
+        install_data(libbluray_dep.get_variable(pkgconfig: 'prefix') / 'share/java/libbluray-awt-j2se-' + libbluray_dep.version() + '.jar',
+                    install_dir : plugins_path )
+    endif
 endif
 
 
@@ -418,6 +436,30 @@ vlc_modules += {
     'dependencies' : [libdsm_dep],
     'link_with' : [vlc_access_cache_lib],
     'enabled' : libdsm_dep.found(),
+}
+
+smbclient_dep = dependency('smbclient',  required: get_option('smbclient'))
+vlc_modules += {
+    'name' : 'smbc',
+    'sources' : files('samba.c', 'smb_common.h'),
+    'dependencies' : [smbclient_dep],
+    'enabled' : smbclient_dep.found(),
+}
+
+libsmb2_dep = dependency('libsmb2', version: '>= 3.0.0', required: get_option('smb2'))
+smb2_dependencies = [libsmb2_dep]
+smb2_flags = []
+if (libdsm_dep.found())
+    smb2_dependencies += [libdsm_dep]
+    smb2_flags += '-DHAVE_DSM"'
+endif
+vlc_modules += {
+    'name' : 'smb2',
+    'sources' : files('smb2.c', 'smb_common.h'),
+    'c_args' :  smb2_flags,
+    'dependencies' : smb2_dependencies,
+    'link_with' : [vlc_access_cache_lib],
+    'enabled' : libsmb2_dep.found(),
 }
 
 # FTP

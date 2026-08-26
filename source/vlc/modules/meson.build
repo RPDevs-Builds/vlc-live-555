@@ -481,10 +481,22 @@ foreach module : vlc_modules
         extra_files: module.get('extra_files', []),
         build_by_default: true,
         install: true,
-        install_dir: pkglibdir_path / 'plugins',
+        install_dir: plugins_path,
         kwargs: kwargs,
         shortname: shortname,
     )
+    if is_disabler(vlc_plugin)
+        # Report the plugin as disabled, or every target listing it in
+        # 'depends' would silently turn into a disabler too, without
+        # any diagnostic.
+        warning('Plugin \'@0@\' will be disabled, one of its dependencies is a disabler'
+            .format(module['name']))
+        vlc_plugins_manifest += {
+            module['name']: module + { 'enabled': false }
+        }
+        continue
+    endif
+
     vlc_plugins_targets += {
         module['name']: vlc_plugin
     }

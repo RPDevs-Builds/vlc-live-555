@@ -36,11 +36,14 @@ static const char *const HLS_PLAYLIST_TYPE_STRINGS[] = {
 static inline int hls_playlist_type_FromString(const char *str,
                                                enum hls_playlist_type *out)
 {
+    if (str == NULL)
+        return -ENOENT;
+
     for (unsigned i = 0; i < ARRAY_SIZE(HLS_PLAYLIST_TYPE_STRINGS); ++i)
     {
         if (!strcmp(str, HLS_PLAYLIST_TYPE_STRINGS[i]))
         {
-            *out = i;
+            *out = (enum hls_playlist_type)i;
             return VLC_SUCCESS;
         }
     }
@@ -54,6 +57,7 @@ struct hls_config
     unsigned int max_segments;
     bool pace;
     vlc_tick_t segment_length;
+    vlc_tick_t max_segment_length;
     size_t max_memory;
     enum hls_playlist_type preferred_type;
 };

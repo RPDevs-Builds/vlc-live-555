@@ -35,9 +35,12 @@ $(TARBALLS)/Vulkan-Headers-$(VULKAN_HEADERS_VERSION).tar.gz:
 
 vulkan-headers: Vulkan-Headers-$(VULKAN_HEADERS_VERSION).tar.gz .sum-vulkan-headers
 	$(UNPACK)
+	# avoid unnecessary dependency on CMake 3.22
+	sed -i.orig 's,VERSION 3.22.1, VERSION 3.21,' $(UNPACK_DIR)/CMakeLists.txt
 	$(MOVE)
 
 .vulkan-headers: vulkan-headers toolchain.cmake
+	rm -rf $(PREFIX)/include/vulkan
 	$(CMAKECLEAN)
 	$(HOSTVARS_CMAKE) $(CMAKE)
 	+$(CMAKEBUILD)

@@ -28,6 +28,7 @@
 #import "extensions/NSString+Helpers.h"
 
 #import "library/VLCInputItem.h"
+#import "library/VLCLibraryImageCache.h"
 
 #import "main/VLCMain.h"
 
@@ -544,19 +545,35 @@
     VLCMediaLibraryMediaItem * const mediaItem =
         [VLCMediaLibraryMediaItem mediaItemForURL:_playerController.URLOfCurrentMediaItem];
 
-    self.playingItemDisplayField.stringValue = inputItem.name ?: _NS("No current item");
+    NSString * const displayTitle = mediaItem.title.length > 0 ? mediaItem.title : inputItem.name;
+    self.playingItemDisplayField.stringValue = displayTitle ?: _NS("No current item");
     self.detailLabel.hidden =
         mediaItem == nil ||
         [mediaItem.primaryDetailString isEqualToString:@""] ||
         [mediaItem.primaryDetailString isEqualToString:mediaItem.durationString];
     self.detailLabel.stringValue = mediaItem.primaryDetailString ?: @"";
 
-    NSURL * const artworkURL = inputItem.artworkURL;
     NSImage * const placeholderImage = NSImage.VLCNoArtImage;
-    if (artworkURL) {
-        [self.artworkImageView setImageURL:inputItem.artworkURL placeholderImage:placeholderImage];
+    self.artworkImageView.image = placeholderImage;
+    if (inputItem == nil) {
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    void (^completionHandler)(NSImage * const) = ^(NSImage * const thumbnail) {
+        VLCControlsBarCommon * const strongSelf = weakSelf;
+        if (!strongSelf || inputItem != strongSelf->_playerController.currentMedia) {
+            return;
+        }
+        strongSelf.artworkImageView.image = thumbnail ?: placeholderImage;
+    };
+
+    if (mediaItem.smallArtworkGenerated && mediaItem.smallArtworkMRL.length > 0) {
+        [VLCLibraryImageCache thumbnailForLibraryItem:mediaItem
+                                       withCompletion:completionHandler];
     } else {
-        self.artworkImageView.image = placeholderImage;
+        [VLCLibraryImageCache thumbnailForInputItem:inputItem
+                                     withCompletion:completionHandler];
     }
 }
 

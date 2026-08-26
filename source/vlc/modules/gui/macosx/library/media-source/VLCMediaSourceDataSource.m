@@ -26,6 +26,7 @@
 #import "VLCMediaSource.h"
 #import "VLCMediaSourceBaseDataSource.h"
 
+#import "extensions/NSPasteboardItem+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 #import "extensions/NSTableCellView+VLCAdditions.h"
 
@@ -42,6 +43,7 @@
 
 #import "playqueue/VLCPlayQueueController.h"
 
+#import "views/VLCFileDragRecognisingView.h"
 #import "views/VLCImageView.h"
 #import "views/VLCUIUnits.h"
 
@@ -55,10 +57,21 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
 }
 
 @property (readwrite) dispatch_source_t observedPathDispatchSource;
-@property (readwrite) BOOL preparseOngoing;
 @property (readwrite, strong, nullable, nonatomic) id<VLCMediaSourceNodeObservation> nodeObservation;
+@property (readwrite, strong) NSMutableSet<NSValue *> *preparingInputItemIdentifiers;
+@property (readwrite, strong) NSMutableSet<NSValue *> *preparedInputItemIdentifiers;
+@property (readwrite, strong) NSMutableSet<NSValue *> *unavailableInputItemIdentifiers;
+@property (readwrite, strong) NSMutableDictionary<NSValue *, NSNumber *> *childCountsByInputItemIdentifier;
+@property (readwrite) dispatch_queue_t childCountQueue;
 
 @end
+
+static NSValue * _Nullable inputItemIdentifier(VLCInputItem * _Nullable const inputItem)
+{
+    return inputItem.vlcInputItem == NULL
+        ? nil
+        : [NSValue valueWithPointer:inputItem.vlcInputItem];
+}
 
 @implementation VLCMediaSourceDataSource
 
@@ -67,6 +80,14 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
     self = [super init];
     if (self) {
         self.parentBaseDataSource = parentBaseDataSource;
+        self.preparingInputItemIdentifiers = NSMutableSet.set;
+        self.preparedInputItemIdentifiers = NSMutableSet.set;
+        self.unavailableInputItemIdentifiers = NSMutableSet.set;
+        self.childCountsByInputItemIdentifier = NSMutableDictionary.dictionary;
+        dispatch_queue_attr_t const childCountQueueAttributes =
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
+        self.childCountQueue = dispatch_queue_create("org.videolan.vlc.media-source-child-count",
+                                                     childCountQueueAttributes);
         NSNotificationCenter * const notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(mediaSourceChildrenChanged:)
@@ -100,7 +121,80 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
 
 - (void)preparseStateChanged:(NSNotification *)notification
 {
-    self.preparseOngoing = notification.name != VLCMediaSourcePreparsingEnded;
+    if (notification.object != self.displayedMediaSource)
+        return;
+
+    VLCInputItem * const inputItem = notification.userInfo[VLCMediaSourcePreparseInputItemKey];
+    NSValue * const identifier = inputItemIdentifier(inputItem);
+    if (identifier == nil) {
+        return;
+    }
+
+    const BOOL preparseStarted = [notification.name isEqualToString:VLCMediaSourcePreparsingStarted];
+    if (preparseStarted) {
+        [self.preparingInputItemIdentifiers addObject:identifier];
+    } else {
+        [self.preparingInputItemIdentifiers removeObject:identifier];
+
+        NSNumber * const status = notification.userInfo[VLCMediaSourcePreparseStatusKey];
+        if (status == nil || status.intValue == VLC_SUCCESS) {
+            [self.preparedInputItemIdentifiers addObject:identifier];
+            [self.unavailableInputItemIdentifiers removeObject:identifier];
+        } else {
+            [self.unavailableInputItemIdentifiers addObject:identifier];
+            [self.preparedInputItemIdentifiers removeObject:identifier];
+        }
+    }
+
+    NSValue * const displayedNodeIdentifier = inputItemIdentifier(self.nodeToDisplay.inputItem);
+    if (![identifier isEqual:displayedNodeIdentifier]) {
+        if (!preparseStarted) {
+            [self reloadCountForInputItemIdentifier:identifier];
+        }
+        return;
+    }
+
+    if (!preparseStarted) {
+        [self.nodeToDisplay clearChildrenCache];
+        [self reloadData];
+    }
+
+    NSString * const loadingNotificationName = preparseStarted
+        ? VLCMediaSourceDataSourceLoadingStarted
+        : VLCMediaSourceDataSourceLoadingEnded;
+    [NSNotificationCenter.defaultCenter postNotificationName:loadingNotificationName
+                                                      object:self];
+}
+
+- (void)reloadCountForInputItemIdentifier:(NSValue *)identifier
+{
+    NSArray<VLCInputNode *> * const children = self.nodeToDisplay.children;
+    const NSUInteger row = [children indexOfObjectPassingTest:^BOOL(VLCInputNode * const childNode,
+                                                                    NSUInteger __unused idx,
+                                                                    BOOL * const __unused stop) {
+        return [inputItemIdentifier(childNode.inputItem) isEqual:identifier];
+    }];
+    if (row == NSNotFound) {
+        return;
+    }
+
+    [children[row] clearChildrenCache];
+
+    const NSInteger countColumn = [self.tableView columnWithIdentifier:@"VLCMediaSourceTableCountColumn"];
+    if (self.tableView.hidden || countColumn == -1) {
+        return;
+    }
+
+    [self.tableView reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:row]
+                              columnIndexes:[NSIndexSet indexSetWithIndex:countColumn]];
+}
+
+- (void)clearDisplayedNodeChildrenCaches
+{
+    [self.nodeToDisplay clearChildrenCache];
+    for (VLCInputNode * const childNode in self.nodeToDisplay.children) {
+        [childNode clearChildrenCache];
+    }
 }
 
 - (void)mediaSourceChildrenChanged:(NSNotification *)notification
@@ -108,13 +202,8 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
     if (notification.object != self.displayedMediaSource)
         return;
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self clearDisplayedNodeChildrenCaches];
         [self reloadData];
-        if (self.hasDisplayedItems ||
-            [notification.name isEqualToString:VLCMediaSourcePreparsingEnded]) {
-            [NSNotificationCenter.defaultCenter
-                postNotificationName:VLCMediaSourceDataSourceLoadingEnded
-                              object:self];
-        }
     });
 }
 
@@ -144,13 +233,13 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
     }];
 
     [self reloadData];
-    if (self.preparseOngoing) {
-        [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourceDataSourceLoadingStarted
-                                                          object:self];
-    } else {
-        [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourceDataSourceLoadingEnded
-                                                          object:self];
-    }
+    NSValue * const identifier = inputItemIdentifier(nodeToDisplay.inputItem);
+    NSString * const loadingNotificationName =
+        [self.preparingInputItemIdentifiers containsObject:identifier]
+        ? VLCMediaSourceDataSourceLoadingStarted
+        : VLCMediaSourceDataSourceLoadingEnded;
+    [NSNotificationCenter.defaultCenter postNotificationName:loadingNotificationName
+                                                      object:self];
 }
 
 - (BOOL)hasDisplayedItems
@@ -162,6 +251,9 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
 {
     [self.tableView setDoubleAction:@selector(tableViewAction:)];
     [self.tableView setTarget:self];
+    [self.tableView registerForDraggedTypes:@[NSFilenamesPboardType]];
+    [self.tableView setDraggingSourceOperationMask:NSDragOperationCopy forLocal:NO];
+    [self.tableView setDraggingSourceOperationMask:NSDragOperationCopy forLocal:YES];
 }
 
 - (nullable VLCInputNode *)inputNodeForIndexPath:(NSIndexPath *)indexPath
@@ -295,26 +387,43 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
     NSAssert(cellView, @"Cell view should not be nil");
 
     if ([tableColumn.identifier isEqualToString:@"VLCMediaSourceTableCountColumn"]) {
-        if (inputNode.numberOfChildren == 0) {
-            cellView.textField.stringValue = NSTR("Loading…");
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                NSError * const error =
-                    [self.displayedMediaSource preparseInputNodeWithinTree:inputNode];
-                if (error) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        cellView.textField.stringValue = NSTR("Unavailable");
-                    });
-                    return;
-                }
-
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    cellView.textField.stringValue =
-                        [NSString stringWithFormat:@"%i items", inputNode.numberOfChildren];
-                });
-            });
-        } else {
+        NSValue * const identifier = inputItemIdentifier(inputNode.inputItem);
+        const int numberOfChildren = inputNode.numberOfChildren;
+        NSNumber * const cachedChildCount = self.childCountsByInputItemIdentifier[identifier];
+        if ([self.unavailableInputItemIdentifiers containsObject:identifier]) {
+            cellView.textField.stringValue = NSTR("Unavailable");
+        } else if (numberOfChildren > 0 || [self.preparedInputItemIdentifiers containsObject:identifier]) {
             cellView.textField.stringValue =
-                [NSString stringWithFormat:@"%i items", inputNode.numberOfChildren];
+                [NSString stringWithFormat:@"%i items", numberOfChildren];
+        } else if (cachedChildCount != nil) {
+            cellView.textField.stringValue =
+                [NSString stringWithFormat:@"%li items", cachedChildCount.integerValue];
+        } else {
+            cellView.textField.stringValue = NSTR("Loading…");
+            if (![self.preparingInputItemIdentifiers containsObject:identifier]) {
+                [self.preparingInputItemIdentifiers addObject:identifier];
+                VLCMediaSource * const mediaSource = self.displayedMediaSource;
+                dispatch_async(self.childCountQueue, ^{
+                    NSError *error = nil;
+                    NSNumber * const childCount = [mediaSource childCountForInputNode:inputNode
+                                                                                error:&error];
+                    if (childCount == nil && error == nil) {
+                        [mediaSource preparseInputNodeWithinTree:inputNode];
+                        return;
+                    }
+
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self.preparingInputItemIdentifiers removeObject:identifier];
+                        if (error != nil) {
+                            [self.unavailableInputItemIdentifiers addObject:identifier];
+                        } else if (childCount != nil) {
+                            [self.unavailableInputItemIdentifiers removeObject:identifier];
+                            self.childCountsByInputItemIdentifier[identifier] = childCount;
+                        }
+                        [self reloadCountForInputItemIdentifier:identifier];
+                    });
+                });
+            }
         }
     } else if ([tableColumn.identifier isEqualToString:@"VLCMediaSourceTableKindColumn"]) {
         NSString *typeName = NSTR("Unknown");
@@ -410,6 +519,35 @@ NSString * const VLCMediaSourceDataSourceLoadingEnded = @"VLCMediaSourceDataSour
     if (childNode) {
         [self performActionForNode:childNode allowPlayback:YES];
     }
+}
+
+- (id<NSPasteboardWriting>)tableView:(NSTableView *)tableView pasteboardWriterForRow:(NSInteger)row
+{
+    VLCInputItem * const inputItem = [self mediaSourceInputItemAtRow:row];
+    return [self.parentBaseDataSource pasteboardWriterForInputItem:inputItem];
+}
+
+- (NSDragOperation)tableView:(NSTableView *)tableView
+                validateDrop:(id<NSDraggingInfo>)info
+                 proposedRow:(NSInteger)row
+       proposedDropOperation:(NSTableViewDropOperation)dropOperation
+{
+    const id propertyList = [info.draggingPasteboard propertyListForType:NSFilenamesPboardType];
+    if (propertyList == nil) {
+        return NSDragOperationNone;
+    }
+
+    [tableView setDropRow:-1 dropOperation:NSTableViewDropOn];
+    return NSDragOperationCopy;
+}
+
+- (BOOL)tableView:(NSTableView *)tableView
+       acceptDrop:(id<NSDraggingInfo>)info
+              row:(NSInteger)row
+    dropOperation:(NSTableViewDropOperation)dropOperation
+{
+    return [VLCFileDragRecognisingView
+        handlePasteboardFromDragSessionAsPlayQueueItems:info.draggingPasteboard];
 }
 
 - (nullable VLCInputNode *)mediaSourceInputNodeAtRow:(NSInteger)tableViewRow

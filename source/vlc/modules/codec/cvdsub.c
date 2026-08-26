@@ -67,7 +67,7 @@ static block_t *Reassemble ( decoder_t *, block_t * );
 static void ParseMetaInfo  ( decoder_t *, block_t * );
 static int  ParseHeader    ( decoder_t *, block_t * );
 static subpicture_t *DecodePacket( decoder_t *, block_t * );
-static void RenderImage( decoder_t *, block_t *, picture_t * );
+static int  RenderImage( decoder_t *, block_t *, picture_t * );
 
 #define SUBTITLE_BLOCK_EMPTY 0
 #define SUBTITLE_BLOCK_PARTIAL 1
@@ -556,7 +556,12 @@ static subpicture_t *DecodePacket( decoder_t *p_dec, block_t *p_data )
     p_region->i_x = p_region->i_x * 3 / 4; /* FIXME: use aspect ratio for x? */
     p_region->i_y = p_sys->i_y_start;
 
-    RenderImage( p_dec, p_data, p_region->p_picture );
+    if( RenderImage( p_dec, p_data, p_region->p_picture ) != VLC_SUCCESS )
+    {
+        msg_Err( p_dec, "cannot render SPU region" );
+        subpicture_Delete( p_spu );
+        return NULL;
+    }
 
     return p_spu;
 }
@@ -584,15 +589,17 @@ static subpicture_t *DecodePacket( decoder_t *p_dec, block_t *p_data )
  a 4-bit alpha (filling 8 bits), and 8-bit y, u, and v entry.
 
  *****************************************************************************/
-static void RenderImage( decoder_t *p_dec, block_t *p_data,
+static int RenderImage( decoder_t *p_dec, block_t *p_data,
                          picture_t *dst_pic )
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     uint8_t *p_dest = dst_pic->Y_PIXELS;
     int i_field;            /* The subtitles are interlaced */
-    int i_row, i_column;    /* scanline row/column number */
-    uint8_t i_color, i_count;
+    size_t i_row, i_column; /* scanline row/column number */
     bs_t bs;
+
+    if( p_data->i_buffer <= p_sys->i_image_offset )
+        return VLC_EGENERIC;
 
     bs_init( &bs, p_data->p_buffer + p_sys->i_image_offset,
              p_data->i_buffer - p_sys->i_image_offset );
@@ -604,34 +611,31 @@ static void RenderImage( decoder_t *p_dec, block_t *p_data,
             for( i_column = 0; i_column < p_sys->i_width; i_column++ )
             {
                 uint8_t i_val = bs_read( &bs, 4 );
+                uint8_t *p = &p_dest[i_row * dst_pic->Y_PITCH + i_column];
+                size_t i_count;
+                uint8_t i_color;
 
                 if( i_val == 0 )
                 {
                     /* Fill the rest of the line with next color */
                     i_color = bs_read( &bs, 4 );
-
-                    memset( &p_dest[i_row * dst_pic->Y_PITCH +
-                                    i_column], i_color,
-                            p_sys->i_width - i_column );
+                    i_count = p_sys->i_width - i_column;
                     i_column = p_sys->i_width;
-                    continue;
                 }
                 else
                 {
                     /* Normal case: get color and repeat count */
                     i_count = (i_val >> 2);
                     i_color = i_val & 0x3;
-
                     i_count = __MIN( i_count, p_sys->i_width - i_column );
-
-                    memset( &p_dest[i_row * dst_pic->Y_PITCH +
-                                    i_column], i_color, i_count );
                     i_column += i_count - 1;
-                    continue;
                 }
+
+                memset( p, i_color, i_count );
             }
 
             bs_align( &bs );
         }
     }
+    return VLC_SUCCESS;
 }

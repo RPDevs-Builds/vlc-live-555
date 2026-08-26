@@ -662,7 +662,18 @@ option('udev',
 option('dsm',
     type: 'feature',
     value: 'auto',
-    description: 'SMB/CIFS access/sd support')
+    description: 'libdsm SMB/CIFS access/sd support')
+
+option('smbclient',
+    type: 'feature',
+    value: 'auto',
+    description: 'smbclient SMB/CIFS access/sd support')
+
+option('smb2',
+    type: 'feature',
+    value: 'auto',
+    description: 'support smb2 protocol via libsmb2')
+
 
 option('live555',
     type: 'feature',
@@ -798,6 +809,11 @@ option('sam3',
        type: 'feature',
        value: 'auto',
        description: 'sam3.cpp inference library')
+
+option('ndi',
+       type: 'feature',
+       value: 'auto',
+       description: 'Build with NDI module (requires libnoidea)')
 
 # TODO: Missing v4l2
 # TODO: Missing rpi-omxil

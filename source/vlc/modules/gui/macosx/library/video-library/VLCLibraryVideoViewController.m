@@ -25,6 +25,7 @@
 #import "extensions/NSImage+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 
+#import "library/VLCLibraryConnectableDataSource.h"
 #import "library/VLCLibraryCollectionView.h"
 #import "library/VLCLibraryCollectionViewDelegate.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
@@ -248,6 +249,31 @@
     _videoLibraryGroupSelectionTableViewScrollView.scrollerInsets = scrollerInsets;
 }
 
+- (void)teardownVideoDataSource
+{
+    [_libraryVideoDataSource disconnect];
+    _libraryVideoDataSource.tableView = nil;
+    _libraryVideoDataSource.collectionView = nil;
+    _libraryVideoDataSource = nil;
+}
+
+- (void)teardownShowsDataSource
+{
+    [_libraryShowsDataSource disconnect];
+    _libraryShowsDataSource.collectionView = nil;
+    _libraryShowsDataSource.masterTableView = nil;
+    _libraryShowsDataSource.detailTableView = nil;
+    _libraryShowsDataSource = nil;
+}
+
+- (void)teardownMoviesDataSource
+{
+    [_libraryMoviesDataSource disconnect];
+    _libraryMoviesDataSource.tableView = nil;
+    _libraryMoviesDataSource.collectionView = nil;
+    _libraryMoviesDataSource = nil;
+}
+
 #pragma mark - Show the video library view
 
 - (NSArray<NSLayoutConstraint *> *)placeholderImageViewSizeConstraints
@@ -269,11 +295,18 @@
     }
 }
 
+- (id<VLCLibraryConnectableDataSource>)currentConnectableDataSource
+{
+    return (id<VLCLibraryConnectableDataSource>)self.currentDataSource;
+}
+
 - (void)updatePresentedVideoLibraryView
 {
-    _libraryShowsDataSource = nil;
-    _libraryMoviesDataSource = nil;
-    [self setupVideoDataSource];
+    [self teardownShowsDataSource];
+    [self teardownMoviesDataSource];
+    if (_libraryVideoDataSource == nil) {
+        [self setupVideoDataSource];
+    }
     self.videoLibraryCollectionView.dataSource = self.libraryVideoDataSource;
 
     self.videoLibraryGroupSelectionTableView.dataSource = self.libraryVideoDataSource;
@@ -295,9 +328,11 @@
 
 - (void)updatePresentedShowsLibraryView
 {
-    _libraryVideoDataSource = nil;
-    _libraryMoviesDataSource = nil;
-    [self setupShowsDataSource];
+    [self teardownVideoDataSource];
+    [self teardownMoviesDataSource];
+    if (_libraryShowsDataSource == nil) {
+        [self setupShowsDataSource];
+    }
     self.videoLibraryCollectionView.dataSource = self.libraryShowsDataSource;
 
     self.videoLibraryGroupsTableView.dataSource = self.libraryShowsDataSource;
@@ -331,9 +366,11 @@
 
 - (void)updatePresentedMoviesLibraryView
 {
-    _libraryVideoDataSource = nil;
-    _libraryShowsDataSource = nil;
-    [self setupMoviesDataSource];
+    [self teardownVideoDataSource];
+    [self teardownShowsDataSource];
+    if (_libraryMoviesDataSource == nil) {
+        [self setupMoviesDataSource];
+    }
     self.videoLibraryCollectionView.dataSource = self.libraryMoviesDataSource;
 
     self.videoLibraryGroupSelectionTableView.dataSource = self.libraryMoviesDataSource;
@@ -486,7 +523,8 @@
 - (void)libraryModelLongLoadStarted:(NSNotification *)notification
 {
     if (self.connected) {
-        [self.libraryVideoDataSource disconnect];
+        const id<VLCLibraryConnectableDataSource> dataSource = self.currentConnectableDataSource;
+        [dataSource disconnect];
     }
     [self.libraryWindow showLoadingOverlay];
 }
@@ -494,7 +532,8 @@
 - (void)libraryModelLongLoadFinished:(NSNotification *)notification
 {
     if (self.connected) {
-        [self.libraryVideoDataSource connect];
+        const id<VLCLibraryConnectableDataSource> dataSource = self.currentConnectableDataSource;
+        [dataSource connect];
     }
     [self.libraryWindow hideLoadingOverlay];
 }

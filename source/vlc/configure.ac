@@ -1311,6 +1311,10 @@ AS_IF([test "${enable_dbus}" != "no"], [
 ])
 AM_CONDITIONAL([HAVE_DBUS], [test "${have_dbus}" = "yes"])
 
+dnl
+dnl libnoidea support
+dnl
+PKG_ENABLE_MODULES_VLC([NDI], [noidea], [libnoidea], (NDI support (requires libnoidea)), [auto])
 
 dnl Check for systemd
 PKG_CHECK_MODULES([SYSTEMD], [libsystemd], [
@@ -3183,12 +3187,9 @@ dnl
 PKG_ENABLE_MODULES_VLC([SPATIALAUDIO], [], [spatialaudio], [Ambisonic channel mixer and binauralizer], [auto])
 
 AS_IF([test -n ${SPATIALAUDIO_CFLAGS+set}], [
-    VLC_SAVE_FLAGS
-    AX_APPEND_FLAG([$SPATIALAUDIO_CFLAGS], [CFLAGS])
-    AC_CHECK_HEADER([spatialaudio/SpatialaudioVersion.h], [
-        AX_APPEND_FLAG([-DHAVE_SPATIALAUDIOVERSION_H=1], [SPATIALAUDIO_CFLAGS])
-    ])
-    VLC_RESTORE_FLAGS
+  PKG_CHECK_MODULES(SPATIALAUDIO_040, [spatialaudio >= 0.4.0], [
+    AX_APPEND_FLAG([-DHAVE_SPATIALAUDIOVERSION_H=1], [SPATIALAUDIO_CFLAGS])
+  ],[:])
 ])
 
 dnl
@@ -4632,6 +4633,7 @@ dnl  MacOS X gui module
 dnl
 AC_ARG_ENABLE([macosx],
   AS_HELP_STRING([--enable-macosx], [Mac OS X gui support (default enabled on Mac OS X)]))
+enable_macosx_xctests="no"
 if test "${enable_macosx}" != "no" -a "${SYS}" = "darwin"
 then
 
@@ -4713,6 +4715,32 @@ then
   ])
 
   dnl
+  dnl If possible, use xcrun to find the right xctest tool
+  dnl
+
+  AS_IF([test ! "${XCRUN}" = "no"], [
+    AC_MSG_CHECKING([for xctest (using xcrun)])
+    XCTEST="$(eval $XCRUN -f xctest 2>/dev/null || echo no)"
+    AC_MSG_RESULT([${XCTEST}])
+  ], [
+    AC_MSG_WARN([Looking for tools without using xcrun])
+  ])
+
+  AS_IF([test "${XCTEST}" = "no"], [
+    AC_PATH_PROG(XCTEST, [xctest], [no])
+    AS_IF([test "${XCTEST}" = "no"], [
+      AC_MSG_WARN([xctest was not found, XCTest-based tests will not be run])
+    ])
+  ])
+  AS_IF([test "${cross_compiling}" = "yes"], [
+    AC_MSG_NOTICE([XCTest-based tests will not be run while cross-compiling])
+  ], [
+    AS_IF([test "${XCTEST}" != "no"], [
+      enable_macosx_xctests="yes"
+    ])
+  ])
+
+  dnl
   dnl  MacOS X gui module metal shaders
   dnl
   _enable_macosx_ui_shaders_default="yes"
@@ -4731,6 +4759,7 @@ then
 fi
 AM_CONDITIONAL([ENABLE_MACOSX_UI_SHADERS], [test "${enable_macosx_ui_shaders}" != "no" -a "${enable_macosx}" != "no" -a "${SYS}" = "darwin"])
 AM_CONDITIONAL([ENABLE_MACOSX_UI], [test "$enable_macosx" != "no" -a "${SYS}" = "darwin"])
+AM_CONDITIONAL([ENABLE_MACOSX_XCTESTS], [test "${enable_macosx_xctests}" = "yes"])
 
 dnl
 dnl  MacOS X sparkle update support
@@ -5090,14 +5119,19 @@ AC_ARG_WITH(kde-solid,
   AS_HELP_STRING([--with-kde-solid=PATH],
                  [KDE Solid actions directory (auto)]),, [
 
-if test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" -a "${VENDOR}" != "android" ; then
+if test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" -a "${VENDOR}" != "android" -a "${SYS}" != "emscripten" ; then
   with_kde_solid="yes"
+else
+  with_kde_solid="no"
 fi
 ])
 soliddatadir=""
 AS_IF([test "${with_kde_solid}" != "no"], [
   AS_IF([test "${with_kde_solid}" = "yes"], [
-    kde4datadir="`${KDE4_CONFIG} --install data`"
+    dnl automatic detection of the path via KDE4_CONFIG
+    AS_IF([test -x "${KDE4_CONFIG}"], [
+      kde4datadir="`${KDE4_CONFIG} --install data`"
+    ])
     AS_IF([test "x$kde4datadir" = "x"], [kde4datadir='${datadir}/kde4/apps'])
     soliddatadir="${kde4datadir}/solid/actions"
   ], [
@@ -5261,7 +5295,12 @@ AC_CONFIG_FILES([
   lib/Makefile
   bin/Makefile
   test/Makefile
-  share/org.videolan.vlc.appdata.xml.in
+])
+
+AM_COND_IF([KDE_SOLID], [
+  AC_CONFIG_FILES([
+    share/org.videolan.vlc.appdata.xml.in
+  ])
 ])
 
 AM_COND_IF([HAVE_WIN32], [

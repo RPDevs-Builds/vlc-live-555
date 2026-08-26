@@ -11,6 +11,10 @@ CLEANFILES =
 
 SUBDIRS =
 TESTS = check_vlc_modules_list.sh
+TEST_EXTENSIONS = .xctest
+# Automake looks for regular test files and therefore resolves directory-based
+# XCTest bundles in $(srcdir). Point the bundle name back to $(abs_builddir).
+XCTEST_LOG_COMPILER = $(SHELL) -c 'exec "$(XCTEST)" "$(abs_builddir)/$$(basename "$$1")"' xctest
 
 dist_noinst_SCRIPTS = module.rc.in
 EXTRA_LTLIBRARIES =
@@ -78,6 +82,7 @@ include hw/vdpau/Makefile.am
 include hw/mmal/Makefile.am
 include isa/aarch64/Makefile.am
 include isa/arm/Makefile.am
+include isa/ppc/Makefile.am
 include isa/riscv/Makefile.am
 include isa/x86/Makefile.am
 include keystore/Makefile.am

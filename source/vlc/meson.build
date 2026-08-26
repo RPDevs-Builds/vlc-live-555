@@ -43,16 +43,6 @@ vlc_build_root = meson.current_build_dir()
 
 cdata = configuration_data()
 
-gen_vlc_about = find_program('buildsystem/gen-vlc-about.py')
-vlc_about = custom_target('vlc_about.h',
-                        input:   ['COPYING', 'THANKS', 'AUTHORS'],
-                        output:  ['vlc_about.h'],
-                        command: [gen_vlc_about,
-                                   '@INPUT0@',
-                                   '@INPUT1@',
-                                   '@INPUT2@',
-                                   '@OUTPUT@'])
-
 cargo_rustc_static_libs = find_program('buildsystem/cargo-rustc-static-libs.py')
 cargo_output = find_program('buildsystem/cargo-output.py')
 
@@ -1036,13 +1026,30 @@ cdata.set_quoted('VLC_COMPILE_HOST',    '[not implemented with meson]') # TODO
 prefix_path = get_option('prefix')
 vlc_pkg_suffix = meson.project_name().to_lower()
 
-libdir_path = prefix_path / get_option('libdir')
-pkglibdir_path = libdir_path / vlc_pkg_suffix
-libexecdir_path = prefix_path / get_option('libexecdir')
-pkglibexecdir_path = libexecdir_path / vlc_pkg_suffix
 sysdatadir_path = prefix_path / get_option('datadir')
 pkgdatadir_path = sysdatadir_path / vlc_pkg_suffix
 localedir_path = prefix_path / get_option('localedir')
+if host_system == 'windows'
+    libdir_path = prefix_path
+    pkglibdir_path = libdir_path / vlc_pkg_suffix
+    plugins_path = prefix_path / 'plugins'
+    libvlc_header_path = prefix_path / 'sdk/include/vlc'
+    plugins_header_path = prefix_path / 'sdk/include/vlc/plugins'
+    bindir_path = prefix_path
+    libexecdir_path = prefix_path
+    pkglibexecdir_path = prefix_path
+    vlccore_lib_path = prefix_path / 'sdk/lib'
+else
+    libdir_path = prefix_path / get_option('libdir')
+    pkglibdir_path = libdir_path / vlc_pkg_suffix
+    plugins_path = pkglibdir_path / 'plugins'
+    libvlc_header_path = prefix_path / 'include' / vlc_pkg_suffix
+    plugins_header_path = prefix_path / 'include' / vlc_pkg_suffix / 'plugins'
+    bindir_path = prefix_path / 'bin'
+    libexecdir_path = prefix_path / get_option('libexecdir')
+    pkglibexecdir_path = libexecdir_path / vlc_pkg_suffix
+    vlccore_lib_path = prefix_path / 'lib' / vlc_pkg_suffix
+endif
 
 cdata.set_quoted('LIBDIR', libdir_path)
 cdata.set_quoted('PKGLIBDIR', pkglibdir_path)
@@ -1051,6 +1058,18 @@ cdata.set_quoted('PKGLIBEXECDIR', pkglibexecdir_path)
 cdata.set_quoted('SYSDATADIR', sysdatadir_path)
 cdata.set_quoted('PKGDATADIR', pkgdatadir_path)
 cdata.set_quoted('LOCALEDIR', localedir_path)
+
+gen_vlc_about = find_program('buildsystem/gen-vlc-about.py')
+vlc_about = custom_target('vlc_about.h',
+                        input:   ['COPYING', 'THANKS', 'AUTHORS'],
+                        output:  ['vlc_about.h'],
+                        install: true,
+                        install_dir: plugins_header_path,
+                        command: [gen_vlc_about,
+                                   '@INPUT0@',
+                                   '@INPUT1@',
+                                   '@INPUT2@',
+                                   '@OUTPUT@'])
 
 # Enable stream outputs
 if get_option('stream_outputs')
@@ -1152,6 +1171,11 @@ subdir('modules')
 
 # VLC binaries
 subdir('bin')
+
+# OS specific packaging
+if host_system == 'windows'
+    subdir('extras/package/win32')
+endif
 
 # Generate config.h
 configure_file(input: 'config.h.meson',

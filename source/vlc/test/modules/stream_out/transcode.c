@@ -1,7 +1,7 @@
 /*****************************************************************************
  * transcode.c: test for transcoding pipeline
  *****************************************************************************
- * Copyright (C) 2021 VideoLabs
+ * Copyright (C) 2021-2026 VideoLabs
  *
  * Author: Alexandre Janniaux <ajanni@videolabs.io>
  *
@@ -78,7 +78,14 @@ static int OpenDecoderDevice(
 static int DecoderDecode(decoder_t *dec, vlc_frame_t *frame)
 {
     if (frame == NULL)
+    {
+        struct transcode_scenario *drained =
+            &transcode_scenarios[current_scenario];
+
+        if (drained->decoder_drain != NULL)
+            return drained->decoder_drain(dec);
         return VLC_SUCCESS;
+    }
 
     const picture_resource_t resource = {
         .p_sys = NULL,
@@ -96,6 +103,12 @@ static int DecoderDecode(decoder_t *dec, vlc_frame_t *frame)
 static void CloseDecoder(vlc_object_t *obj)
 {
     decoder_t *dec = (decoder_t*)obj;
+
+    /* An owner that cleans fmt_in before unloading would set the category
+     * to UNKNOWN_ES, but it must only be cleaned after this callback. */
+    assert(dec->fmt_in->i_cat == VIDEO_ES);
+    assert(dec->fmt_in->i_codec != 0);
+
     struct vlc_video_context *vctx = dec->p_sys;
     if (vctx)
         vlc_video_context_Release(vctx);
@@ -167,15 +180,21 @@ static int OpenConverter(filter_t *filter)
 
 static vlc_frame_t *EncodeVideo(encoder_t *enc, picture_t *pic)
 {
+    struct transcode_scenario *scenario = &transcode_scenarios[current_scenario];
+
     if (pic == NULL)
+    {
+        if (scenario->encoder_drain != NULL)
+            return scenario->encoder_drain(enc);
         return NULL;
+    }
 
     assert(pic->format.i_chroma == enc->fmt_in.video.i_chroma);
-    vlc_frame_t *frame = vlc_frame_Alloc(4);
+    vlc_frame_t *frame = vlc_frame_Alloc(sizeof(struct test_output));
+    assert(frame != NULL);
 
-    struct transcode_scenario *scenario = &transcode_scenarios[current_scenario];
     if (scenario->encoder_encode != NULL)
-        scenario->encoder_encode(enc, pic);
+        scenario->encoder_encode(enc, pic, frame);
     return frame;
 }
 

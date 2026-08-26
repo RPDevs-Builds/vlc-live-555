@@ -12,7 +12,6 @@ vlc_tests += {
     'suite' : ['modules', 'test_modules'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : ['lua'],
-    'enabled' : lua_dep.found() and get_option('lua').enabled(),
 }
 
 if not (host_system == 'windows') # missing mkdtemp()
@@ -227,6 +226,16 @@ vlc_tests += {
     'suite' : ['modules', 'test_modules'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : vlc_plugins_targets.keys()
+}
+
+vlc_tests += {
+    'name' : 'test_modules_stream_out_sdi',
+    'sources' : files(
+        'stream_out/sdi.cpp',
+        '../../modules/stream_out/sdi/SDIStream.cpp',
+        '../../modules/stream_out/sdi/SDIStream.hpp'),
+    'suite' : ['modules', 'test_modules'],
+    'link_with' : [libvlc, libvlccore]
 }
 
 vlc_tests += {

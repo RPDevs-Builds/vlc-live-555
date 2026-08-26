@@ -22,6 +22,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "library/VLCLibraryConnectableDataSource.h"
 #import "library/VLCLibraryCollectionViewDataSource.h"
 #import "library/VLCLibraryTableViewDataSource.h"
 
@@ -29,7 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class VLCLibraryModel;
 
-@interface VLCLibraryMoviesDataSource : NSObject <VLCLibraryCollectionViewDataSource, VLCLibraryTableViewDataSource>
+@interface VLCLibraryMoviesDataSource : NSObject <VLCLibraryConnectableDataSource, VLCLibraryCollectionViewDataSource, VLCLibraryTableViewDataSource>
 
 @property (readwrite, weak) VLCLibraryModel *libraryModel;
 @property (readwrite, weak) NSCollectionView *collectionView;

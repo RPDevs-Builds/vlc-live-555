@@ -37,6 +37,8 @@ extern NSString *VLCMediaSourceChildrenAdded;
 extern NSString *VLCMediaSourceChildrenRemoved;
 extern NSString *VLCMediaSourcePreparsingStarted;
 extern NSString *VLCMediaSourcePreparsingEnded;
+extern NSString * const VLCMediaSourcePreparseInputItemKey;
+extern NSString * const VLCMediaSourcePreparseStatusKey;
 
 @interface VLCMediaSource : NSObject
 
@@ -49,6 +51,9 @@ extern NSString *VLCMediaSourcePreparsingEnded;
                      andPreparser:(vlc_preparser_t *)p_preparser;
 
 - (nullable NSError *)preparseInputNodeWithinTree:(VLCInputNode *)inputNode;
+/// Returns nil without an error when this media source cannot count children directly.
+- (nullable NSNumber *)childCountForInputNode:(VLCInputNode *)inputNode
+                                        error:(NSError * _Nullable * _Nullable)error;
 - (void)clearChildNodesForNode:(input_item_node_t*)inputNode;
 - (nullable NSError *)generateChildNodesForDirectoryNode:(VLCInputNode *)directoryInputNode
                                                  withUrl:(NSURL *)directoryUrl;

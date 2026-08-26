@@ -289,6 +289,13 @@ static int Mouse( filter_t *p_filter,
                                     "in the Phosphor framerate doubler. "\
                                     "Default: Low.")
 
+static void Probe(void *data)
+{
+    struct deinterlace_functions *const funcs = data;
+    funcs->merges[0] = Merge8BitGeneric;
+    funcs->merges[1] = Merge16BitGeneric;
+}
+
 vlc_module_begin ()
     set_description( N_("Deinterlacing video filter") )
     set_shortname( N_("Deinterlace" ))
@@ -307,6 +314,8 @@ vlc_module_begin ()
         change_integer_list( phosphor_dimmer_list, phosphor_dimmer_list_text )
         change_safe ()
     set_deinterlace_callback( Open )
+    add_submodule()
+        set_cpu_funcs("deinterlace functions", Probe, 1)
 vlc_module_end ()
 
 /*****************************************************************************
@@ -490,9 +499,7 @@ static const struct vlc_filter_operations filter_ops = {
     .close = Close,
 };
 
-static struct deinterlace_functions funcs = {
-    { Merge8BitGeneric, Merge16BitGeneric, },
-};
+static struct deinterlace_functions funcs ;
 
 /*****************************************************************************
  * Open
@@ -554,11 +561,6 @@ notsupp:
 
     IVTCClearState( p_filter );
 
-#if defined(CAN_COMPILE_C_ALTIVEC)
-    if( pixel_size == 1 && vlc_CPU_ALTIVEC() )
-        p_sys->pf_merge = MergeAltivec;
-    else
-#endif
     {
         vlc_CPU_functions_init_once("deinterlace functions", &funcs);
         p_sys->pf_merge = funcs.merges[stdc_trailing_zeros(pixel_size)];

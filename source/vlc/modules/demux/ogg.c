@@ -2925,6 +2925,7 @@ static void Ogg_ReadOpusHeader( logical_stream_t *p_stream,
      * can be played at 48kHz. */
     date_Init( &p_stream->dts, 48000, 1 );
     p_stream->fmt.i_bitrate = 0;
+    p_stream->fmt.audio.i_rate = 48000;
     /* Cheat and get additional info ;) */
     oggpack_readinit( &opb, p_oggpacket->packet, p_oggpacket->bytes);
     oggpack_adv( &opb, 64 );
@@ -2932,8 +2933,7 @@ static void Ogg_ReadOpusHeader( logical_stream_t *p_stream,
     {
         p_stream->fmt.audio.i_channels = oggpack_read( &opb, 8 );
         p_stream->i_pre_skip = oggpack_read( &opb, 16 );
-        p_stream->fmt.audio.i_rate = oggpack_read( &opb, 32 );
-        oggpack_adv( &opb, 16 );
+        oggpack_adv( &opb, 32 + 16 ); /* Skip Input Sample Rate and Output Gain */
         switch( oggpack_read( &opb, 8 ) ) /* mapping family */
         {
             case 0: /* RFC7587 */
@@ -3212,7 +3212,7 @@ static void Ogg_ReadAnnodexHeader( demux_t *p_demux,
         if( !strncasecmp( (char*)(&p_oggpacket->packet[28]), "Content-Type: ", 14 ) )
         {
             uint8_t *p = memchr( &p_oggpacket->packet[42], '\r',
-                                 p_oggpacket->bytes - 1 );
+                                 p_oggpacket->bytes - 42 );
             value_size = p ? p - &p_oggpacket->packet[42] : p_oggpacket->bytes - 42;
         }
 
@@ -3434,6 +3434,7 @@ bool Ogg_GetBoundsUsingSkeletonIndex( logical_stream_t *p_stream, vlc_tick_t i_t
 
     /* Then Lookup its index */
     unsigned const char *p_fwdbyte = p_stream->p_skel->p_index;
+    unsigned const char *p_end = p_fwdbyte + p_stream->p_skel->i_index_size;
     struct
     {
         int64_t i_pos;
@@ -3442,15 +3443,13 @@ bool Ogg_GetBoundsUsingSkeletonIndex( logical_stream_t *p_stream, vlc_tick_t i_t
 
     uint64_t i_keypoints_found = 0;
 
-    while( p_fwdbyte < p_fwdbyte + p_stream->p_skel->i_index_size
+    while( p_fwdbyte < p_end
            && i_keypoints_found < p_stream->p_skel->i_index )
     {
         uint64_t i_val;
-        p_fwdbyte = Read7BitsVariableLE( p_fwdbyte,
-                        p_fwdbyte + p_stream->p_skel->i_index_size, &i_val );
+        p_fwdbyte = Read7BitsVariableLE( p_fwdbyte, p_end, &i_val );
         current.i_pos += i_val;
-        p_fwdbyte = Read7BitsVariableLE( p_fwdbyte,
-                        p_fwdbyte + p_stream->p_skel->i_index_size, &i_val );
+        p_fwdbyte = Read7BitsVariableLE( p_fwdbyte, p_end, &i_val );
         current.i_time += i_val * p_stream->p_skel->i_indexstampden;
         if ( current.i_pos < 0 || current.i_time < 0 ) break;
 

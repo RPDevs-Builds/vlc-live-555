@@ -92,10 +92,6 @@
 #endif
 #include "mainctx_submodels.hpp"
 
-#include <QScreen>
-#include <QAbstractProxyModel>
-#include <QMessageBox>
-
 static bool g_qmlTypesAreRegistered = false;
 
 using  namespace vlc::playlist;
@@ -241,10 +237,6 @@ void MainUI::registerQMLTypes()
         qmlRegisterUncreatableType<UINotifier>(uri, versionMajor, versionMinor, "UINotifier", "");
         qmlRegisterSingletonInstance<UINotifier>(uri, versionMajor, versionMinor, "UINotifier", new UINotifier(m_mainCtx, m_mainCtx));
         qmlRegisterSingletonInstance<NavigationHistory>(uri, versionMajor, versionMinor, "History", new NavigationHistory(this));
-        qmlRegisterUncreatableType<QAbstractItemModel>(uri, versionMajor, versionMinor, "QtAbstractItemModel", "");
-        qmlRegisterUncreatableType<QAbstractProxyModel>(uri, versionMajor, versionMinor, "QtAbstractProxyModel", "");
-        qmlRegisterUncreatableType<QWindow>(uri, versionMajor, versionMinor, "QtWindow", "");
-        qmlRegisterUncreatableType<QScreen>(uri, versionMajor, versionMinor, "QtScreen", "");
         qmlRegisterType<VideoSurface>(uri, versionMajor, versionMinor, "VideoSurface");
         qmlRegisterUncreatableType<BaseModel>( uri, versionMajor, versionMinor, "BaseModel", "Base Model is uncreatable." );
         qmlRegisterUncreatableType<VLCVarChoiceModel>(uri, versionMajor, versionMinor, "VLCVarChoiceModel", "generic variable with choice model" );
@@ -253,13 +245,23 @@ void MainUI::registerQMLTypes()
         qmlRegisterTypesAndRevisions<CSDMenu>( uri, versionMajor);
         qmlRegisterUncreatableType<NavigationAttached>( uri, versionMajor, versionMinor, "Navigation", "Navigation is only available via attached properties");
         qmlRegisterTypesAndRevisions<AboutModel>( uri, versionMajor );
-        qmlRegisterTypesAndRevisions<QSortFilterProxyModelForeign>( uri, versionMajor );
-        qmlRegisterUncreatableType<QMessageBox>( uri, versionMajor, versionMinor, "QtMessageBox", "QtMessageBox is uncreatable, use DialogsProvider instead." );
 #ifdef UPDATE_CHECK
         qmlRegisterSingletonInstance<UpdateModel>( uri, versionMajor, versionMinor, "UpdateModel", m_mainCtx->getUpdateModel() );
 #endif
 
         qmlRegisterTypesAndRevisions<NavigationModel>( uri, versionMajor);
+        qmlRegisterTypesAndRevisions<NavigationBarContextMenu>( uri, versionMajor );
+
+        // Foreign types:
+        qmlRegisterTypesAndRevisions<vlc::QAbstractProxyModelForeign>(uri, versionMajor);
+        qmlRegisterTypesAndRevisions<vlc::QWindowForeign>(uri, versionMajor);
+        qmlRegisterTypesAndRevisions<vlc::QScreenForeign>(uri, versionMajor);
+        qmlRegisterTypesAndRevisions<vlc::QSortFilterProxyModelForeign>( uri, versionMajor );
+        qmlRegisterTypesAndRevisions<vlc::QMessageBoxForeign>( uri, versionMajor );
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
+        qmlRegisterTypesAndRevisions<vlc::QAbstractItemModelForeign>(uri, versionMajor); // Qt >= 6.5.0, import `QtQml.Models`.
+#endif
+
         qmlRegisterModule(uri, versionMajor, versionMinor);
         qmlProtectModule(uri, versionMajor);
     }

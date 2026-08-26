@@ -180,6 +180,7 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryCollectionViewSupplementaryElementView.m \
 	gui/macosx/library/VLCLibraryController.h \
 	gui/macosx/library/VLCLibraryController.m \
+	gui/macosx/library/VLCLibraryConnectableDataSource.h \
 	gui/macosx/library/VLCLibraryDataSource.h \
 	gui/macosx/library/VLCLibraryDataTypes.h \
 	gui/macosx/library/VLCLibraryDataTypes.m \
@@ -882,4 +883,7 @@ EXTRA_DIST += \
 if ENABLE_MACOSX_UI
 dist_libmacosx_plugin_la_DATA = $(libmacosx_plugin_la_RES)
 endif
+
 libmacosx_plugin_ladir = $(prefix)/share/macosx/Contents/Resources
+
+include gui/macosx/tests/Makefile.am

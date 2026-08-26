@@ -23,15 +23,17 @@
 //hierachical model entry
 struct ModelEntry
 {
-    ModelEntry( QString name, QString uri, QString icon = "")
+    ModelEntry( QString name, QString uri, QString icon = {}, QString iconSvg = {})
         : name(name)
         , urinode(uri)
         , icon(icon)
+        , icon_svg(iconSvg)
     {}
 
-    QString name;
-    QString urinode;
-    QString icon;
+    const QString name;
+    const QString urinode;
+    const QString icon;
+    const QString icon_svg;
     std::vector<ModelEntry> children;
     size_t visibleChildren = 0;
     int expandedIndex = -1;
@@ -211,12 +213,28 @@ struct ModelEntry
             return children[*it].getIcon(it + 1, end);
     }
 
+    QString getIconSvg(const PathIterator& it, const PathIterator& end) const
+    {
+        if (it == end)
+            return icon_svg;
+        else
+            return children[*it].getIconSvg(it + 1, end);
+    }
+
     int getIndex(const PathIterator& it, const PathIterator& end) const
     {
         if (it == end)
             return *it;
         else
             return *it + (getIndex(it + 1, end));
+    }
+
+    const ModelEntry* getModelEntry(const PathIterator& it, const PathIterator& end) const
+    {
+        if (it == end)
+            return this;
+        else
+            return &children[*it];
     }
 
     template<typename OutIterator>
@@ -247,16 +265,16 @@ public:
 
     void initilializeModel()
     {
-        m_model.children.emplace_back(qtr("Home"), "home", VLCIcons::home);
+        m_model.children.emplace_back(qtr("Home"), "home", VLCIcons::home, QStringLiteral(":/icons/ic_fluent_home.svg"));
 
         if (m_hasMedialib)
         {
-            ModelEntry videoEntry{ qtr("Video"), "video", VLCIcons::topbar_video };
+            ModelEntry videoEntry{ qtr("Video"), "video", VLCIcons::topbar_video, QStringLiteral(":/icons/ic_fluent_filmstrip.svg") };
             videoEntry.children.emplace_back(qtr("All"), "all");
             videoEntry.children.emplace_back(qtr("Playlists"), "playlists");
             m_model.children.push_back(std::move(videoEntry));
 
-            ModelEntry musicEntry{ qtr("Music"), "music", VLCIcons::topbar_music };
+            ModelEntry musicEntry{ qtr("Music"), "music", VLCIcons::topbar_music, QStringLiteral(":/icons/ic_fluent_music_note_2.svg") };
             musicEntry.children.emplace_back(qtr("Artists"), "artists");
             musicEntry.children.emplace_back(qtr("Albums"), "albums");
             musicEntry.children.emplace_back(qtr("Tracks"), "tracks");
@@ -265,9 +283,9 @@ public:
             m_model.children.push_back(std::move(musicEntry));
         }
 
-        m_model.children.emplace_back(qtr("Browse"), "network", VLCIcons::topbar_network);
+        m_model.children.emplace_back(qtr("Browse"), "network", VLCIcons::topbar_network, QStringLiteral(":/icons/ic_fluent_wifi_1.svg"));
 
-        ModelEntry discoverEntry{ qtr("Discover"), "discover", VLCIcons::topbar_discover };
+        ModelEntry discoverEntry{ qtr("Discover"), "discover", VLCIcons::topbar_discover, QStringLiteral(":/icons/ic_fluent_globe.svg") };
         discoverEntry.children.emplace_back(qtr("Services"), "services");
 
         discoverEntry.children.emplace_back(qtr("URL"), "url");
@@ -311,6 +329,14 @@ public:
             //itemIndex doesn't change
             auto itemIndex = q->index(newExpandedIndex);
             q->dataChanged(itemIndex, itemIndex, {NavigationModel::EXPANDED});
+
+            // TODO: Use more specific range:
+            for (int i = 0; i < q->rowCount(); ++i)
+            {
+                const auto modelIndex = q->index(i, 0);
+                q->dataChanged(modelIndex, modelIndex, {NavigationModel::CHILDREN});
+            }
+
             return true;
         }
         else
@@ -359,6 +385,13 @@ public:
             auto itemIndex = q->index(itemIndexRow);
 
             q->dataChanged(itemIndex, itemIndex, {NavigationModel::EXPANDED});
+
+            // TODO: Use more specific range:
+            for (int i = 0; i < q->rowCount(); ++i)
+            {
+                const auto modelIndex = q->index(i, 0);
+                q->dataChanged(modelIndex, modelIndex, {NavigationModel::CHILDREN});
+            }
         }
 
         return true;
@@ -390,9 +423,12 @@ QHash<int,QByteArray> NavigationModel::roleNames() const
         {TITLE, QByteArrayLiteral("title") },
         {URI, QByteArrayLiteral("uri") },
         {DEPTH, QByteArrayLiteral("depth") },
-        {ICON, QByteArrayLiteral("icon") },
+        // TODO: Use "icon" instead, when minimum Qt increases:
+        {ICON, QByteArrayLiteral("icon_alias") },
+        {ICON_SVG, QByteArrayLiteral("icon_svg")},
         {EXPANDABLE, QByteArrayLiteral("expandable") },
         {EXPANDED, QByteArrayLiteral("expanded") },
+        {CHILDREN, QByteArrayLiteral("children") }
     };
 }
 
@@ -424,10 +460,34 @@ QVariant NavigationModel::data(const QModelIndex &index, int role) const
         return d->m_model.getDepth(path.cbegin(), path.cend()) - 1;
     case ICON:
         return d->m_model.getIcon(path.cbegin(), path.cend());
+    case ICON_SVG:
+        return d->m_model.getIconSvg(path.cbegin(), path.cend());
     case EXPANDABLE:
         return d->m_model.isExpandable(path.cbegin(), path.cend());
     case EXPANDED:
         return d->m_model.isExpanded(path.cbegin(), path.cend());
+    case CHILDREN:
+    {
+        const ModelEntry* modelEntry = d->m_model.getModelEntry(path.cbegin(), path.cend());
+        assert(modelEntry);
+
+        const auto& children = modelEntry->children;
+
+        QList<NavigationModelItem> list;
+        list.reserve(children.size());
+        for (const auto& child : children)
+        {
+            QStringList outlist;
+            d->m_model.getUri(path.cbegin(), path.cend(), std::back_inserter(outlist));
+            //don't advertise our root note
+            outlist.pop_front();
+            outlist.push_back(child.urinode);
+
+            list.emplace_back(child.name, child.icon, child.icon_svg, outlist);
+        }
+
+        return QVariant::fromValue(list);
+    }
     default:
         break;
     }

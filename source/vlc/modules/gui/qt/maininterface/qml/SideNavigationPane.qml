@@ -30,7 +30,7 @@ import VLC.Util
 T.Pane {
     id: root
 
-    signal itemClicked(uri : var)
+    signal itemClicked(uri : var, item : Item)
 
     //safe area margins for delegate content,
     //so the background of the delegates fills the available space
@@ -38,7 +38,11 @@ T.Pane {
     property int safeAreaLeftMargin: 0
     property int safeAreaRightMargin: 0
 
-    property bool useAcrylic: false
+    property bool useAcrylic: true
+
+    property bool delegateShowText: true
+
+    property alias model: navigationModel
 
     readonly property int minimumWidth: VLCStyle.expandNavigationPaneWidth + safeAreaLeftMargin + safeAreaRightMargin
 
@@ -109,6 +113,13 @@ T.Pane {
 
                 model: navigationModel
 
+                Binding {
+                    target: listView.T.ScrollBar.vertical
+                    property: "policy"
+                    when: listView.T.ScrollBar.vertical?.size > (1.0 - Number.EPSILON)
+                    value: T.ScrollBar.AlwaysOff
+                }
+
                 colorContext.colorSet: ColorContext.Window
 
                 fadingEdge.backgroundColor:  (root.background && (root.background.color.a >= 1.0)) ? root.background.color
@@ -152,22 +163,46 @@ T.Pane {
                     width: ListView.view.contentWidth
                     height: preferredHeight
 
-                    property real preferredHeight: VLCStyle.buttonHeightNavigationPane
+                    property real preferredHeight: shouldShow ? VLCStyle.buttonHeightNavigationPane : 0.0
 
                     leftPadding: root.safeAreaLeftMargin + VLCStyle.margin_xsmall
                     rightPadding: root.safeAreaRightMargin
 
-                    iconTxt: model.icon
-                    text: model.title
+                    leftInset: root.safeAreaLeftMargin + implicitLeftInset
+                    rightInset: root.safeAreaRightMargin + implicitRightInset
+
+                    iconTxt: icon_alias
+                    text: title
+
+                    showText: root.delegateShowText
+
+                    required property string title
+                    required property var uri
+                    required property int depth
+                    // TODO: Qt 6.2 has property `icon` marked final, so we can't override it:
+                    required property string icon_alias
+                    required property bool expandable
+                    required property bool expanded
+
+                    required property int index
+
+                    visible: (height > 0.0)
+
+                    property bool shouldShow: showText || (iconTxt.length > 0)
+
+                    onShouldShowChanged: {
+                        if (listView.readyForAnimations)
+                            heightBehavior.enabled = true // At this point, it can keep being enabled for good.
+                    }
 
                     Binding on highlighted {
-                        when: !!model.uri && History.match(History.viewPath, model.uri)
+                        when: !!uri && History.match(History.viewPath, uri)
                         value: true
                     }
-                    checked: !model.expanded && highlighted
+                    checked: (!showText || !expanded) && highlighted
 
                     onClicked: {
-                        itemClicked(model.uri)
+                        itemClicked(uri, this)
                         listView.currentIndex = index
                         listView.forceActiveFocus(focusReason)
                     }
@@ -189,7 +224,7 @@ T.Pane {
                     }
 
                     ListView.onAdd: {
-                        if (listView.readyForAnimations) {
+                        if (listView.readyForAnimations && delegate.showText) {
                             heightBehavior.enabled = false
                             delegate.height = 0.0
                             heightBehavior.enabled = true
@@ -228,10 +263,15 @@ T.Pane {
                 leftPadding: root.safeAreaLeftMargin + VLCStyle.margin_xsmall
                 rightPadding: root.safeAreaRightMargin
 
+                leftInset: root.safeAreaLeftMargin + implicitLeftInset
+                rightInset: root.safeAreaRightMargin + implicitRightInset
+
                 iconTxt: VLCIcons.settings
                 text: qsTr("Preferences")
 
                 checked: DialogsProvider.prefsDialogVisible
+
+                showText: root.delegateShowText
 
                 onClicked: DialogsProvider.prefsDialog()
 
