@@ -42,17 +42,7 @@
             continue;
         }
 
-        NSError *unarchiveError = nil;
-        NSArray<VLCMediaLibraryMediaItem *> * const items =
-            [NSKeyedUnarchiver unarchivedObjectOfClasses:[NSSet setWithObjects:[NSArray class], [VLCMediaLibraryMediaItem class], nil]
-                                                fromData:itemData
-                                                   error:&unarchiveError];
-        if (unarchiveError != nil) {
-            msg_Err(getIntf(), "Failed to unarchive MediaLibrary Item: %s",
-                    unarchiveError.localizedDescription.UTF8String);
-            continue;
-        }
-
+        NSArray<VLCMediaLibraryMediaItem *> * const items = [VLCMediaLibraryMediaItem mediaItemsFromPasteboardData:itemData];
         if (items) {
             [allMediaItems addObjectsFromArray:items];
         }
@@ -69,15 +59,32 @@
 
     NSMutableArray<VLCOpenInputMetadata *> * const URLMetadataArray = [NSMutableArray array];
     for (NSPasteboardItem * const pboardItem in pasteboard.pasteboardItems) {
-        NSString * const URLString = [pboardItem stringForType:NSPasteboardTypeURL] ?:
-                                     [pboardItem stringForType:NSPasteboardTypeFileURL] ?:
+        NSString * const URLString = [pboardItem stringForType:NSPasteboardTypeFileURL] ?:
+                                     [pboardItem stringForType:NSPasteboardTypeURL] ?:
                                      [pboardItem stringForType:NSPasteboardTypeString];
         if (URLString.length <= 0) {
             continue;
         }
 
-        VLCOpenInputMetadata * const inputMetadata = [[VLCOpenInputMetadata alloc] init];
-        inputMetadata.MRLString = URLString;
+        NSURL * const droppedURL = [NSURL URLWithString:URLString];
+        VLCOpenInputMetadata *inputMetadata = nil;
+        if (droppedURL.isFileURL) {
+            NSURL * const filePathURL = droppedURL.filePathURL;
+            NSString * const path = filePathURL.path;
+            if (path.length > 0) {
+                inputMetadata = [VLCOpenInputMetadata inputMetaWithPath:path];
+            }
+        } else if (droppedURL != nil && droppedURL.scheme.length > 0) {
+            inputMetadata = [[VLCOpenInputMetadata alloc] init];
+            inputMetadata.MRLString = droppedURL.absoluteString;
+        } else if (URLString.length > 0 && [URLString isAbsolutePath]) {
+            inputMetadata = [VLCOpenInputMetadata inputMetaWithPath:URLString];
+        }
+
+        if (inputMetadata == nil) {
+            continue;
+        }
+
         [URLMetadataArray addObject:inputMetadata];
     }
 

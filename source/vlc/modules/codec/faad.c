@@ -145,13 +145,18 @@ static int Open( vlc_object_t *p_this )
     if( p_dec->fmt_in->i_extra > 0 )
     {
         /* We have a decoder config so init the handle */
-        unsigned long i_rate;
+        unsigned long i_rate = 0;
         unsigned char i_channels;
 
-        if( NeAACDecInit2( p_sys->hfaad, p_dec->fmt_in->p_extra,
-                           p_dec->fmt_in->i_extra,
-                           &i_rate, &i_channels ) < 0 ||
-                i_channels >= MPEG4_ASC_MAX_INDEXEDPOS )
+        mp4AudioSpecificConfig mp4Conf;
+        if( NeAACDecAudioSpecificConfig( p_dec->fmt_in->p_extra,
+                                         p_dec->fmt_in->i_extra,
+                                         &mp4Conf ) >= 0 &&
+            mp4Conf.samplingFrequency != 0 &&
+            ( NeAACDecInit2( p_sys->hfaad, p_dec->fmt_in->p_extra,
+                             p_dec->fmt_in->i_extra,
+                             &i_rate, &i_channels ) < 0 ||
+                i_channels >= MPEG4_ASC_MAX_INDEXEDPOS ) )
         {
             msg_Err( p_dec, "Failed to initialize faad using extra data" );
             NeAACDecClose( p_sys->hfaad );
@@ -159,11 +164,14 @@ static int Open( vlc_object_t *p_this )
             return VLC_EGENERIC;
         }
 
-        p_dec->fmt_out.audio.i_rate = i_rate;
-        p_dec->fmt_out.audio.i_channels = i_channels;
-        p_dec->fmt_out.audio.i_physical_channels
-            = MPEG4_asc_channelsbyindex[i_channels];
-        date_Init( &p_sys->date, i_rate, 1 );
+        if( i_rate != 0 )
+        {
+            p_dec->fmt_out.audio.i_rate = i_rate;
+            p_dec->fmt_out.audio.i_channels = i_channels;
+            p_dec->fmt_out.audio.i_physical_channels
+                = MPEG4_asc_channelsbyindex[i_channels];
+            date_Init( &p_sys->date, i_rate, 1 );
+        }
     }
     else
     {
@@ -300,11 +308,16 @@ static int DecodeBlock( decoder_t *p_dec, block_t *p_block )
     {
         unsigned long i_rate = 0;
         unsigned char i_channels;
+        mp4AudioSpecificConfig mp4Conf;
 
         /* Init from DecoderConfig */
         if( p_dec->fmt_in->i_extra > 0 &&
-            NeAACDecInit2( p_sys->hfaad, p_dec->fmt_in->p_extra,
-                           p_dec->fmt_in->i_extra, &i_rate, &i_channels ) != 0 )
+            ( NeAACDecAudioSpecificConfig( p_dec->fmt_in->p_extra,
+                                           p_dec->fmt_in->i_extra,
+                                           &mp4Conf ) < 0 ||
+              mp4Conf.samplingFrequency == 0 ||
+              NeAACDecInit2( p_sys->hfaad, p_dec->fmt_in->p_extra,
+                             p_dec->fmt_in->i_extra, &i_rate, &i_channels ) != 0 ) )
         {
             /* Failed, will try from data */
             i_rate = 0;
@@ -322,7 +335,7 @@ static int DecodeBlock( decoder_t *p_dec, block_t *p_block )
                 FlushBuffer( p_sys, i_read );
         }
 
-        if( i_rate == 0 )
+        if( i_rate == 0 || i_channels >= MPEG4_ASC_MAX_INDEXEDPOS )
         {
             /* Can not init decoder at all for now */
             FlushBuffer( p_sys, SIZE_MAX );
@@ -391,7 +404,8 @@ static int DecodeBlock( decoder_t *p_dec, block_t *p_block )
                 if( NeAACDecInit( hfaad,
                                   p_sys->p_block->p_buffer,
                                   p_sys->p_block->i_buffer,
-                                  &i_rate,&i_channels ) < 0 )
+                                  &i_rate,&i_channels ) < 0 ||
+                    i_channels >= MPEG4_ASC_MAX_INDEXEDPOS )
                 {
                     /* reinitialization failed */
                     NeAACDecClose( hfaad );

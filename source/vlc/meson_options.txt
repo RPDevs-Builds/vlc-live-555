@@ -815,7 +815,16 @@ option('ndi',
        value: 'auto',
        description: 'Build with NDI module (requires libnoidea)')
 
-# TODO: Missing v4l2
+option('v4l2',
+       type: 'feature',
+       value: 'auto',
+       description: 'Video4Linux2 support')
+
+option('nsis',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Generate NSIS files to create Windows installer')
+
 # TODO: Missing rpi-omxil
 # TODO: Missing gst-decode
 # TODO: Missing libva

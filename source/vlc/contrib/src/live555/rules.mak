@@ -4,20 +4,15 @@ LIVE555_VERSION := 2026.06.24
 LIVE555_FILE := live.$(LIVE555_VERSION).tar.gz
 LIVEDOTCOM_URL := $(CONTRIB_VIDEOLAN)/live555/$(LIVE555_FILE)
 
-ifdef HAVE_GCC
-# older GCC doesn't support -std=c++20 required for std::atomic_flag
-ifeq ($(call gcc_at_least, 10), true)
-HAVE_LIVE555_CPP20=1
-endif
-else
-ifdef HAVE_CLANG
-# older CLANG doesn't support -std=c++20 required for std::atomic_flag
-ifeq ($(call clang_at_least, 12), true)
-HAVE_LIVE555_CPP20=1
-endif
-else
-HAVE_LIVE555_CPP20=1
-endif
+define CXX20_ATOMIC_FLAG_CHECK
+#include <atomic> \n
+#if !defined(__cpp_lib_atomic_flag_test) \n
+FAIL! \n
+#endif \n
+endef
+
+ifeq ($(call try_cxx_compile,$(CXX20_ATOMIC_FLAG_CHECK),-std=c++20),true)
+HAVE_LIVE555_CPP20_ATOMIC_TEST=1
 endif
 
 ifdef BUILD_NETWORK
@@ -72,13 +67,15 @@ live555: $(LIVE555_FILE) .sum-live555
 	chmod -R u+w $(UNPACK_DIR)
 	# Remove hardcoded cc, c++, ar variables
 	sed -e 's%C_COMPILER%#C_COMPILER%' -e 's%CPLUSPLUS_COMPILER%#CPLUSPLUS_COMPILER%' -e 's%LIBRARY_LINK%#LIBRARY_LINK%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
+	# Use CXXFLAGS when compiling C++ code
+	sed -e 's%CPLUSPLUS_FLAGS =%CPLUSPLUS_FLAGS = $$(CXXFLAGS)%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
 	# Remove hardcoded --std=c+20 on un supported compilers
-ifndef HAVE_LIVE555_CPP20
+ifndef HAVE_LIVE555_CPP20_ATOMIC_TEST
 	sed -e 's%-std=c++20% -DNO_STD_LIB=1%' -i.orig $(UNPACK_DIR)/config.$(LIVE_TARGET)
 endif
 	# Add the Extra_CFLAGS to the config files
 	sed -i.orig \
-		-e 's%^\(COMPILE_OPTS.*\)$$%\1 '"$(LIVE_EXTRA_CFLAGS)%" $(UNPACK_DIR)/config.$(LIVE_TARGET)
+		-e 's%COMPILE_OPTS =%COMPILE_OPTS = $$(EXTRA_CFLAGS)%' $(UNPACK_DIR)/config.$(LIVE_TARGET)
 	# We want 64bits offsets and PIC on Linux
 	sed -e 's%-D_FILE_OFFSET_BITS=64%-D_FILE_OFFSET_BITS=64\ -fPIC\ -DPIC%' -i.orig $(UNPACK_DIR)/config.linux
 	# Disable Locale for Solaris
@@ -109,7 +106,7 @@ endif
 	$(MOVE)
 
 LIVE555_ENV := $(HOSTVARS) C_COMPILER=$(CC) CPLUSPLUS_COMPILER=$(CXX) LIBRARY_LINK="$(AR) cr " \
-	PREFIX=$(PREFIX) DESTDIR= LIBDIR=$(PREFIX)/lib
+	PREFIX=$(PREFIX) DESTDIR= LIBDIR=$(PREFIX)/lib EXTRA_CFLAGS="$(LIVE_EXTRA_CFLAGS)"
 
 .live555: BUILD_DIR=$<
 .live555: live555

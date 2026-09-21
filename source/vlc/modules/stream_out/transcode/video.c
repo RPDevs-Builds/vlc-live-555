@@ -119,6 +119,9 @@ static int video_update_format_decoder( decoder_t *p_dec, vlc_video_context *vct
     struct decoder_owner *p_owner = dec_get_owner( p_dec );
     sout_stream_id_sys_t *id = p_owner->id;
 
+    if( atomic_load_explicit(&id->b_error, memory_order_acquire) )
+        return VLC_EGENERIC;
+
     vlc_mutex_lock(&id->fifo.lock);
     if( id->encoder != NULL && transcode_encoder_opened( id->encoder ) )
     {
@@ -225,12 +228,22 @@ static int video_update_format_decoder( decoder_t *p_dec, vlc_video_context *vct
                                              id->p_decoder->fmt_in,
                                              transcode_encoder_format_out( id->encoder ),
                                              id->es_id );
-    msg_Info( p_dec, "video format update succeed" );
+
+    if( id->downstream_id == NULL )
+    {
+        vlc_mutex_lock( &id->fifo.lock );
+        goto error;
+    }
+
+    msg_Info( p_dec, "video format update success" );
 
 end:
     return VLC_SUCCESS;
 
 error:
+
+    atomic_store_explicit( &id->b_error, true, memory_order_release );
+
     transcode_remove_filters( &id->p_final_conv_static );
 
     if( transcode_encoder_opened( id->encoder ) )
@@ -263,9 +276,11 @@ static void decoder_queue_video( decoder_t *p_dec, picture_t *p_pic )
     if( p_block == NULL )
         return;
 
+    if( ret != VLC_SUCCESS )
+        atomic_store_explicit( &id->b_error, true, memory_order_release );
+
     vlc_fifo_Lock( id->output_fifo );
-    id->b_error |= ret != VLC_SUCCESS;
-    if( id->b_error )
+    if( atomic_load_explicit( &id->b_error, memory_order_acquire ) )
     {
         vlc_fifo_Unlock( id->output_fifo );
         block_ChainRelease( p_block );
@@ -577,7 +592,8 @@ int transcode_video_process( sout_stream_t *p_stream, sout_stream_id_sys_t *id,
      * blocks. */
     block_t *drained = NULL;
     vlc_fifo_Lock( id->output_fifo );
-    if( unlikely( !id->b_error && in == NULL ) && transcode_encoder_opened( id->encoder ) )
+    const bool has_error = atomic_load_explicit( &id->b_error, memory_order_acquire );
+    if( unlikely( !has_error && in == NULL ) && transcode_encoder_opened( id->encoder ) )
     {
         msg_Dbg( p_stream, "Draining thread and waiting for that");
         if (transcode_encoder_drain(id->encoder, &drained) == VLC_SUCCESS)
@@ -585,7 +601,6 @@ int transcode_video_process( sout_stream_t *p_stream, sout_stream_id_sys_t *id,
         else
             msg_Warn( p_stream, "Draining failed");
     }
-    bool has_error = id->b_error;
     if( !has_error )
     {
         vlc_frame_t *pendings = vlc_fifo_DequeueAllUnlocked( id->output_fifo );

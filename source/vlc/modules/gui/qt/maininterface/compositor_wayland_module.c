@@ -62,6 +62,8 @@ typedef struct
     uint32_t compositor_interface_version;
 } qtwayland_priv_t;
 
+static void CommitSurface(struct qtwayland_t* obj);
+
 static void registry_global_cb(void* data, struct wl_registry* registry,
                                uint32_t id, const char* iface, uint32_t version)
 {
@@ -124,7 +126,7 @@ static bool CommitSize(struct qtwayland_t* obj, bool commitSurface)
         // to determine the device pixel ratio.
         wp_viewport_set_destination(sys->viewport, sys->width, sys->height);
         if (commitSurface)
-            wl_surface_commit(sys->video_surface);
+            CommitSurface(obj);
         return true;
     }
 #endif
@@ -148,7 +150,7 @@ static void SetScale(struct qtwayland_t* obj, double scale)
         sys->fractional_scale = true;
 }
 
-static void CommitScale(struct qtwayland_t* obj)
+static void CommitScale(struct qtwayland_t* obj, bool commitSurface)
 {
     assert(obj);
     qtwayland_priv_t* const sys = (qtwayland_priv_t*)obj->p_sys;
@@ -171,11 +173,11 @@ static void CommitScale(struct qtwayland_t* obj)
                 if (likely(sys->compositor_interface_version >= 3))
                 {
                     wl_surface_set_buffer_scale(sys->video_surface, 1);
-                    wl_surface_commit(sys->video_surface);
+                    // `CommitSize()` call below will commit the surface.
                 }
 
                 // Started using viewport, commit size so that viewport destination is set:
-                CommitSize(obj, true);
+                CommitSize(obj, commitSurface);
             }
         }
         else
@@ -187,7 +189,8 @@ static void CommitScale(struct qtwayland_t* obj)
             if (sys->compositor_interface_version >= 3)
             {
                 wl_surface_set_buffer_scale(sys->video_surface, sys->buffer_scale);
-                wl_surface_commit(sys->video_surface);
+                if (commitSurface)
+                    CommitSurface(obj);
             }
             else
             {
@@ -206,7 +209,8 @@ static void CommitScale(struct qtwayland_t* obj)
             if (sys->compositor_interface_version >= 3)
             {
                 wl_surface_set_buffer_scale(sys->video_surface, sys->buffer_scale);
-                wl_surface_commit(sys->video_surface);
+                if (commitSurface)
+                    CommitSurface(obj);
             }
             else
             {
@@ -240,7 +244,7 @@ static int SetupVoutWindow(qtwayland_t* obj, vlc_window_t* wnd)
     if (!sys->video_surface)
         return VLC_EGENERIC;
 
-    CommitScale(obj);
+    CommitScale(obj, true);
 
     struct wl_region* region = wl_compositor_create_region(sys->compositor);
     if (!region)
@@ -253,7 +257,7 @@ static int SetupVoutWindow(qtwayland_t* obj, vlc_window_t* wnd)
     wl_surface_set_input_region(sys->video_surface, region);
 
     wl_region_destroy(region);
-    wl_surface_commit(sys->video_surface);
+    CommitSurface(obj);
 
     //setup vout window
     wnd->type = VLC_WINDOW_TYPE_WAYLAND;
@@ -293,7 +297,7 @@ static void Enable(qtwayland_t* obj, const vlc_window_cfg_t * conf)
     sys->video_subsurface = wl_subcompositor_get_subsurface(sys->subcompositor, sys->video_surface, sys->interface_surface);
     wl_subsurface_place_below(sys->video_subsurface, sys->interface_surface);
     wl_subsurface_set_desync(sys->video_subsurface);
-    wl_surface_commit(sys->video_surface);
+    CommitSurface(obj);
 }
 
 static void Disable(qtwayland_t* obj)
@@ -303,7 +307,7 @@ static void Disable(qtwayland_t* obj)
 
     wl_subsurface_destroy(sys->video_subsurface);
     sys->video_subsurface = NULL;
-    wl_surface_commit(sys->video_surface);
+    CommitSurface(obj);
 }
 
 static void Move(struct qtwayland_t* obj, int x, int y, bool commitSurface)
@@ -313,7 +317,7 @@ static void Move(struct qtwayland_t* obj, int x, int y, bool commitSurface)
         return;
     wl_subsurface_set_position(sys->video_subsurface, x, y);
     if (commitSurface)
-        wl_surface_commit(sys->video_surface);
+        CommitSurface(obj);
 }
 
 static void Resize(struct qtwayland_t* obj, size_t width, size_t height, bool commitSurface)
@@ -342,7 +346,7 @@ static void Resize(struct qtwayland_t* obj, size_t width, size_t height, bool co
 }
 
 
-static void Rescale(struct qtwayland_t* obj, double scale)
+static void Rescale(struct qtwayland_t* obj, double scale, bool commitSurface)
 {
     assert(obj);
     qtwayland_priv_t* sys = (qtwayland_priv_t*)obj->p_sys;
@@ -363,7 +367,7 @@ static void Rescale(struct qtwayland_t* obj, double scale)
     }
 
     if (commitNecessary)
-        CommitScale(obj);
+        CommitScale(obj, commitSurface);
 }
 
 static void CommitSurface(struct qtwayland_t* obj)
@@ -372,10 +376,11 @@ static void CommitSurface(struct qtwayland_t* obj)
     qtwayland_priv_t* sys = (qtwayland_priv_t*)obj->p_sys;
     assert(sys);
 
-    if (!sys->video_surface)
+    if (!sys->video_surface || !sys->interface_surface)
         return;
 
     wl_surface_commit(sys->video_surface);
+    wl_surface_commit(sys->interface_surface);
 }
 
 static void Close(qtwayland_t* obj)

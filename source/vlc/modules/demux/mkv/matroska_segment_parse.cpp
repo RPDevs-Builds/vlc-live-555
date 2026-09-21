@@ -608,7 +608,7 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
                                      i_display_height * tk->fmt.video.i_visible_width, 0);
                         break;
                     case 3: // display aspect ratio
-                        vlc_ureduce( &tk->fmt.video.i_sar_num, &tk->fmt.video.i_sar_den,
+                        vlc_ureduce( &tk->fmt.video.i_sar_den, &tk->fmt.video.i_sar_num,
                                      i_display_height * tk->fmt.video.i_visible_width,
                                      i_display_width * tk->fmt.video.i_visible_height, 0);
                         break;
@@ -1978,57 +1978,88 @@ bool matroska_segment_c::TrackInit( mkv_track_t * p_tk )
                     if( p_tk->fmt.audio.i_channels > 2 &&
                         ( p_tk->fmt.i_codec != VLC_CODEC_UNKNOWN ) )
                     {
+                        unsigned i_channel_mask = 0;
                         uint32_t wfextcm = GetDWLE( p_tk->p_extra_data + offsetof(WAVEFORMATEXTENSIBLE, dwChannelMask) );
-                        int match;
-                        unsigned i_channel_mask = getChannelMask( &wfextcm,
-                                                                  p_tk->fmt.audio.i_channels,
-                                                                  &match );
-
-                        if( match < p_fmt->audio.i_channels )
+                        if (wfextcm)
                         {
-                            int i_missing = p_fmt->audio.i_channels - match;
-                            msg_Warn( vars.p_demuxer, "Trying to fill up unspecified position for %d channels", p_fmt->audio.i_channels - match );
+                            int match;
+                            i_channel_mask = getChannelMask( &wfextcm,
+                                                             p_tk->fmt.audio.i_channels,
+                                                             &match );
 
-                            static const uint32_t pi_pair[] = { AOUT_CHAN_REARLEFT|AOUT_CHAN_REARRIGHT,
-                                                                AOUT_CHAN_MIDDLELEFT|AOUT_CHAN_MIDDLERIGHT,
-                                                                AOUT_CHAN_LEFT|AOUT_CHAN_RIGHT };
-
-                            /* Try to complete with pair */
-                            for( unsigned i = 0; i < ARRAY_SIZE(pi_pair); i++ )
+                            if( match < p_fmt->audio.i_channels )
                             {
-                                if( i_missing >= 2 && !(i_channel_mask & pi_pair[i] ) )
+                                int i_missing = p_fmt->audio.i_channels - match;
+                                msg_Warn( vars.p_demuxer, "Trying to fill up unspecified position for %d channels", p_fmt->audio.i_channels - match );
+
+                                static const uint32_t pi_pair[] = { AOUT_CHAN_REARLEFT|AOUT_CHAN_REARRIGHT,
+                                                                    AOUT_CHAN_MIDDLELEFT|AOUT_CHAN_MIDDLERIGHT,
+                                                                    AOUT_CHAN_LEFT|AOUT_CHAN_RIGHT };
+
+                                /* Try to complete with pair */
+                                for( unsigned i = 0; i < ARRAY_SIZE(pi_pair); i++ )
                                 {
-                                    i_missing -= 2;
-                                    i_channel_mask |= pi_pair[i];
+                                    if( i_missing >= 2 && !(i_channel_mask & pi_pair[i] ) )
+                                    {
+                                        i_missing -= 2;
+                                        i_channel_mask |= pi_pair[i];
+                                    }
+                                }
+                                /* Well fill up with what we can */
+                                for( unsigned i = 0; pi_channels_aout[i] && i_missing > 0; i++ )
+                                {
+                                    if( !( i_channel_mask & pi_channels_aout[i] ) )
+                                    {
+                                        i_channel_mask |= pi_channels_aout[i];
+                                        i_missing--;
+                                    }
+                                }
+
+                                if( i_missing > 0 )
+                                {
+                                    msg_Err( vars.p_demuxer, "Invalid/unsupported channel mask" );
+                                    i_channel_mask = 0;
                                 }
                             }
-                            /* Well fill up with what we can */
-                            for( unsigned i = 0; i < ARRAY_SIZE(pi_channels_aout) && i_missing > 0; i++ )
-                            {
-                                if( !( i_channel_mask & pi_channels_aout[i] ) )
-                                {
-                                    i_channel_mask |= pi_channels_aout[i];
-                                    i_missing--;
+                        }
 
-                                    if( i_missing <= 0 )
-                                        break;
-                                }
+                        if( i_channel_mask == 0 && p_fmt->audio.i_channels <= AOUT_CHAN_MAX )
+                        {
+                            /* A dwChannelMask of 0 tells the audio device to render the first
+                             * channel to the first port on the device, the second channel to the
+                             * second port on the device, and so on. pi_default_channels is
+                             * different than pi_channels_aout. Indeed FLC/FRC must be treated a
+                             * SL/SR in that case. See "Default Channel Ordering" and "Details
+                             * about dwChannelMask" from msdn */
+
+                            static const uint32_t pi_default_channels[] = {
+                                AOUT_CHAN_LEFT, AOUT_CHAN_RIGHT, AOUT_CHAN_CENTER,
+                                AOUT_CHAN_LFE, AOUT_CHAN_REARLEFT, AOUT_CHAN_REARRIGHT,
+                                AOUT_CHAN_MIDDLELEFT, AOUT_CHAN_MIDDLERIGHT, AOUT_CHAN_REARCENTER };
+
+                            for( unsigned i = 0; i < p_fmt->audio.i_channels &&
+                                 i < ARRAY_SIZE(pi_default_channels);
+                                 i++ )
+                                i_channel_mask |= pi_default_channels[i];
+                        }
+
+
+                        if( i_channel_mask )
+                        {
+                            if ( p_tk->fmt.i_codec == VLC_FOURCC('a','r','a','w') ||
+                                 p_tk->fmt.i_codec == VLC_FOURCC('a','f','l','t') )
+                            {
+                                p_tk->i_chans_to_reorder = aout_CheckChannelReorder(
+                                    pi_channels_aout, NULL,
+                                    i_channel_mask,
+                                    p_tk->pi_chan_table );
                             }
 
-                            match = p_fmt->audio.i_channels - i_missing;
+                            p_tk->fmt.audio.i_physical_channels = i_channel_mask;
                         }
 
                         p_tk->fmt.i_codec = vlc_fourcc_GetCodecAudio( p_tk->fmt.i_codec,
                                                                       p_tk->fmt.audio.i_bitspersample );
-                        if( i_channel_mask )
-                        {
-                            p_tk->i_chans_to_reorder = aout_CheckChannelReorder(
-                                pi_channels_aout, NULL,
-                                i_channel_mask,
-                                p_tk->pi_chan_table );
-
-                            p_tk->fmt.audio.i_physical_channels = i_channel_mask;
-                        }
                     }
                 }
                 else

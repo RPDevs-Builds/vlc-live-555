@@ -316,6 +316,10 @@ audio_output_t *aout_New (vlc_object_t *parent)
     char *str;
 
     /* Visualizations */
+    var_Create (aout, "audio-visual", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
+    var_Change(aout, "audio-visual", VLC_VAR_SETTEXT,
+               _("Audio visualizations"));
+
     var_Create (aout, "visual", VLC_VAR_STRING);
     var_Change(aout, "visual", VLC_VAR_SETTEXT, _("Visualizations"));
     val.psz_string = (char *)"";
@@ -328,36 +332,39 @@ audio_output_t *aout_New (vlc_object_t *parent)
     var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, _("Spectrum"));
     val.psz_string = (char *)"vuMeter";
     var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, _("VU meter"));
-    /* Look for goom plugin */
-    if (module_exists ("goom"))
+    /* Same list the preferences use; "visual" is covered by its effects. */
+    char **vis_vals, **vis_texts;
+    ssize_t vis_count = config_GetPszChoices ("audio-visual", &vis_vals,
+                                              &vis_texts);
+    for (ssize_t i = 0; i < vis_count; i++)
     {
-        val.psz_string = (char *)"goom";
-        var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, "Goom");
+        if (strcmp (vis_vals[i], "any") && strcmp (vis_vals[i], "none")
+         && strcmp (vis_vals[i], "visual"))
+        {
+            val.psz_string = vis_vals[i];
+            var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, vis_texts[i]);
+        }
+        free (vis_vals[i]);
+        free (vis_texts[i]);
     }
-    /* Look for libprojectM plugin */
-    if (module_exists ("projectm"))
+    free (vis_vals);
+    free (vis_texts);
+
+    /* Show the configured visualization as the selected one. */
+    str = var_GetNonEmptyString (aout, "audio-visual");
+    if (str != NULL && strcasecmp (str, "none") && strcasecmp (str, "any"))
     {
-        val.psz_string = (char *)"projectm";
-        var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, "projectM");
+        if (!strcasecmp (str, "visual"))
+        {
+            /* The visual plugin picks its effect with "effect-list". */
+            free (str);
+            str = module_exists ("visual")
+                ? var_InheritString (aout, "effect-list") : NULL;
+        }
+        if (str != NULL)
+            var_SetString (aout, "visual", str);
     }
-    /* Look for VSXu plugin */
-    if (module_exists ("vsxu"))
-    {
-        val.psz_string = (char *)"vsxu";
-        var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, "Vovoid VSXU");
-    }
-    /* Look for glspectrum plugin */
-    if (module_exists ("glspectrum"))
-    {
-        val.psz_string = (char *)"glspectrum";
-        var_Change(aout, "visual", VLC_VAR_ADDCHOICE, val, "3D spectrum");
-    }
-    str = var_GetNonEmptyString (aout, "effect-list");
-    if (str != NULL)
-    {
-        var_SetString (aout, "visual", str);
-        free (str);
-    }
+    free (str);
 
     var_Create (aout, "audio-filter", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
     var_AddCallback (aout, "audio-filter", FilterCallback, NULL);
@@ -365,10 +372,6 @@ audio_output_t *aout_New (vlc_object_t *parent)
 
     var_Create (aout, "viewpoint", VLC_VAR_ADDRESS );
     var_AddCallback (aout, "viewpoint", ViewpointCallback, NULL);
-
-    var_Create (aout, "audio-visual", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
-    var_Change(aout, "audio-visual", VLC_VAR_SETTEXT,
-               _("Audio visualizations"));
 
     /* Replay gain */
     var_Create (aout, "audio-replay-gain-mode",

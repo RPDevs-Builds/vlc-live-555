@@ -28,6 +28,8 @@
 #import <Cocoa/Cocoa.h>
 #import <vlc_input.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 #define NSTR(s) ((s) ? toNSStr(vlc_gettext(s)) : @"")
 
 /**
@@ -60,7 +62,13 @@ extern NSString *const kVLCMediaVideoTSFolder;
 extern NSString *const kVLCMediaBDMVFolder;
 extern NSString *const kVLCMediaUnknown;
 
-NSString *toNSStr(const char *str);
+/**
+ * Convert an UTF-8 C string to a NSString.
+ *
+ * The returned string is autoreleased, so callers must take care of
+ * setting up an appropriate @autoreleasepool block where suitable.
+ */
+NSString *toNSStr(const char * _Nullable str);
 
 /**
  * Takes the first value of an cocoa key string, and converts it to VLCs int representation.
@@ -73,6 +81,12 @@ unsigned int CocoaKeyToVLC(unichar i_key);
 bool fixIntfSettings(void);
 
 @interface NSString (Helpers)
+
+/**
+ Compares two strings by value, treating two nil strings as equal.
+ */
++ (BOOL)equalOrBothNil:(nullable NSString *)firstString
+                    to:(nullable NSString *)secondString;
 
 /**
  Creates an NSString with the current time of the \c input_item_t
@@ -124,7 +138,7 @@ bool fixIntfSettings(void);
 
  \param aString the string to parse
  */
-+ (NSInteger)timeInSecondsFromStringWithColons:(NSString *)aString;
++ (NSInteger)timeInSecondsFromStringWithColons:(nullable NSString *)aString;
 
 /**
  Creates an NSString from the given null-terminated C string
@@ -133,7 +147,7 @@ bool fixIntfSettings(void);
  This method allocates and initializes an NSString with the
  provided C string encoded as base64.
  */
-+ (instancetype)base64StringWithCString:(const char *)cstring;
++ (nullable instancetype)base64StringWithCString:(nullable const char *)cstring;
 
 /**
  Base64 encoded copy of the string
@@ -141,7 +155,7 @@ bool fixIntfSettings(void);
  Encode the string as Base64 string and return the result or
  nil on failure.
  */
-- (NSString *)base64EncodedString;
+- (nullable NSString *)base64EncodedString;
 
 /**
  Base64 decoded copy of the string
@@ -149,7 +163,7 @@ bool fixIntfSettings(void);
  Decode the string as Base64 string and return the result or
  nil on failure.
  */
-- (NSString *)base64DecodedString;
+- (nullable NSString *)base64DecodedString;
 
 /**
  Returns a copy of the receiver string, wrapped to the specified width
@@ -159,7 +173,7 @@ bool fixIntfSettings(void);
 
  \param width Width in pixel
  */
-- (NSString *)stringWrappedToWidth:(int)width;
+- (nullable NSString *)stringWrappedToWidth:(int)width;
 
 /**
  Returns a new string with a trailing number in the format of  "ORIGINALSTRING (2)"
@@ -167,13 +181,13 @@ bool fixIntfSettings(void);
  If there is no existing trailing number in the string, a starting value of " (2)" will be appended.
  If there is an existing trailing number in the string, the number value will be incremented.
  */
-- (NSString *)stringWithIncrementedTrailingNumber;
+- (nullable NSString *)stringWithIncrementedTrailingNumber;
 
 /**
  * Returns an array of file extensions from a semicolon-separated string of extensions,
  * stripping any leading "*." prefix.
  */
-+ (NSArray<NSString *> *)extensionsArrayFromVLCStyleString:(const char *)extensionsString;
++ (nullable NSArray<NSString *> *)extensionsArrayFromVLCStyleString:(nullable const char *)extensionsString;
 
 @end
 
@@ -185,7 +199,7 @@ bool fixIntfSettings(void);
 
  \warning Compatibility function, do not use in new code!
  */
-static inline NSString *B64DecNSStr(NSString *s) {
+static inline NSString * _Nullable B64DecNSStr(NSString * _Nullable s) {
     NSString *res = [s base64DecodedString];
 
     return (res == nil) ? @"" : res;
@@ -200,35 +214,37 @@ static inline NSString *B64DecNSStr(NSString *s) {
 
  \warning Compatibility function, do not use in new code!
  */
-static inline NSString *B64EncAndFree(char *cs) {
+static inline NSString * _Nullable B64EncAndFree(char * _Nullable cs) {
     NSString *res = [NSString base64StringWithCString:cs];
     free(cs);
 
     return (res == nil) ? @"" : res;
 }
 
-NSString * getVolumeTypeFromMountPath(NSString *mountPath);
+NSString * _Nullable getVolumeTypeFromMountPath(NSString * _Nullable mountPath);
 
-NSString * getBSDNodeFromMountPath(NSString *mountPath);
+NSString * _Nullable getBSDNodeFromMountPath(NSString * _Nullable mountPath);
 
 /**
  * Converts an ISO 3166-1 alpha-2 country code to its flag emoji.
  */
-NSString * flagEmojiStringForCountryCode(NSString *countryCode);
+NSString * _Nullable flagEmojiStringForCountryCode(NSString * _Nullable countryCode);
 
 /**
  * Converts VLC key string to a prettified version, for hotkey settings.
  * The returned string adapts similar how its done within the cocoa framework when setting this
  * key to menu items.
  */
-NSString * OSXStringKeyToString(NSString *theString);
+NSString * _Nullable OSXStringKeyToString(NSString * _Nullable theString);
 
 /**
  * Converts VLC key string to cocoa modifiers which can be used as setKeyEquivalent for menu items
  */
-NSString * VLCKeyToString(char *theChar);
+NSString * _Nullable VLCKeyToString(char * _Nullable theChar);
 
 /**
  * Converts VLC key to cocoa string which can be used as setKeyEquivalentModifierMask for menu items
  */
-unsigned int VLCModifiersToCocoa(char *theChar);
+unsigned int VLCModifiersToCocoa(char * _Nullable theChar);
+
+NS_ASSUME_NONNULL_END

@@ -57,6 +57,9 @@
 #import "views/VLCSubScrollView.h"
 #import "views/VLCUIUnits.h"
 
+NSString * const VLCLibrarySongsTableViewAutosaveName = @"VLCLibrarySongsTableView";
+NSString * const VLCLibrarySongsTableViewHiddenColumnsPreferenceKey = @"VLCLibrarySongsTableViewHiddenColumns";
+
 NSString * const VLCLibrarySongsTableViewSongPlayingColumnIdentifier = @"VLCLibrarySongsTableViewSongPlayingColumnIdentifier";
 NSString * const VLCLibrarySongsTableViewTitleColumnIdentifier = @"VLCLibrarySongsTableViewTitleColumnIdentifier";
 NSString * const VLCLibrarySongsTableViewDurationColumnIdentifier = @"VLCLibrarySongsTableViewDurationColumnIdentifier";
@@ -76,10 +79,12 @@ NSString * const VLCLibraryYearSortDescriptorKey = @"VLCLibraryYearSortDescripto
 
 NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification = @"VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification";
 
-@interface VLCLibraryAudioDataSource ()
+@interface VLCLibraryAudioDataSource () <NSMenuDelegate>
 
 @property (readwrite, atomic) NSMutableArray *displayedCollection;
+@property (readonly) BOOL isSearchActive;
 @property (readonly) BOOL displayAllArtistsGenresTableEntry;
+@property (readwrite, strong) NSMenu *songsTableHeaderMenu;
 
 @end
 
@@ -468,9 +473,13 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 
     self.songsTableView.target = self;
     self.songsTableView.doubleAction = @selector(songDoubleClickAction:);
+    self.songsTableView.autosaveName = VLCLibrarySongsTableViewAutosaveName;
+    self.songsTableView.autosaveTableColumns = YES;
 
     [self setupPrototypeSortDescriptorsForTableView:_songsTableView];
     [self setupExistingSortForTableView:_songsTableView];
+    [self setupColumnVisibilityMenuForSongsTableView];
+    [self restoreHiddenColumnsForSongsTableView];
 }
 
 - (void)setupPrototypeSortDescriptorsForTableView:(NSTableView *)tableView
@@ -544,6 +553,92 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
     }
 
     return VLCLibraryTitleSortDescriptorKey;
+}
+
+- (void)setupColumnVisibilityMenuForSongsTableView
+{
+    NSMenu * const menu = [[NSMenu alloc] initWithTitle:_NS("Columns")];
+    menu.delegate = self;
+
+    for (NSTableColumn * const column in self.songsTableView.tableColumns) {
+        if ([column.identifier isEqualToString:VLCLibrarySongsTableViewSongPlayingColumnIdentifier]) {
+            continue;
+        }
+
+        NSString * const title = column.headerCell.stringValue;
+        NSMenuItem * const item = [[NSMenuItem alloc] initWithTitle:title
+                                                             action:@selector(toggleSongsTableColumnVisibility:)
+                                                      keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = column;
+        [menu addItem:item];
+    }
+
+    self.songsTableHeaderMenu = menu;
+    self.songsTableView.headerView.menu = menu;
+}
+
+- (void)restoreHiddenColumnsForSongsTableView
+{
+    NSArray<NSString *> * const hiddenColumnIdentifiers =
+        [NSUserDefaults.standardUserDefaults arrayForKey:VLCLibrarySongsTableViewHiddenColumnsPreferenceKey];
+    NSSet<NSString *> * const hiddenColumns = [NSSet setWithArray:hiddenColumnIdentifiers];
+    for (NSTableColumn * const column in self.songsTableView.tableColumns) {
+        if ([column.identifier isEqualToString:VLCLibrarySongsTableViewSongPlayingColumnIdentifier] ||
+            [column.identifier isEqualToString:VLCLibrarySongsTableViewTitleColumnIdentifier]) {
+            column.hidden = NO;
+            continue;
+        }
+
+        column.hidden = [hiddenColumns containsObject:column.identifier];
+    }
+}
+
+- (void)persistHiddenColumnsForSongsTableView
+{
+    NSMutableArray<NSString *> * const hiddenColumnIdentifiers = NSMutableArray.array;
+    for (NSTableColumn * const column in self.songsTableView.tableColumns) {
+        if (column.isHidden &&
+            ![column.identifier isEqualToString:VLCLibrarySongsTableViewSongPlayingColumnIdentifier] &&
+            ![column.identifier isEqualToString:VLCLibrarySongsTableViewTitleColumnIdentifier]) {
+            [hiddenColumnIdentifiers addObject:column.identifier];
+        }
+    }
+
+    [NSUserDefaults.standardUserDefaults setObject:hiddenColumnIdentifiers
+                                            forKey:VLCLibrarySongsTableViewHiddenColumnsPreferenceKey];
+}
+
+- (void)toggleSongsTableColumnVisibility:(NSMenuItem *)sender
+{
+    NSTableColumn * const column = sender.representedObject;
+    if (![column isKindOfClass:NSTableColumn.class]) {
+        return;
+    }
+
+    if ([column.identifier isEqualToString:VLCLibrarySongsTableViewTitleColumnIdentifier]) {
+        return;
+    }
+
+    column.hidden = !column.isHidden;
+    [self persistHiddenColumnsForSongsTableView];
+}
+
+- (void)menuNeedsUpdate:(NSMenu *)menu
+{
+    if (menu != self.songsTableHeaderMenu) {
+        return;
+    }
+
+    for (NSMenuItem * const item in menu.itemArray) {
+        NSTableColumn * const column = item.representedObject;
+        if (![column isKindOfClass:NSTableColumn.class]) {
+            continue;
+        }
+
+        item.state = column.isHidden ? NSControlStateValueOff : NSControlStateValueOn;
+        item.enabled = ![column.identifier isEqualToString:VLCLibrarySongsTableViewTitleColumnIdentifier];
+    }
 }
 
 - (void)resetLayoutsForOperation:(void(^)(void))operation
@@ -630,6 +725,18 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
             }
         }
 
+        if (self.isSearchActive &&
+            (self.currentParentType == VLCMediaLibraryParentGroupTypeArtist ||
+             self.currentParentType == VLCMediaLibraryParentGroupTypeAlbum ||
+             self.currentParentType == VLCMediaLibraryParentGroupTypeGenre) &&
+            self.displayedCollection.count > 0 &&
+            self.collectionSelectionTableView.selectedRow < 0 &&
+            self.gridModeListTableView.selectedRow < 0) {
+            NSIndexSet * const firstRowIndexSet = [NSIndexSet indexSetWithIndex:0];
+            [self tableView:collectionSelectionTableView selectRowIndices:firstRowIndexSet];
+            [self tableView:gridModeListTableView selectRowIndices:firstRowIndexSet];
+        }
+
         [NSNotificationCenter.defaultCenter postNotificationName:VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification object:self];
     });
 }
@@ -644,28 +751,26 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 
 - (void)reloadDataForMediaLibraryItem:(const id<VLCMediaLibraryItemProtocol>)item
 {
-    [self resetLayoutsForOperation:^{
-        const NSUInteger index = [self indexForMediaLibraryItemWithId:item.libraryID];
-        if (index == NSNotFound) {
-            return;
-        }
+    const NSUInteger index = [self indexForMediaLibraryItemWithId:item.libraryID];
+    if (index == NSNotFound) {
+        return;
+    }
 
-        [self.displayedCollection replaceObjectAtIndex:index withObject:item];
+    [self.displayedCollection replaceObjectAtIndex:index withObject:item];
 
-        NSIndexPath * const indexPath = [NSIndexPath indexPathForItem:index inSection:0];
-        NSIndexSet * const rowIndexSet = [NSIndexSet indexSetWithIndex:index];
+    NSIndexPath * const indexPath = [NSIndexPath indexPathForItem:index inSection:0];
+    NSIndexSet * const rowIndexSet = [NSIndexSet indexSetWithIndex:index];
 
-        const NSRange songsTableColumnRange = NSMakeRange(0, self->_songsTableView.numberOfColumns);
-        NSIndexSet * const songsTableColumnIndexSet = [NSIndexSet indexSetWithIndexesInRange:songsTableColumnRange];
+    const NSRange songsTableColumnRange = NSMakeRange(0, self->_songsTableView.numberOfColumns);
+    NSIndexSet * const songsTableColumnIndexSet = [NSIndexSet indexSetWithIndexesInRange:songsTableColumnRange];
 
-        [self.collectionView reloadItemsAtIndexPaths:[NSSet setWithObject:indexPath]];
-        [self.songsTableView reloadDataForRowIndexes:rowIndexSet columnIndexes:songsTableColumnIndexSet];
+    [self.collectionView reloadItemsAtIndexPaths:[NSSet setWithObject:indexPath]];
+    [self.songsTableView reloadDataForRowIndexes:rowIndexSet columnIndexes:songsTableColumnIndexSet];
 
-        // Don't update gridModeListSelectionCollectionView, let its VLCLibraryAudioGroupDataSource do it.
-        // Also don't update collectionSelectionTableView, as this will only show artists/genres/albums
+    // Don't update gridModeListSelectionCollectionView, let its VLCLibraryAudioGroupDataSource do it.
+    // Also don't update collectionSelectionTableView, as this will only show artists/genres/albums
 
-        [self.carouselView reloadData];
-    }];
+    [self.carouselView reloadData];
 }
 
 - (void)deleteDataForMediaLibraryItem:(const id<VLCMediaLibraryItemProtocol>)item
@@ -730,10 +835,16 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 
 #pragma mark - table view data source and delegation
 
+- (BOOL)isSearchActive
+{
+    return self.libraryModel.filterString.length > 0;
+}
+
 - (BOOL)displayAllArtistsGenresTableEntry
 {
-    return self.currentParentType == VLCMediaLibraryParentGroupTypeGenre ||
-           self.currentParentType == VLCMediaLibraryParentGroupTypeArtist;
+    return !self.isSearchActive &&
+           (self.currentParentType == VLCMediaLibraryParentGroupTypeGenre ||
+            self.currentParentType == VLCMediaLibraryParentGroupTypeArtist);
 }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView

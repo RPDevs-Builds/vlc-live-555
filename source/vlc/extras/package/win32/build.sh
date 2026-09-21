@@ -128,15 +128,19 @@ fi
 case $ARCH in
     x86_64)
         SHORTARCH="win64"
+        MESON_CPU_FAMILY="x86_64"
         ;;
     i686)
         SHORTARCH="win32"
+        MESON_CPU_FAMILY="x86"
         ;;
     aarch64)
         SHORTARCH="winarm64"
+        MESON_CPU_FAMILY="aarch64"
         ;;
     armv7)
         SHORTARCH="winarm"
+        MESON_CPU_FAMILY="arm"
         ;;
     *)
         usage
@@ -575,6 +579,10 @@ if [ -n "$BUILD_MESON" ]; then
     # we don't want to install in <destdir>/usr/local, just <destdir>
     MCONFIGFLAGS="$MCONFIGFLAGS --prefix=/"
 
+    if [ "$INSTALLER" = "n" ] || [ "$INSTALLER" = "r" ] || [ "$INSTALLER" = "u" ]; then
+        MCONFIGFLAGS="$MCONFIGFLAGS -Dnsis=enabled"
+    fi
+
     # generate the crossfile.meson
     test -e $SHORTARCH-meson/crossfile.meson && unlink $SHORTARCH-meson/crossfile.meson
     exec 3>$SHORTARCH-meson/crossfile.meson || return $?
@@ -601,10 +609,13 @@ if [ -n "$BUILD_MESON" ]; then
     if [ -z "$DISABLEGUI" ]; then
         printf 'qmake6 = '"'"'%s'"'"'\n' "${BUILD_PATH}/contrib/${CONTRIB_PREFIX}/bin/qmake6" >&3
     fi
+    if [ -x "$(command -v ${CONTRIB_PREFIX}-luac)" ]; then
+        printf 'luac = '"'"'%s'"'"'\n' "$(command -v ${CONTRIB_PREFIX}-luac)" >&3
+    fi
 
     printf '\n[host_machine]\n' >&3
     printf 'system = '"'"'windows'"'"'\n' >&3
-    printf 'cpu_family = '"'"'%s'"'"'\n' "${ARCH}" >&3
+    printf 'cpu_family = '"'"'%s'"'"'\n' "${MESON_CPU_FAMILY}" >&3
     printf 'endian = '"'"'little'"'"'\n' >&3
     printf 'cpu = '"'"'%s'"'"'\n' "${ARCH}" >&3
 
@@ -622,19 +633,30 @@ if [ -n "$BUILD_MESON" ]; then
     meson compile -j $JOBS -C ${BUILD_PATH}/$SHORTARCH-meson ${MCOMPILEFLAGS}
 
     if [ -n "$INSTALL_PATH" ]; then
-        MINSTALLFLAGS="--destdir=$INSTALL_PATH $MINSTALLFLAGS"
+        MDESTDIR="$INSTALL_PATH"
     else
-        MINSTALLFLAGS="--destdir=${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH $MINSTALLFLAGS"
+        MDESTDIR="${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH"
     fi
+    MINSTALLFLAGS="--destdir=$MDESTDIR $MINSTALLFLAGS"
 
     if [ "$INSTALLER" = "n" ]; then
         meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
+        makensis $MDESTDIR/spad.nsi
+        makensis $MDESTDIR/vlc.win32.nsi
+
         VLC_GIT_TAG="$(git describe --tags --long --match '?.*.*' --always)"
         rm -rf ${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z
         cd ${BUILD_PATH}/$SHORTARCH-meson && \
             7z a -t7z -m0=lzma -mx=9 -mfb=64 -md=32m -ms=on vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z vlc-$SHORTARCH
     elif [ "$INSTALLER" = "r" ]; then
         meson dist -C ${BUILD_PATH}/$SHORTARCH-meson -j$JOBS --no-tests
+        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
+        makensis $MDESTDIR/spad.nsi
+        makensis $MDESTDIR/vlc.win32.nsi
+    elif [ "$INSTALLER" = "u" ]; then
+        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
+        makensis $MDESTDIR/spad.nsi
+        makensis $MDESTDIR/vlc.win32.nsi
     fi
 else
     info "Bootstrapping"

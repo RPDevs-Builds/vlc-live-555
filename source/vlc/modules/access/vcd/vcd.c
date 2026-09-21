@@ -171,8 +171,8 @@ static int Open( vlc_object_t *p_this )
 
     for( int i = 0; i < USABLE_TITLES(p_sys->p_toc->i_tracks); i++ )
     {
-        msg_Dbg( p_access, "title[%d] start=%d", i, p_sys->p_toc->p_sectors[1+i].i_lba );
-        msg_Dbg( p_access, "title[%d] end=%d", i, p_sys->p_toc->p_sectors[i+2].i_lba );
+        msg_Dbg( p_access, "title[%d] start=%d", i, p_sys->p_toc->p_sectors[i].i_lba );
+        msg_Dbg( p_access, "title[%d] end=%d", i, p_sys->p_toc->p_sectors[i+1].i_lba );
     }
 
     /* Map entry points into chapters */
@@ -343,7 +343,7 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
     /* Check end of title */
     while( p_sys->i_sector >= p_toc->p_sectors[p_sys->i_current_title + 2].i_lba )
     {
-        if( p_sys->i_current_title + 2 >= USABLE_TITLES(p_toc->i_tracks) )
+        if( p_sys->i_current_title + 2 > USABLE_TITLES(p_toc->i_tracks) )
         {
             *eof = true;
             return NULL;
@@ -369,11 +369,19 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
         return NULL;
     }
 
-    if( ioctl_ReadSectors( VLC_OBJECT(p_access), p_sys->vcddev,
-            p_sys->i_sector, p_block->p_buffer, i_blocks, VCD_TYPE ) < 0 )
+    int i_ret = ioctl_ReadSectors( VLC_OBJECT(p_access), p_sys->vcddev,
+                                   p_sys->i_sector, p_block->p_buffer, i_blocks, VCD_TYPE );
+    if( i_ret < 0 )
     {
         msg_Err( p_access, "cannot read sector %i", p_sys->i_sector );
         block_Release( p_block );
+
+        /* Nothing left to read: the disc is gone, or the drive is. */
+        if( i_ret == -2 )
+        {
+            *eof = true;
+            return NULL;
+        }
 
         /* Try to skip one sector (in case of bad sectors) */
         p_sys->offset += VCD_DATA_SIZE;
@@ -491,4 +499,3 @@ static int EntryPoints( stream_t *p_access )
 
     return VLC_SUCCESS;
 }
-

@@ -478,7 +478,7 @@ VLC_API picture_t *vout_display_Prepare(vout_display_t *vd, picture_t *picture,
                                         const struct vlc_render_subpicture *subpic, vlc_tick_t date);
 
 /**
- * Displays a picture.
+ * \copydoc vlc_display_operations::display
  */
 static inline void vout_display_Display(vout_display_t *vd, picture_t *picture)
 {
@@ -488,6 +488,26 @@ static inline void vout_display_Display(vout_display_t *vd, picture_t *picture)
 
 VLC_API
 void vout_display_SetSize(vout_display_t *vd, unsigned width, unsigned height);
+
+/**
+ * Updates the video format for an existing display.
+ *
+ * This function changes the input video format of a vout display by calling
+ * the display module's update_format callback. It handles internal format
+ * updates, video context management, and display converter cleanup when the
+ * format change is accepted by the display module.
+ *
+ * \note The format size is not expected to change.
+ *
+ * \param vd the vout display to update
+ * \param fmt the new video format to set
+ * \param vctx the video context associated with the format (may be NULL)
+ * \return VLC_SUCCESS on success, VLC_EGENERIC if the display module doesn't
+ *         support format updates, or another error code on failure
+ */
+VLC_API
+int vout_display_SetFormat(vout_display_t *, const video_format_t *fmt,
+                            vlc_video_context *vctx);
 
 static inline void vout_display_SendEventMousePressed(vout_display_t *vd, int button)
 {
@@ -522,11 +542,17 @@ static inline bool vout_display_cfg_IsWindowed(const vout_display_cfg_t *cfg)
     return cfg->window->type != VLC_WINDOW_TYPE_DUMMY;
 }
 
-static inline int vout_display_ChangeProjection(vout_display_t *vd, video_projection_mode_t projection)
+/**
+ * \copydoc vlc_display_operations::change_source_projection
+ *
+ * \retval VLC_ENOTSUP the display does not implement projection changes
+ */
+static inline int vout_display_ChangeProjection(vout_display_t *display,
+                                                video_projection_mode_t projection)
 {
-    if (vd->ops->change_source_projection == NULL)
+    if (display->ops->change_source_projection == NULL)
         return VLC_ENOTSUP;
-    return vd->ops->change_source_projection(vd, projection);
+    return display->ops->change_source_projection(display, projection);
 }
 
 /**

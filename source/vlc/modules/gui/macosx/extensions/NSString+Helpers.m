@@ -79,6 +79,16 @@ NSString * flagEmojiStringForCountryCode(NSString *countryCode)
 
 @implementation NSString (Helpers)
 
++ (BOOL)equalOrBothNil:(nullable NSString *)firstString
+                    to:(nullable NSString *)secondString
+{
+    if (firstString == nil || secondString == nil) {
+        return firstString == nil && secondString == nil;
+    }
+
+    return [firstString isEqualToString:secondString];
+}
+
 + (instancetype)stringWithDuration:(vlc_tick_t)duration
                        currentTime:(vlc_tick_t)time
                           negative:(BOOL)negative
@@ -115,7 +125,7 @@ NSString * flagEmojiStringForCountryCode(NSString *countryCode)
 + (instancetype)stringWithTime:(long long int)time
 {
     if (time > 0) {
-        if (time > 3600)
+        if (time >= 3600)
             return [NSString stringWithFormat:@"%s%01ld:%02ld:%02ld",
                     time < 0 ? "-" : "",
                     (long) (time / 3600),

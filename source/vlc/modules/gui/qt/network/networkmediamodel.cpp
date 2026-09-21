@@ -409,10 +409,13 @@ public:
             input_item_node_t* mediaNode = nullptr;
             input_item_node_t* parent = nullptr;
             std::vector<SharedInputItem> itemList;
+            /* vlc_preparser_Cancel can call the callback from this thread so the mutex
+               must be unlocked */
+            if (m_parserReq != NULL)
+                vlc_preparser_Cancel( parser, m_parserReq );
+
             {
                 MediaTreeLocker lock{tree};
-                if (m_parserReq != NULL)
-                    vlc_preparser_Cancel( parser, m_parserReq );
                 m_path = {QVariant::fromValue(PathNode(m_treeItem, m_name))};
                 if (vlc_media_tree_Find( tree.get(), m_treeItem.media.get(), &mediaNode, &parent))
                 {
@@ -440,6 +443,11 @@ public:
         }
 
         m_preparseSem.acquire();
+        if (m_parserReq != NULL)
+        {
+            vlc_preparser_req_Release( m_parserReq );
+            m_parserReq = NULL;
+        }
         m_parserReq = vlc_media_tree_Preparse( tree.get(), parser, m_treeItem.media.get() );
 
         m_listener = std::move( l );
@@ -516,13 +524,16 @@ NetworkMediaModel::~NetworkMediaModel()
         if (likely(parser != NULL))
         {
             if (d->m_parserReq != NULL)
-            {
                 vlc_preparser_Cancel( parser, d->m_parserReq );
-                d->m_parserReq = NULL;
-            }
             //wait for the callback call on cancel
             d->m_preparseSem.acquire();
         }
+    }
+
+    if (d->m_parserReq != NULL)
+    {
+        vlc_preparser_req_Release( d->m_parserReq );
+        d->m_parserReq = NULL;
     }
 }
 

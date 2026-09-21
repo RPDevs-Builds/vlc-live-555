@@ -236,26 +236,15 @@ Item {
         required property Item source
         readonly property int radius: root.radius
 
-        // TODO: We could use `textureSize()` and get rid of this, but we
-        //       can not because we are targeting GLSL 1.20/ESSL 1.0, even
-        //       though the shader is written in GLSL 4.40:
-        property size sourceTextureSize
-
-        Binding on sourceTextureSize {
-            when: root.live
-            value: textureProviderObserver.nativeTextureSize
-            restoreMode: Binding.RestoreNone // No need to restore
-        }
-
-        property rect normalRect // may not be necessary, but still needed to prevent warning
+        property rect subRect // may not be necessary, but still needed to prevent warning
 
         property alias tpObserver: textureProviderObserver
 
         // cullMode: ShaderEffect.BackFaceCulling // QTBUG-136611 (Layering breaks culling with OpenGL)
 
         // Maybe we should have vertex shader unconditionally, and calculate the half pixel there instead of fragment shader?
-        vertexShader: (normalRect.width > 0.0 && normalRect.height > 0.0) ? "qrc:///shaders/SubTexture.vert.qsb"
-                                                                          : ""
+        vertexShader: (subRect.width > 0.0 && subRect.height > 0.0) ? "qrc:///shaders/SubTexture.vert.qsb"
+                                                                    : ""
 
         supportsAtlasTextures: true
 
@@ -298,15 +287,11 @@ Item {
 
         source: root.source
 
-        // TODO: Instead of normalizing here, we could use GLSL 1.30's `textureSize()`
-        //       and normalize in the vertex shader, but we can not because we are
-        //       targeting GLSL 1.20/ESSL 1.0, even though the shader is written in
-        //       GLSL 4.40.
-        normalRect: (root.sourceRect.width > 0.0 && root.sourceRect.height > 0.0) ? Qt.rect(root.sourceRect.x * root.eDPR / sourceTextureSize.width,
-                                                                                            root.sourceRect.y * root.eDPR / sourceTextureSize.height,
-                                                                                            root.sourceRect.width * root.eDPR / sourceTextureSize.width,
-                                                                                            root.sourceRect.height * root.eDPR / sourceTextureSize.height)
-                                                                                  : Qt.rect(0.0, 0.0, 0.0, 0.0)
+        subRect: (root.sourceRect.width > 0.0 && root.sourceRect.height > 0.0) ? Qt.rect(root.sourceRect.x * root.eDPR,
+                                                                                         root.sourceRect.y * root.eDPR,
+                                                                                         root.sourceRect.width * root.eDPR,
+                                                                                         root.sourceRect.height * root.eDPR)
+                                                                               : Qt.rect(0.0, 0.0, 0.0, 0.0)
     }
 
     DefaultShaderEffectSource {
@@ -322,10 +307,6 @@ Item {
         function scheduleChainedUpdate() {
             if (!ds1layer) // context is lost, Qt bug (reproduced with 6.2)
                 return
-
-            ds1.sourceTextureSize = ds1.tpObserver.nativeTextureSize
-            if (ds1.ensurePolished)
-                ds1.ensurePolished()
 
             // Common for both four and two pass mode:
             ds1layer.parent = root
@@ -388,10 +369,6 @@ Item {
                 return
             }
 
-            ds2.sourceTextureSize = ds2.tpObserver.nativeTextureSize
-            if (ds2.ensurePolished)
-                ds2.ensurePolished()
-
             ds2layer.inhibitParent = false
             ds2layer.scheduleUpdate()
 
@@ -446,10 +423,6 @@ Item {
                 return
             }
 
-            ds3.sourceTextureSize = ds3.tpObserver.nativeTextureSize
-            if (ds3.ensurePolished)
-                ds3.ensurePolished()
-
             ds3layer.inhibitParent = false
             ds3layer.scheduleUpdate()
 
@@ -499,10 +472,6 @@ Item {
                 root._window = null
                 return
             }
-
-            us0.sourceTextureSize = us0.tpObserver.nativeTextureSize
-            if (us0.ensurePolished)
-                us0.ensurePolished()
 
             us0layer.inhibitParent = false
             us0layer.scheduleUpdate()
@@ -585,10 +554,6 @@ Item {
                 return
             }
 
-            us1.sourceTextureSize = us1.tpObserver.nativeTextureSize
-            if (us1.ensurePolished)
-                us1.ensurePolished()
-
             us1layer.scheduleUpdate()
 
             if (root._window) {
@@ -612,8 +577,6 @@ Item {
             // not in the scene anymore:
             if (root.live)
                 return
-
-            us2.sourceTextureSize = us2.tpObserver.nativeTextureSize
 
             // Last layer is updated, now it is time to release the intermediate buffers:
             console.debug(root, ": releasing intermediate layers, expect the video memory consumption to drop.")
@@ -688,10 +651,10 @@ Item {
 
         // NOTE: Vertex shader is set in `DefaultShaderEffect` when `normalRect` is valid.
 
-        normalRect: useSubTexture ? Qt.rect((root._localVisualRect.x - root._localViewportRect.x) * root.eDPR / sourceTextureSize.width,
-                                            (root._localVisualRect.y - root._localViewportRect.y) * root.eDPR / sourceTextureSize.height,
-                                            root._localVisualRect.width * root.eDPR / sourceTextureSize.width,
-                                            root._localVisualRect.height * root.eDPR / sourceTextureSize.height)
+        subRect: useSubTexture ? Qt.rect((root._localVisualRect.x - root._localViewportRect.x) * root.eDPR,
+                                         (root._localVisualRect.y - root._localViewportRect.y) * root.eDPR,
+                                         root._localVisualRect.width * root.eDPR,
+                                         root._localVisualRect.height * root.eDPR)
                                   : Qt.rect(0,0,0,0)
     }
 }

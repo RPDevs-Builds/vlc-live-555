@@ -42,6 +42,8 @@ NSString * const VLCInputItemCommonDataDifferingFlagString = @"<differing>";
     input_item_parser_id_t *_p_parserID;
 }
 
+- (nullable NSURL *)localFileURL;
+
 - (void)parsingEnded:(int)status;
 - (void)subTreeAdded:(input_item_node_t *)p_node;
 
@@ -487,13 +489,23 @@ static const struct input_item_parser_cbs_t parserCallbacks =
     }];
 }
 
-- (void)moveToTrash
+- (nullable NSURL *)localFileURL
 {
     if (self.isStream) {
-        return;
+        return nil;
     }
 
-    NSURL * const pathUrl = [NSURL URLWithString:self.path];
+    NSString * const path = self.path;
+    if (path.length == 0) {
+        return nil;
+    }
+
+    return [NSURL fileURLWithPath:path];
+}
+
+- (void)moveToTrash
+{
+    NSURL * const pathUrl = self.localFileURL;
     if (pathUrl == nil) {
         return;
     }
@@ -508,11 +520,7 @@ static const struct input_item_parser_cbs_t parserCallbacks =
 
 - (void)revealInFinder
 {
-    if (self.isStream) {
-        return;
-    }
-
-    NSURL *pathUrl = [NSURL URLWithString:self.path];
+    NSURL * const pathUrl = self.localFileURL;
     if (pathUrl == nil) {
         return;
     }
@@ -596,7 +604,8 @@ BOOL differing_##prop = NO;
 NSString * const firstItem_##prop = firstInputItem.prop;
 
 #define UPDATE_IF_DIFFERING_BOOL(prop)                                                          \
-differing_##prop = differing_##prop || ![inputItem.prop isEqualToString:firstItem_##prop];
+differing_##prop = differing_##prop || ![NSString equalOrBothNil:inputItem.prop                \
+                                                                   to:firstItem_##prop];
 
 #define ADD_PROP_TO_DICT(prop)                                                              \
 NSString * firstItemValue_##prop = firstItem_##prop == nil ? @"" : firstItem_##prop;        \
@@ -615,7 +624,8 @@ NSString * const value_##prop =                                                 
 
         PERFORM_ACTION_PER_INPUTITEM_NSSTRING_PROP(UPDATE_IF_DIFFERING_BOOL);
         NSString * const inputItem_artworkURL = inputItem.artworkURL.absoluteString;
-        differing_artworkURL |= ![inputItem_artworkURL isEqualToString:firstItem_artworkURL];
+        differing_artworkURL |= ![NSString equalOrBothNil:inputItem_artworkURL
+                                                          to:firstItem_artworkURL];
     }
 
     PERFORM_ACTION_PER_INPUTITEM_PROP(ADD_PROP_TO_DICT);
@@ -628,73 +638,3 @@ NSString * const value_##prop =                                                 
 
     return [commonData copy];
 }
-
-
-@interface VLCInputNode ()
-{
-    NSArray<VLCInputNode *> *_cachedChildren;
-}
-@end
-
-@implementation VLCInputNode
-
-- (instancetype)initWithInputNode:(struct input_item_node_t *)p_inputNode
-{
-    self = [super init];
-    if (self && p_inputNode != NULL) {
-        _vlcInputItemNode = p_inputNode;
-
-        if (_vlcInputItemNode->p_item) {
-            _inputItem = [[VLCInputItem alloc] initWithInputItem:_vlcInputItemNode->p_item];
-        }
-    }
-    return self;
-}
-
-- (NSString *)description
-{
-    NSString *inputItemName;
-    if (_vlcInputItemNode && _vlcInputItemNode->p_item)
-        inputItemName = toNSStr(_vlcInputItemNode->p_item->psz_name);
-    else
-        inputItemName = @"p_item == nil";
-    return [NSString stringWithFormat:@"%@: node: %p input name: %@, number of children: %i", NSStringFromClass([self class]),_vlcInputItemNode, inputItemName, self.numberOfChildren];
-}
-
-- (void)clearChildrenCache
-{
-    _cachedChildren = nil;
-}
-
-- (int)numberOfChildren
-{
-    if (_cachedChildren) {
-        return (int)_cachedChildren.count;
-    }
-    return _vlcInputItemNode ? _vlcInputItemNode->i_children : 0;
-}
-
-- (nullable NSArray<VLCInputNode *> *)children
-{
-    if (_cachedChildren) {
-        return _cachedChildren;
-    }
-
-    if (_vlcInputItemNode == NULL) {
-        return nil;
-    }
-    NSMutableArray *mutableArray = [[NSMutableArray alloc] initWithCapacity:_vlcInputItemNode->i_children];
-    for (int i = 0; i < _vlcInputItemNode->i_children; i++) {
-        if (_vlcInputItemNode->pp_children == NULL) {
-            break;
-        }
-        VLCInputNode *inputNode = [[VLCInputNode alloc] initWithInputNode:_vlcInputItemNode->pp_children[i]];
-        if (inputNode) {
-            [mutableArray addObject:inputNode];
-        }
-    }
-    _cachedChildren = [mutableArray copy];
-    return _cachedChildren;
-}
-
-@end

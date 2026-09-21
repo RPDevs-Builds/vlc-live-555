@@ -1,6 +1,6 @@
 # libvpx
 
-VPX_VERSION := 1.16.0
+VPX_VERSION := 1.17.0
 VPX_URL := $(GITHUB)/webmproject/libvpx/archive/v${VPX_VERSION}.tar.gz
 
 ifneq ($(filter arm aarch64 i386 loongarch64 mipsel mips64el ppc64le x86_64 wasm32, $(ARCH)),)
@@ -138,12 +138,10 @@ VPX_CONF += --disable-runtime-cpu-detect
 endif
 VPX_CONF += --enable-vp8-decoder
 endif
-ifdef HAVE_DARWIN_OS
 ifeq ($(ARCH),$(filter $(ARCH), arm aarch64))
-ifneq ($(call clang_at_least, 13), true)
-# arm_neon.h broken on clang 12
+ifneq ($(call apple_clang_at_least, 13), true)
+# arm_neon.h broken on Apple Clang 12
 VPX_CONF += --disable-neon-dotprod
-endif
 endif
 endif
 

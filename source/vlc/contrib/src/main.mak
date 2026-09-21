@@ -152,12 +152,23 @@ EXTRA_LDFLAGS += -m32
 endif
 endif
 
+apple_clang_at_least = $(shell echo false)
+apple_clang_at_most  = $(shell echo false)
+apple_clang_major_is = $(shell echo false)
 clang_at_least = $(shell echo false)
 clang_at_most  = $(shell echo false)
 clang_major_is = $(shell echo false)
 gcc_at_least = $(shell echo false)
 gcc_at_most  = $(shell echo false)
 gcc_major_is = $(shell echo false)
+ifeq ($(shell $(CC) --version 2>/dev/null | grep -qi "Apple clang" || echo FAIL),)
+HAVE_APPLE_CLANG := 1
+HAVE_CLANG := 1
+CLANG_VERSION := $(shell $(CC) --version | head -1 | grep -o '[0-9]\+\.' | head -1 | cut -d '.' -f 1)
+apple_clang_at_least = $(shell [ $(CLANG_VERSION) -ge $(1) ] && echo true)
+apple_clang_at_most  = $(shell [ $(CLANG_VERSION) -le $(1) ] && echo true)
+apple_clang_major_is = $(shell [ $(CLANG_VERSION) -eq $(1) ] && echo true)
+else
 ifneq ($(findstring clang, $(shell $(CC) --version 2>/dev/null | grep -qi clang && echo "clang")),)
 HAVE_CLANG := 1
 CLANG_VERSION := $(shell $(CC) --version | head -1 | grep -o '[0-9]\+\.' | head -1 | cut -d '.' -f 1)
@@ -173,17 +184,18 @@ gcc_at_most  = $(shell [ $(GCC_VERSION) -le $(1) ] && echo true)
 gcc_major_is = $(shell [ $(GCC_VERSION) -eq $(1) ] && echo true)
 endif
 endif
+endif
 
 # -fno-stack-check is a workaround for a possible
 # bug in Xcode 11 or macOS 10.15+
-ifdef HAVE_DARWIN_OS
-ifeq ($(call clang_major_is, 11), true)
+ifeq ($(call apple_clang_major_is,11), true)
 EXTRA_CFLAGS += -fno-stack-check
 XCODE_FLAGS += OTHER_CFLAGS=-fno-stack-check
 endif
-endif
 
 cppcheck = $(shell printf '$(2)' | $(CC) $(CFLAGS) -E -dM - 2>/dev/null | grep -E $(1))
+
+try_cxx_compile = $(shell printf '$(1)' | $(CXX) $(CXXFLAGS) $(2) -x c++ -c - -o /dev/null 2>/dev/null && echo true)
 
 EXTRA_CFLAGS += -I$(PREFIX)/include
 CPPFLAGS := $(CPPFLAGS) $(EXTRA_CFLAGS)
@@ -643,7 +655,7 @@ else
 endif
 QT_HOST_PATH := -DQT_HOST_PATH=$(QT_HOST_PREFIX) -DQT_HOST_PATH_CMAKE_DIR=$(QT_HOST_LIBS)/cmake
 endif
-QT_CMAKE_CONFIG := -DCMAKE_TOOLCHAIN_FILE=$(PREFIX)/lib/cmake/Qt6/qt.toolchain.cmake $(QT_HOST_PATH)
+QT_CMAKE_CONFIG := -DCMAKE_TOOLCHAIN_FILE=$(PREFIX)/lib/cmake/Qt6/qt.toolchain.cmake $(QT_HOST_PATH) --log-level=STATUS
 ifdef QT_USES_SYSTEM_TOOLS
 # We checked the versions match, assume we know what we're going
 QT_CMAKE_CONFIG += -DQT_NO_PACKAGE_VERSION_CHECK=TRUE
@@ -746,6 +758,13 @@ prebuilt: vlc-contrib-$(HOST)-latest.tar.zst
 	$(UNPACK)
 	mv $(HOST) $(PREFIX)
 	cd $(PREFIX) && $(abspath $(SRC))/change_prefix.sh
+	# Regenerate the machine file with local tool paths, without rebuilding dependencies.
+	install -d "$(PREFIX)/share/meson/$(CROSS_OR_NATIVE)"
+	PREFIX="$(PREFIX)" \
+	$(SRC)/gen-meson-machinefile.py \
+		--type external-$(CROSS_OR_NATIVE) \
+		$(foreach tool,$(filter-out $(PKGS_FOUND),$(PKGS.tools)),--binary $(PKGS.tools.$(tool).config-tool):$(PKGS.tools.$(tool).path)) \
+		"$(PREFIX)/share/meson/$(CROSS_OR_NATIVE)/contrib.ini"
 
 package: install
 	rm -Rf tmp/

@@ -464,24 +464,24 @@ CLEAN_FILE += .buildmeson
 # ninja build
 #
 
-ninja-$(NINJA_VERSION).tar.gz:
+ninja-$(NINJA_BUILD_NAME).tar.gz:
 	$(call download_pkg,$(NINJA_URL),ninja)
 
+ninja: .cmake
 ninja: UNPACK_DIR=ninja-$(NINJA_BUILD_NAME)
-.getninja: ninja-$(NINJA_VERSION).tar.gz
-ninja: ninja-$(NINJA_VERSION).tar.gz
+.getninja: ninja-$(NINJA_BUILD_NAME).tar.gz
+ninja: ninja-$(NINJA_BUILD_NAME).tar.gz
 	$(UNPACK)
-	$(APPLY) $(TOOLS)/ninja-1.11.1-replace-pipes-quote-with-shlex-quote.patch
-	$(APPLY) $(TOOLS)/0001-CanonicalizePath-Remove-kMaxComponents-limit.patch
-	$(APPLY) $(TOOLS)/0002-CanonicalizePath-fix-a-b-._foo-a-replacement.patch
 	$(MOVE)
 
 .buildninja: ninja
-	(cd $<; python3 ./configure.py --bootstrap && mv ninja $(PREFIX)/bin/)
+	cmake -S $< -B $</vlc_build -DCMAKE_INSTALL_PREFIX:STRING=$(PREFIX) -DBUILD_TESTING=OFF
+	+cmake --build $</vlc_build
+	+cmake --install $</vlc_build
 	touch $@
 
 CLEAN_PKG += ninja
-DISTCLEAN_PKG += ninja-$(NINJA_VERSION).tar.gz
+DISTCLEAN_PKG += ninja-$(NINJA_BUILD_NAME).tar.gz
 CLEAN_FILE += .buildninja
 
 # gperf

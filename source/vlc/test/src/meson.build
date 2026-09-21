@@ -279,6 +279,7 @@ vlc_tests += {
         'player/teletext.c'),
     'suite' : ['src', 'test_src'],
     'link_with' : [libvlc, libvlccore],
+    'c_args' : use_zvbi ? ['-DZVBI_COMPILED=1'] : [],
     'module_depends' : vlc_plugins_targets.keys()
 }
 
@@ -336,6 +337,14 @@ vlc_tests += {
     'suite' : ['src', 'test_src'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : vlc_plugins_targets.keys()
+}
+
+vlc_tests += {
+    'name' : 'test_src_video_output_inhibit',
+    'sources' : files('video_output/inhibit.c'),
+    'suite' : ['src', 'test_src'],
+    'link_with' : [libvlc, libvlccore],
+    'module_depends' : ['demux_mock']
 }
 
 vlc_tests += {

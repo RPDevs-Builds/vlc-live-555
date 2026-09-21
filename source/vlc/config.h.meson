@@ -224,14 +224,14 @@
 /* Define to 1 if you have the <linux/magic.h> header file. */
 #mesondefine HAVE_LINUX_MAGIC_H
 
+/* Define to 1 if you have the <linux/videodev2.h> header file. */
+#mesondefine HAVE_LINUX_VIDEODEV2_H
+
 /* Define to 1 if you have the `lldiv' function. */
 #mesondefine HAVE_LLDIV
 
 /* Define to 1 if you have the `localtime_r' function. */
 #mesondefine HAVE_LOCALTIME_R
-
-/* Define to 1 if you have the lrintf function */
-#mesondefine HAVE_LRINTF
 
 /* Define to 1 if the system has the type `max_align_t'. */
 #mesondefine HAVE_MAX_ALIGN_T
@@ -402,6 +402,9 @@
 
 /* Define to 1 if you have the <sys/uio.h> header file. */
 #mesondefine HAVE_SYS_UIO_H
+
+/* Define to 1 if you have the <sys/videoio.h> header file. */
+#mesondefine HAVE_SYS_VIDEOIO_H
 
 /* Define to 1 if you have the `tdestroy' function. */
 #mesondefine HAVE_TDESTROY
@@ -575,9 +578,6 @@
 
 /* Define to 1 if the X Window System is missing or not being used. */
 #mesondefine X_DISPLAY_MISSING
-
-/* Define if the zvbi module is built */
-// #undef ZVBI_COMPILED
 
 /* Define to 64 for large files support. */
 #define _FILE_OFFSET_BITS 64

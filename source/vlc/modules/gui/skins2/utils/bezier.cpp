@@ -29,20 +29,6 @@
 #include "bezier.hpp"
 #include <math.h>
 
-// XXX should be in VLC core
-#ifndef HAVE_LRINTF
-#   ifdef HAVE_LRINT
-#       define lrintf( x ) (int)rint( x )
-#   elif defined _WIN32
-        __inline long int lrintf( float x )
-        {
-            int i;
-            _asm fld x __asm fistp i
-            return i;
-        }
-#   endif
-#endif
-
 Bezier::Bezier( intf_thread_t *p_intf, const std::vector<float> &rAbscissas,
                 const std::vector<float> &rOrdinates, Flag_t flag )
     : SkinObject( p_intf )
@@ -227,4 +213,3 @@ void Bezier::computePoint( float t, int &x, int &y ) const
     x = lrintf(xPos);
     y = lrintf(yPos);
 }
-

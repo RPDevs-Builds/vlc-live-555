@@ -45,6 +45,22 @@ ImageExt {
     // No need to load images in this case:
     loadImages: (targetTextureProvider === root.sourceTextureProviderItem)
 
+    blending: {
+        if (effectiveRadius > 0.0)
+            return true // Outside the radius is always transparent, need blending
+
+        if (effectiveBackgroundColor.a > (1.0 - Number.EPSILON))
+            return false // If background color is opaque, no need for blending
+
+        if (textureProviderItem === textureProviderIndirection) {
+            console.assert(observer.source === textureProviderIndirection)
+            if (!observer.hasAlphaChannel)
+                return false // If the texture is opaque, no need for blending
+        }
+
+        return true
+    }
+
     /// <debug>
     readonly property QtObject _sourceWindow: (targetTextureProvider?.Window.window ?? null)
     function _onWindowChanged() {
@@ -61,6 +77,13 @@ ImageExt {
     TextureProviderIndirection {
         id: textureProviderIndirection
 
+        // `Image` interface, as `ImageExt` needs it:
+        readonly property int status: (source instanceof Image ? ((source.status === Image.Ready && observer.isValid) ? Image.Ready : Image.Loading)
+                                                               : (observer.isValid ? Image.Ready : Image.Null))
+
+        implicitWidth: (source instanceof Image) ? source.implicitWidth : textureSize.width
+        implicitHeight: (source instanceof Image) ? source.implicitHeight : textureSize.height
+
         readonly property bool sourceNeedsTiling: (root.fillMode === Image.Tile ||
                                                    root.fillMode === Image.TileVertically ||
                                                    root.fillMode === Image.TileHorizontally)
@@ -71,5 +94,13 @@ ImageExt {
         verticalWrapMode: sourceNeedsTiling ? TextureProviderIndirection.Repeat : TextureProviderIndirection.ClampToEdge
 
         textureSubRect: sourceNeedsTiling ? Qt.rect(0, 0, root.paintedWidth, root.paintedHeight) : undefined
+
+        readonly property size textureSize: observer.textureSize
+
+        TextureProviderObserver {
+            id: observer
+            source: textureProviderIndirection
+            notifyAllChanges: (root.visible && textureProviderIndirection.source)
+        }
     }
 }

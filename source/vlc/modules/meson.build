@@ -195,7 +195,7 @@ endif
 srt_dep = dependency('srt', version: '>=1.3.0', required: get_option('srt'))
 
 # libRist
-librist_dep = dependency('librist', required: get_option('rist'))
+librist_dep = dependency('librist', version: '>= 0.2.1', required: get_option('rist'))
 
 # MTP
 mtp_dep = dependency('libmtp', version: '>=1.0.0', required: get_option('mtp'))
@@ -382,16 +382,35 @@ endif
 # in the modules folder, not in gui/qt/ subfolder as
 # vlc-static would not find it there.
 if get_option('qt').allowed() and qt6_dep.found()
+    enable_qt_check = host_system not in ['windows', 'os/2', 'ios', 'tvos', 'visionos']
     executable('vlc-qt-check',
         files('gui/qt/vlc-qt-check.cpp'),
         dependencies: [qt6_dep, qt_extra_deps],
         include_directories: [vlc_include_dirs],
-        build_by_default: true,
-        install: true,
+        build_by_default: enable_qt_check,
+        install: enable_qt_check,
         install_dir: pkglibexecdir_path,
         c_args : qt_extra_flags,
         cpp_args : qt_extra_flags,
         link_args : qt_link_args,
+    )
+endif
+
+win_extra_sources = []
+if host_system == 'windows'
+    module_rc = configure_file(
+        input: 'module.rc.in',
+        output: 'module.rc',
+        configuration: rc_conf,
+        install: false,
+    )
+    win_extra_sources += windows_rc.compile_resources(
+        module_rc,
+        include_directories: [
+            vlc_src_root / 'share',
+            vlc_src_root / 'extras/package/win32',
+        ],
+        implicit_include_directories: true,
     )
 endif
 
@@ -467,7 +486,7 @@ foreach module : vlc_modules
 
     vlc_plugin = library(
         module['name'] + '_plugin',
-        module['sources'],
+        module['sources'] + win_extra_sources,
         link_with: [module.get('link_with', []), vlc_libcompat],
         link_args: module.get('link_args', []),
         link_depends: module.get('link_depends', []),

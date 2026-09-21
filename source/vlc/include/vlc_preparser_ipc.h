@@ -34,17 +34,17 @@
  */
 enum vlc_preparser_msg_req_type {
     /** 
-     * Type of the request emitted by a `vlc_preparser_Push` call.
+     * Type of the request emitted by a `vlc_preparser_req_NewParse` call.
      */
     VLC_PREPARSER_MSG_REQ_TYPE_PARSE,
     /**
-     * Type of the request emitted by a `vlc_preparser_GenerateThumbnail`
+     * Type of the request emitted by a `vlc_preparser_req_NewThumbnail`
      * call.
      */
     VLC_PREPARSER_MSG_REQ_TYPE_THUMBNAIL,
     /**
      * Type of the request emitted by a
-     * `vlc_preparser_GenerateThumbnailToFiles` call.
+     * `vlc_preparser_req_NewThumbnailToFiles` call.
      */
     VLC_PREPARSER_MSG_REQ_TYPE_THUMBNAIL_TO_FILES,
 };
@@ -265,13 +265,7 @@ typedef int (*vlc_preparser_msg_serdes_module)
     set_capability("preparser msg serdes", priority)
 
 /**
- * Call the serialize operation.
- *
- * @param [in]  s
- * @param [out] buf
- * @param [in]  msg
- *
- * @return      size of the allocated buffer.
+ * \copydoc vlc_preparser_msg_serdes_operations::serialize
  */
 static inline int
 vlc_preparser_msg_serdes_Serialize(struct vlc_preparser_msg_serdes *serdes,
@@ -287,13 +281,7 @@ vlc_preparser_msg_serdes_Serialize(struct vlc_preparser_msg_serdes *serdes,
 }
 
 /**
- * Call the deserialize operation.
- *
- * @param [in]  s
- * @param [in]  buf
- * @param [in]  size
- *
- * @return      size of the allocated buffer.
+ * \copydoc vlc_preparser_msg_serdes_operations::deserialize
  */
 static inline int
 vlc_preparser_msg_serdes_Deserialize(struct vlc_preparser_msg_serdes *serdes,

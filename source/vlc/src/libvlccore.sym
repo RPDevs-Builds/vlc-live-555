@@ -799,6 +799,7 @@ vout_display_New
 vout_display_Delete
 vout_display_Prepare
 vout_display_SetSize
+vout_display_SetFormat
 xml_Create
 text_style_Copy
 text_style_Create
@@ -1058,11 +1059,12 @@ vlc_input_attachment_Release
 vlc_input_attachment_New
 vlc_input_attachment_Hold
 vlc_preparser_New
-vlc_preparser_Push
 vlc_preparser_CheckThumbnailerFormat
 vlc_preparser_GetBestThumbnailerFormat
-vlc_preparser_GenerateThumbnail
-vlc_preparser_GenerateThumbnailToFiles
+vlc_preparser_req_NewParse
+vlc_preparser_req_NewThumbnail
+vlc_preparser_req_NewThumbnailToFiles
+vlc_preparser_Submit
 vlc_preparser_Cancel
 vlc_preparser_req_GetItem
 vlc_preparser_req_Release

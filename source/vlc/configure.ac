@@ -980,10 +980,6 @@ AC_CHECK_LIB([m], [cos], [
 ])
 AC_SUBST([LIBM])
 
-AC_CHECK_LIB([m], [lrintf], [
-  AC_DEFINE(HAVE_LRINTF, 1, [Define to 1 if you have the lrintf function])
-  VLC_ADD_LIBS([skins2],[-lm])
-])
 AC_CHECK_LIB([m], [nanf],
   AC_DEFINE(HAVE_NANF, 1, [Define to 1 if you have the NANF function])
 )
@@ -3210,7 +3206,7 @@ PKG_ENABLE_MODULES_VLC([DAALA], [], [daaladec daalaenc], [experimental daala cod
 dnl
 dnl  OpenAPV decoder plugin
 dnl
-PKG_ENABLE_MODULES_VLC([OPENAPV], [], [oapv >= 0.2], [OpenAPV decoder], [auto])
+PKG_ENABLE_MODULES_VLC([OPENAPV], [], [oapv >= 0.3], [OpenAPV decoder], [auto])
 
 dnl
 dnl  PNG decoder module
@@ -3352,7 +3348,6 @@ AS_IF( [test "${enable_zvbi}" != "no"],[
     PKG_CHECK_MODULES(ZVBI, [zvbi-0.2 >= 0.2.28],
         [
           VLC_ADD_PLUGIN([zvbi])
-          AC_DEFINE(ZVBI_COMPILED, 1, [Define if the zvbi module is built])
           have_zvbi="yes"
           AS_IF( [test "${enable_telx}" = "yes"],[
                   AC_MSG_WARN([The zvbi and telx modules are incompatible. Using zvbi.])
@@ -4876,7 +4871,7 @@ PKG_ENABLE_MODULES_VLC([SRT], [access_srt access_output_srt], [srt >= 1.3.2], [S
 dnl
 dnl  RIST plugin
 dnl
-PKG_ENABLE_MODULES_VLC([RIST], [rist access_output_rist], [librist], [RIST input/output plugin (default auto)])
+PKG_ENABLE_MODULES_VLC([RIST], [rist access_output_rist], [librist >= 0.2.1], [RIST input/output plugin (default auto)])
 
 EXTEND_HELP_STRING([Visualisations and Video filter plugins:])
 dnl

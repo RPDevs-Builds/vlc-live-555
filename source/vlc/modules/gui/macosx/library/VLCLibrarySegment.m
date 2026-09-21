@@ -28,6 +28,7 @@
 #import "extensions/NSString+Helpers.h"
 
 #import "library/VLCInputItem.h"
+#import "library/VLCInputNode.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryModel.h"
@@ -858,7 +859,7 @@ NSArray<NSString *> *defaultBookmarkedLocations()
                 [remainingBookmarkedLocations removeObject:locationMrl];
                 continue;
             }
-            NSString * const locationName = locationMrl.lastPathComponent;
+            NSString * const locationName = [locationMrl.lastPathComponent stringByRemovingPercentEncoding];
             VLCLibrarySegmentBookmarkedLocation * const descriptor =
                 [[VLCLibrarySegmentBookmarkedLocation alloc] initWithSegmentType:segmentType
                                                                             name:locationName

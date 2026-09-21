@@ -25,6 +25,7 @@
 
 #import "extensions/NSString+Helpers.h"
 #import "library/VLCInputItem.h"
+#import "library/VLCInputNode.h"
 
 @interface VLCMediaSource ()
 {
@@ -85,19 +86,21 @@ static void cb_preparse_ended(vlc_media_tree_t * __unused p_tree,
                               int status,
                               void *p_data)
 {
-    VLCMediaSource * const mediaSource = (__bridge VLCMediaSource *)p_data;
-    VLCInputItem * const inputItem = p_node->p_item == NULL
-        ? nil
-        : [[VLCInputItem alloc] initWithInputItem:p_node->p_item];
-    NSDictionary * const userInfo = inputItem == nil
-        ? @{ VLCMediaSourcePreparseStatusKey: @(status) }
-        : @{ VLCMediaSourcePreparseInputItemKey: inputItem,
-             VLCMediaSourcePreparseStatusKey: @(status) };
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourcePreparsingEnded
-                                                          object:mediaSource
-                                                        userInfo:userInfo];
-    });
+    @autoreleasepool {
+        VLCMediaSource * const mediaSource = (__bridge VLCMediaSource *)p_data;
+        VLCInputItem * const inputItem = p_node->p_item == NULL
+            ? nil
+            : [[VLCInputItem alloc] initWithInputItem:p_node->p_item];
+        NSDictionary * const userInfo = inputItem == nil
+            ? @{ VLCMediaSourcePreparseStatusKey: @(status) }
+            : @{ VLCMediaSourcePreparseInputItemKey: inputItem,
+                 VLCMediaSourcePreparseStatusKey: @(status) };
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [NSNotificationCenter.defaultCenter postNotificationName:VLCMediaSourcePreparsingEnded
+                                                              object:mediaSource
+                                                            userInfo:userInfo];
+        });
+    }
 }
 
 static const struct vlc_media_tree_callbacks treeCallbacks = {
@@ -367,6 +370,7 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         });
         return [NSError errorWithDomain:NSPOSIXErrorDomain code:ENOMEM userInfo:nil];
     }
+    vlc_preparser_req_Release(request);
     return nil;
 }
 

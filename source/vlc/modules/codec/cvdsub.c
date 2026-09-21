@@ -393,8 +393,14 @@ static void ParseMetaInfo( decoder_t *p_dec, block_t *p_spu  )
             int lastx;
             int lasty;
             ExtractXY(lastx, lasty);
-            p_sys->i_width  = lastx - p_sys->i_x_start + 1;
-            p_sys->i_height = lasty - p_sys->i_y_start + 1;
+            if( lastx >= p_sys->i_x_start )
+                p_sys->i_width = lastx - p_sys->i_x_start + 1;
+            else
+                p_sys->i_width = 0;
+            if( lasty >= p_sys->i_y_start )
+                p_sys->i_height = lasty - p_sys->i_y_start + 1;
+            else
+                p_sys->i_height = 0;
 
 #ifdef DEBUG_CVDSUB
             msg_Dbg( p_dec, "end position (%d,%d), w x h: %"PRIu16"x%"PRIu16,
@@ -478,8 +484,11 @@ static void ParseMetaInfo( decoder_t *p_dec, block_t *p_spu  )
         case 0x47:
             /* offset to start of even rows of interlaced image, we correct
              * to make it relative to i_image_offset (usually 4) */
-            p_sys->first_field_offset =
-                (p[2] << 8) + p[3] - p_sys->i_image_offset;
+            p_sys->first_field_offset = (p[2] << 8) + p[3];
+            if( p_sys->first_field_offset < p_sys->i_image_offset )
+                p_sys->first_field_offset -= p_sys->i_image_offset;
+            else
+                p_sys->first_field_offset = 0;
 #ifdef DEBUG_CVDSUB
             msg_Dbg( p_dec, "1st_field_offset %zu",
                      p_sys->first_field_offset );
@@ -489,8 +498,11 @@ static void ParseMetaInfo( decoder_t *p_dec, block_t *p_spu  )
         case 0x4f:
             /* offset to start of odd rows of interlaced image, we correct
              * to make it relative to i_image_offset (usually 4) */
-            p_sys->second_field_offset =
-                (p[2] << 8) + p[3] - p_sys->i_image_offset;
+            p_sys->second_field_offset = (p[2] << 8) + p[3];
+            if( p_sys->second_field_offset < p_sys->i_image_offset )
+                p_sys->second_field_offset -= p_sys->i_image_offset;
+            else
+                p_sys->second_field_offset = 0;
 #ifdef DEBUG_CVDSUB
             msg_Dbg( p_dec, "2nd_field_offset %zu",
                      p_sys->second_field_offset);

@@ -2491,13 +2491,15 @@ static int64_t avi_index_Append( avi_index_t *p_index, uint64_t *pi_last_pos,
             p_index->i_max += INDEX_EXTENT;
         else
             p_index->i_max = MAX_INDEX_ENTRIES;
-        p_index->p_entry = realloc_or_free( p_index->p_entry,
-                                            p_index->i_max * sizeof(avi_entry_t) );
-        if( !p_index->p_entry )
+        void *r_entry = vlc_reallocarray( p_index->p_entry,
+                                          p_index->i_max, sizeof(avi_entry_t) );
+        if( unlikely( r_entry == NULL ) )
         {
+            free( p_index->p_entry );
             avi_index_Init( p_index );
             return -1;
         }
+        p_index->p_entry = r_entry;
     }
     /* calculate cumulate length */
     if( p_index->i_size > 0 )
@@ -3074,7 +3076,7 @@ static void AVI_ExtractSubtitle( demux_t *p_demux,
 
     p_indx = AVI_ChunkFind( p_strl, AVIFOURCC_indx, 0, false );
     avi_chunk_t ck;
-    AVI_ChunkInit( &ck );
+    AVI_ChunkInit( &ck, p_strl->i_depth + 1 );
     int64_t  i_position;
     unsigned i_size;
     if( p_indx )

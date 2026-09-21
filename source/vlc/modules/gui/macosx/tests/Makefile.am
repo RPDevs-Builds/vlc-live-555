@@ -9,13 +9,38 @@ check_PROGRAMS += VLCMacOSXTests
 TESTS += $(macosx_gui_xctest_bundles)
 
 VLCMacOSXTests_SOURCES = \
+	gui/macosx/tests/VLCHexNumberFormatterTest.m \
+	gui/macosx/tests/NSStringHelpersTest.m \
+	gui/macosx/tests/VLCLibraryDataTypesTest.m \
+	gui/macosx/tests/VLCLibraryDataTypesTestSupport.m \
+	gui/macosx/tests/VLCInputItemTest.m \
+	gui/macosx/tests/VLCInputItemTestSupport.m \
+	gui/macosx/tests/VLCInputNodeTest.m \
+	gui/macosx/tests/VLCLibraryDataTypesIntegrationTest.m \
+	gui/macosx/tests/VLCLibraryDataTypesIntegrationTestSupport.m \
+	gui/macosx/tests/VLCLogMessageTest.m \
 	gui/macosx/tests/VLCPositionFormatterTest.m \
-	gui/macosx/extensions/VLCPositionFormatter.m
+	gui/macosx/tests/VLCTimeFormatterTest.m \
+	gui/macosx/extensions/VLCHexNumberFormatter.m \
+	gui/macosx/extensions/VLCPositionFormatter.m \
+	gui/macosx/extensions/NSString+Helpers.m \
+	gui/macosx/library/VLCLibraryDataTypes.m \
+	gui/macosx/library/VLCInputItem.m \
+	gui/macosx/library/VLCInputNode.m \
+	gui/macosx/windows/logging/VLCLogMessage.m \
+	gui/macosx/views/VLCTimeFormatter.m
+
+noinst_HEADERS += \
+	gui/macosx/tests/VLCInputItemTestSupport.h \
+	gui/macosx/tests/VLCLibraryDataTypesTestSupport.h \
+	gui/macosx/tests/VLCLibraryDataTypesIntegrationTestSupport.h
 
 VLCMacOSXTests_CPPFLAGS = \
 	$(AM_CPPFLAGS) \
+	-DVLC_MACOSX_TEST_SOURCE_DIR=\"$(abs_top_srcdir)\" \
 	-F"$(macosx_gui_xctest_frameworks_dir)" \
-	-I$(srcdir)/gui/macosx
+	-I$(srcdir)/gui/macosx \
+	-I$(top_srcdir)
 
 VLCMacOSXTests_OBJCFLAGS = \
 	$(AM_OBJCFLAGS) \
@@ -28,10 +53,22 @@ VLCMacOSXTests_LDFLAGS = \
 	-bundle \
 	-F"$(macosx_gui_xctest_frameworks_dir)" \
 	-Wl,-rpath,"$(macosx_gui_xctest_frameworks_dir)" \
+	-Wl,-rpath,"$(abs_top_builddir)/src/.libs" \
+	-Wl,-rpath,"$(abs_top_builddir)/lib/.libs" \
 	-Wl,-framework,XCTest \
-	-Wl,-framework,Foundation
+	-Wl,-framework,Foundation \
+	-Wl,-framework,Cocoa \
+	-Wl,-framework,IOKit
 
-VLCMacOSXTests_LDADD =
+VLCMacOSXTests_LDADD = \
+	$(top_builddir)/lib/libvlc.la \
+	$(top_builddir)/src/libvlccore.la \
+	-lsqlite3
+
+VLCMacOSXTests_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(OBJCLD) \
+	$(VLCMacOSXTests_OBJCFLAGS) $(OBJCFLAGS) \
+	$(VLCMacOSXTests_LDFLAGS) $(LDFLAGS) -o $@
 
 VLCMacOSXTests.xctest: VLCMacOSXTests$(EXEEXT) $(srcdir)/gui/macosx/tests/VLCMacOSXTests-Info.plist
 	$(AM_V_GEN)rm -rf $@

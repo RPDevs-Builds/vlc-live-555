@@ -249,17 +249,19 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
         _frameRate = p_track->v.i_fpsNum;
         _frameRateDenominator = p_track->v.i_fpsDen;
 
-        const unsigned int realHeight = MIN(_videoWidth, _videoHeight);
-        const unsigned int realWidth = MAX(_videoWidth, _videoHeight);
+        if (p_track->i_type == VLC_ML_TRACK_TYPE_VIDEO) {
+            const unsigned int realHeight = MIN(_videoWidth, _videoHeight);
+            const unsigned int realWidth = MAX(_videoWidth, _videoHeight);
 
-        if (realHeight >= VLCMediaLibrary8KHeight || realWidth >= VLCMediaLibrary8KHeight * (16.0 / 9.0)) {
-            _resolutionLabel = _NS("8K");
-        } else if (realHeight >= VLCMediaLibrary4KHeight || realWidth >= VLCMediaLibrary4KHeight * (16.0 / 9.0)) {
-            _resolutionLabel = _NS("4K");
-        } else if (realHeight >= VLCMediaLibrary1080pHeight || realWidth >= VLCMediaLibrary1080pHeight * (16.0 / 9.0)) {
-            _resolutionLabel = _NS("HD");
-        } else if (realHeight >= VLCMediaLibrary540pHeight || realWidth >= VLCMediaLibrary540pHeight * (16.0 / 9.0)) {
-            _resolutionLabel = _NS("SD");
+            if (realHeight >= VLCMediaLibrary8KHeight || realWidth >= VLCMediaLibrary8KHeight * (16.0 / 9.0)) {
+                _resolutionLabel = _NS("8K");
+            } else if (realHeight >= VLCMediaLibrary4KHeight || realWidth >= VLCMediaLibrary4KHeight * (16.0 / 9.0)) {
+                _resolutionLabel = _NS("4K");
+            } else if (realHeight >= VLCMediaLibrary1080pHeight || realWidth >= VLCMediaLibrary1080pHeight * (16.0 / 9.0)) {
+                _resolutionLabel = _NS("HD");
+            } else if (realHeight >= VLCMediaLibrary540pHeight || realWidth >= VLCMediaLibrary540pHeight * (16.0 / 9.0)) {
+                _resolutionLabel = _NS("SD");
+            }
         }
     }
     return self;
@@ -1011,6 +1013,7 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     self = [super init];
     if (self && p_playlist != NULL) {
         self.libraryID = p_playlist->i_id;
+        self.smallArtworkGenerated = p_playlist->psz_artwork_mrl != NULL;
         self.smallArtworkMRL = toNSStr(p_playlist->psz_artwork_mrl);
         self.displayString = toNSStr(p_playlist->psz_name);
         const unsigned int numberOfMedia = p_playlist->i_nb_media;
@@ -1092,26 +1095,25 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
         NSURL * const URL = [NSURL URLWithString:_MRL];
         if (URL == nil || !URL.isFileURL) {
             NSLog(@"Playlist %@ is not file-backed or is a dir (?)", self.displayString);
-            return;
-        }
-        NSFileManager * const fileManager = NSFileManager.defaultManager;
-        const BOOL fileExists = [fileManager fileExistsAtPath:URL.path];
-        
-        if (!fileExists) {
-            NSLog(@"Playlist file does not exist: %@", URL.path);
-            return;
-        }
-        
-        // This is a file-based playlist, move the file to trash
-        NSError *error = nil;
-        [fileManager trashItemAtURL:URL
-                    resultingItemURL:nil
-                                error:&error];
-        if (error) {
-            NSLog(@"Failed to move playlist file to trash: %@", error);
         } else {
-            NSLog(@"Successfully moved playlist file %@ to trash", URL.lastPathComponent);
-            return;
+            NSFileManager * const fileManager = NSFileManager.defaultManager;
+            const BOOL fileExists = [fileManager fileExistsAtPath:URL.path];
+
+            if (!fileExists) {
+                NSLog(@"Playlist file does not exist: %@", URL.path);
+            } else {
+                // This is a file-based playlist, move the file to trash
+                NSError *error = nil;
+                [fileManager trashItemAtURL:URL
+                            resultingItemURL:nil
+                                        error:&error];
+                if (error) {
+                    NSLog(@"Failed to move playlist file to trash: %@", error);
+                } else {
+                    NSLog(@"Successfully moved playlist file %@ to trash", URL.lastPathComponent);
+                    return;
+                }
+            }
         }
     }
     
@@ -1150,6 +1152,9 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     NSUInteger rangeLen = 1;
     for (NSUInteger i = 1; i < sorted.count; i++) {
         const NSUInteger pos = sorted[i].unsignedIntegerValue;
+        if (pos == rangeStart + rangeLen - 1) {
+            continue;
+        }
         if (pos == rangeStart + rangeLen) {
             rangeLen++;
             continue;
@@ -1172,14 +1177,23 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
                     (unsigned long)range.length, (unsigned long)range.location, self.libraryID);
         }
     }
+
+    // Drop the cached media list so the next -mediaItems access re-fetches.
+    _mediaItems = nil;
 }
 
 - (void)revealInFinder
 {
-    NSURL * const URL = [NSURL URLWithString:_MRL];
-    if (URL) {
-        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[URL]];
+    if (_MRL.length == 0) {
+        return;
     }
+
+    NSURL * const URL = [NSURL URLWithString:_MRL];
+    if (URL == nil || !URL.isFileURL) {
+        return;
+    }
+
+    [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[URL]];
 }
 
 - (int)setFavorite:(BOOL)favorite
@@ -1270,6 +1284,26 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
 @synthesize secondaryActionableDetailLibraryItem = _secondaryActionableDetailLibraryItem;
 @synthesize favorited = _favorited;
 @synthesize isFileBacked = _isFileBacked;
+
++ (nullable NSArray<VLCMediaLibraryMediaItem *> *)mediaItemsFromPasteboardData:(NSData *)data
+{
+    NSParameterAssert(data != nil);
+    if (data == nil) {
+        return nil;
+    }
+
+    NSError *unarchiveError = nil;
+    NSArray<VLCMediaLibraryMediaItem *> * const items =
+        [NSKeyedUnarchiver unarchivedObjectOfClasses:[NSSet setWithObjects:[NSArray class], [VLCMediaLibraryMediaItem class], nil]
+                                            fromData:data
+                                               error:&unarchiveError];
+    if (unarchiveError != nil) {
+        NSLog(@"Failed to unarchive MediaLibrary Item drag payload: %@", unarchiveError);
+        return nil;
+    }
+
+    return items;
+}
 
 + (BOOL)supportsSecureCoding
 {

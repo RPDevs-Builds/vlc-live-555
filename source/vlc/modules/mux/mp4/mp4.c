@@ -154,6 +154,8 @@ typedef struct
     uint32_t         i_indexentries;
 } mp4_stream_t;
 
+static int MuxFragBlock(sout_mux_t *, mp4_stream_t *, block_t *);
+
 typedef struct
 {
     mp4mux_handle_t *muxh;
@@ -568,19 +570,24 @@ static void DelStream(sout_mux_t *p_mux, sout_input_t *p_input)
     sout_mux_sys_t *p_sys = p_mux->p_sys;
     mp4_stream_t *p_stream = (mp4_stream_t*)p_input->p_sys;
 
-    if(!mp4mux_Is(p_sys->muxh, FRAGMENTED))
-    {
-        vlc_fifo_Lock( p_input->p_fifo );
-        block_t *p_data = vlc_fifo_DequeueAllUnlocked( p_input->p_fifo );
-        vlc_fifo_Unlock( p_input->p_fifo );
-        while( p_data != NULL )
-        {
-              block_t *p_next = p_data->p_next;
-              p_data->p_next = NULL;
-              MuxStream(p_mux, p_input, p_stream, p_data);
-              p_data = p_next;
-        }
+    vlc_fifo_Lock( p_input->p_fifo );
+    block_t *p_data = vlc_fifo_DequeueAllUnlocked( p_input->p_fifo );
+    vlc_fifo_Unlock( p_input->p_fifo );
 
+    const bool fragmented = mp4mux_Is(p_sys->muxh, FRAGMENTED);
+    while (p_data != NULL)
+    {
+        block_t *p_next = p_data->p_next;
+        p_data->p_next = NULL;
+        if (fragmented)
+            MuxFragBlock(p_mux, p_stream, p_data);
+        else
+            MuxStream(p_mux, p_input, p_stream, p_data);
+        p_data = p_next;
+    }
+
+    if (!fragmented)
+    {
         if(CreateCurrentEdit(p_stream, p_sys->i_start_dts, false))
             mp4mux_track_DebugEdits(VLC_OBJECT(p_mux), p_stream->tinfo);
     }
@@ -1505,8 +1512,6 @@ static void CloseFrag(vlc_object_t *p_this)
 
 static int MuxFrag(sout_mux_t *p_mux)
 {
-    sout_mux_sys_t *p_sys = (sout_mux_sys_t*) p_mux->p_sys;
-
     int i_stream = sout_MuxGetStream(p_mux, 1, NULL);
     if (i_stream < 0)
         return VLC_SUCCESS;
@@ -1517,6 +1522,15 @@ static int MuxFrag(sout_mux_t *p_mux)
     block_t *p_currentblock = block_FifoGet(p_input->p_fifo);
     if(unlikely(!p_currentblock))
         return VLC_EGENERIC;
+
+    return MuxFragBlock(p_mux, p_stream, p_currentblock);
+}
+
+/* Mux one already-dequeued frame of p_stream in fragmented mode. */
+static int MuxFragBlock(sout_mux_t *p_mux, mp4_stream_t *p_stream,
+                        block_t *p_currentblock)
+{
+    sout_mux_sys_t *p_sys = (sout_mux_sys_t*) p_mux->p_sys;
 
     int ret = BlockConvert(p_stream, &p_currentblock);
     if (ret != VLC_SUCCESS)

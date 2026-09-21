@@ -182,11 +182,11 @@ static oapv_imgb_t *GetImage( decoder_t *p_dec )
     for (int i = 0; i < pic->i_planes; i++)
     {
         imgb->w[i] = pic->p[i].i_visible_pitch / pic->p[i].i_pixel_pitch;
-        imgb->h[i] = pic->p[i].i_visible_lines / pic->p[i].i_pixel_pitch;
+        imgb->h[i] = pic->p[i].i_visible_lines;
 
         imgb->aw[i] = pic->p[i].i_pitch / pic->p[i].i_pixel_pitch;
         imgb->s[i] = pic->p[i].i_pitch;
-        imgb->ah[i] = pic->p[i].i_lines / pic->p[i].i_pixel_pitch;
+        imgb->ah[i] = pic->p[i].i_lines;
         imgb->e[i] = pic->p[i].i_lines;
         imgb->bsize[i] = imgb->s[i] * imgb->e[i];
         imgb->a[i] = pic->p[i].p_pixels;
@@ -218,7 +218,10 @@ static int Decode( decoder_t *p_dec, block_t *p_block )
     ofrms.num_frms = 1;
     ofrms.frm[0].imgb = GetImage(p_dec);
     if (ofrms.frm[0].imgb == NULL)
+    {
+        block_Release(p_block);
         return VLCDEC_ECRITICAL; // no more memory ?
+    }
 
     bitb.addr = p_block->p_buffer;
     bitb.ssize = p_block->i_buffer;
@@ -228,6 +231,7 @@ static int Decode( decoder_t *p_dec, block_t *p_block )
     {
         msg_Err( p_dec, "decoding error %d", err );
         ofrms.frm[0].imgb->release(ofrms.frm[0].imgb);
+        block_Release(p_block);
         return VLCDEC_ECRITICAL;
     }
 
@@ -240,6 +244,7 @@ static int Decode( decoder_t *p_dec, block_t *p_block )
 
         decoder_QueueVideo( p_dec, decoded );
     }
+    block_Release(p_block);
     for (int i=0; i<stats.aui.num_frms; i++)
     {
         ofrms.frm[i].imgb->release(ofrms.frm[i].imgb);
@@ -344,6 +349,8 @@ int OpenAPVDecoder(vlc_object_t *o)
     dec->fmt_out.i_codec = FindVlcChroma(profile_idc, bit_depth_minus8, chroma_format_idc);
     dec->fmt_out.video.i_chroma = dec->fmt_out.i_codec;
 
+    dec->p_sys = sys;
+
     if (decoder_UpdateVideoOutput(dec, NULL) != 0)
     {
         msg_Err(o, "decoder_UpdateVideoOutput failed");
@@ -358,8 +365,6 @@ int OpenAPVDecoder(vlc_object_t *o)
             break;
         }
     }
-
-    dec->p_sys = sys;
 
     dec->pf_decode = Decode;
 

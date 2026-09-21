@@ -198,12 +198,13 @@ static void Filter( filter_t *p_filter, picture_t *p_pic, picture_t *p_outpic )
 
     size_t i_y_plane_bytes;
     if( ckd_mul( &i_y_plane_bytes, p_pic->p[Y_PLANE].i_visible_lines, p_pic->p[Y_PLANE].i_pitch ) ||
-        ckd_mul( &i_y_plane_bytes, i_y_plane_bytes, sizeof( type_t ) ) )
+        ckd_mul( &i_y_plane_bytes, i_y_plane_bytes, sizeof( type_t ) ) ||
+        i_y_plane_bytes == 0 )
         return; // FIXME: nullify output ?
 
     if( !p_sys->pt_buffer )
     {
-        p_sys->pt_buffer = realloc_or_free( p_sys->pt_buffer, i_y_plane_bytes );
+        p_sys->pt_buffer = malloc( i_y_plane_bytes );
         if( !p_sys->pt_buffer )
             return;
     }

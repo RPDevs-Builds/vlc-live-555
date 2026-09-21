@@ -418,7 +418,7 @@ static int Demux( demux_t * p_demux )
 
             /* We keep the ES to try reusing it in Ogg_BeginningOfStream
              * only 1 ES is supported (common case for ogg web radio) */
-            if( p_sys->i_streams == 1 && p_sys->pp_stream[0]->p_es )
+            if( p_sys->i_streams == 1 && p_sys->i_declared_streams == 1 && p_sys->pp_stream[0]->p_es )
             {
                 if( p_sys->p_old_stream ) /* if no setupEs has reused */
                     Ogg_LogicalStreamDelete( p_demux, p_sys->p_old_stream );
@@ -517,7 +517,7 @@ static int Demux( demux_t * p_demux )
         /* if we've just pulled page, look for the right logical stream */
         if( !p_sys->b_page_waiting )
         {
-            if( p_sys->i_streams == 1 &&
+            if( p_sys->i_streams == 1 && p_sys->i_declared_streams == 1 &&
                 ogg_page_serialno( &p_sys->current_page ) != p_stream->os.serialno )
             {
                 msg_Err( p_demux, "Broken Ogg stream (serialno) mismatch" );
@@ -1404,15 +1404,20 @@ static void Ogg_DecodePacket( demux_t *p_demux,
         if( !b_xiph && p_oggpacket->bytes > 0 &&
             (size_t)p_oggpacket->bytes < SIZE_MAX - p_stream->i_headers )
         {
-            p_stream->p_headers = realloc_or_free( p_stream->p_headers,
-                                                   p_stream->i_headers + p_oggpacket->bytes );
-            if( p_stream->p_headers )
+            uint8_t *r_headers = realloc( p_stream->p_headers,
+                                          p_stream->i_headers + p_oggpacket->bytes );
+            if( likely( r_headers != NULL ) )
             {
-                memcpy( (uint8_t*)p_stream->p_headers + p_stream->i_headers, p_oggpacket->packet, p_oggpacket->bytes );
+                p_stream->p_headers = r_headers;
+                memcpy( r_headers + p_stream->i_headers, p_oggpacket->packet, p_oggpacket->bytes );
                 p_stream->i_headers += p_oggpacket->bytes;
             }
             else
+            {
+                free( p_stream->p_headers );
+                p_stream->p_headers = NULL;
                 p_stream->i_headers = 0;
+            }
         }
         else if( b_xiph &&
                  xiph_AppendHeaders( &p_stream->i_headers, &p_stream->p_headers,
@@ -1685,8 +1690,14 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
                     break;
                 }
             }
-            break;
+            return p_ogg->i_streams ? VLC_SUCCESS : VLC_EGENERIC;
         }
+
+        if( unlikely(p_ogg->i_declared_streams == INT_MAX) )
+            return VLC_EGENERIC;
+
+         /* New BOS, so new stream */
+        p_ogg->i_declared_streams++;
 
         /* Try to configure the new stream */
         logical_stream_t *p_stream = Ogg_FindLogicalStream( p_demux, &p_ogg->current_page );
@@ -1699,7 +1710,7 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
             p_stream->b_initializing &= p_stream->b_force_backup;
     }
 
-    return p_ogg->i_streams ? VLC_SUCCESS : VLC_EGENERIC;
+    return VLC_EGENERIC;
 }
 
 static int Ogg_ConfigureStream( demux_t *p_demux, ogg_packet oggpacket, logical_stream_t *p_stream )
@@ -2002,7 +2013,7 @@ static int Ogg_ConfigureStream( demux_t *p_demux, ogg_packet oggpacket, logical_
                     else
                     {
                         msg_Dbg( p_demux, "stream %d has an old header "
-                            "but is of an unknown type", p_ogg->i_streams-1 );
+                            "but is of an unknown type", p_ogg->i_streams );
                         return VLC_EGENERIC;
                     }
                 }
@@ -2154,7 +2165,7 @@ static int Ogg_ConfigureStream( demux_t *p_demux, ogg_packet oggpacket, logical_
                     else
                     {
                         msg_Dbg( p_demux, "stream %d has a header marker "
-                            "but is of an unknown type", p_ogg->i_streams-1 );
+                            "but is of an unknown type", p_ogg->i_streams );
                         return VLC_EGENERIC;
                     }
                 }
@@ -2164,7 +2175,7 @@ static int Ogg_ConfigureStream( demux_t *p_demux, ogg_packet oggpacket, logical_
                 {
                     /* Skeleton */
                     msg_Dbg( p_demux, "stream %d is a skeleton",
-                                p_ogg->i_streams-1 );
+                                p_ogg->i_streams );
                     Ogg_ReadSkeletonHeader( p_demux, p_stream, &oggpacket );
                 }
                 /* Check for OggSpots header */
@@ -2324,6 +2335,7 @@ static void Ogg_EndOfStream( demux_t *p_demux )
     /* Reinit p_ogg */
     p_ogg->i_bitrate = 0;
     p_ogg->i_streams = 0;
+    p_ogg->i_declared_streams = 0;
     p_ogg->pp_stream = NULL;
     p_ogg->skeleton.major = 0;
     p_ogg->skeleton.minor = 0;

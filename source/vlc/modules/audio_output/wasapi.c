@@ -216,7 +216,6 @@ static HRESULT StartDeferred(aout_stream_t *s, vlc_tick_t date)
 
 static HRESULT Play(aout_stream_t *s, block_t *block, vlc_tick_t date)
 {
-    (void) date;
     aout_stream_sys_t *sys = s->sys;
     void *pv;
     HRESULT hr;
@@ -226,7 +225,8 @@ static HRESULT Play(aout_stream_t *s, block_t *block, vlc_tick_t date)
         hr = E_FAIL;
         goto out;
     }
-    else if (sys->started_state == STARTED_STATE_INIT)
+    /* Partial-block retries have no date: keep the already scheduled start. */
+    else if (sys->started_state == STARTED_STATE_INIT && date != VLC_TICK_INVALID)
     {
         hr = StartDeferred(s, date);
         if (FAILED(hr))
@@ -822,9 +822,14 @@ static HRESULT Start(aout_stream_t *s, audio_sample_format_t *restrict pfmt,
 
             /* Render Ambisonics on the native mix format */
             hr = IAudioClient_GetMixFormat(sys->client, &pwf_mix);
-            if (FAILED(hr) || vlc_FromWave(pwf_mix, &fmt))
+            if (FAILED(hr))
             {
                 msg_Dbg(s, "failed to use mix format");
+                vlc_ToWave(pwfe, &fmt); /* failed, fallback to default */
+            }
+            else if (vlc_FromWave(pwf_mix, &fmt))
+            {
+                msg_Dbg(s, "unsupported mix format");
                 LogWaveFormat(vlc_object_logger(s), pwf_mix);
                 vlc_ToWave(pwfe, &fmt); /* failed, fallback to default */
             }

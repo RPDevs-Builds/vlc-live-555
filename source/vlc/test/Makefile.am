@@ -32,6 +32,7 @@ player_programs = \
 noinst_PROGRAMS =
 check_PROGRAMS = \
 	test_libvlc_core \
+	test_libvlc_downloader \
 	test_libvlc_equalizer \
 	test_libvlc_media \
 	test_libvlc_media_callback \
@@ -68,6 +69,7 @@ check_PROGRAMS = \
 	test_src_misc_image \
 	test_src_misc_viewpoint \
 	test_src_video_output \
+	test_src_video_output_inhibit \
 	test_src_video_output_opengl \
 	test_src_video_output_spu \
 	test_modules_lua_extension \
@@ -168,6 +170,8 @@ LIBVLC = -L../lib -lvlc
 
 test_libvlc_core_SOURCES = libvlc/core.c
 test_libvlc_core_LDADD = $(LIBVLC)
+test_libvlc_downloader_SOURCES = libvlc/downloader.c
+test_libvlc_downloader_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_libvlc_equalizer_SOURCES = libvlc/equalizer.c
 test_libvlc_equalizer_LDADD = $(LIBVLC)
 test_libvlc_media_SOURCES = libvlc/media.c
@@ -285,6 +289,10 @@ test_src_player_seeks_SOURCES = src/player/common.h src/player/modules.c \
 test_src_player_seeks_LDADD = $(LIBVLCCORE) $(LIBVLC) $(LIBM)
 test_src_player_teletext_SOURCES = src/player/common.h src/player/modules.c \
 	src/player/teletext.c
+test_src_player_teletext_CPPFLAGS = $(AM_CPPFLAGS)
+if HAVE_ZVBI
+test_src_player_teletext_CPPFLAGS += -DZVBI_COMPILED=1
+endif
 test_src_player_teletext_LDADD = $(LIBVLCCORE) $(LIBVLC) $(LIBM)
 test_src_player_timers_SOURCES = src/player/common.h src/player/modules.c \
 	src/player/timers.c src/player/timers.h
@@ -319,6 +327,8 @@ test_src_video_output_SOURCES = \
 	src/video_output/video_output.h \
 	src/video_output/video_output_scenarios.c
 test_src_video_output_LDADD = $(LIBVLCCORE) $(LIBVLC)
+test_src_video_output_inhibit_SOURCES = src/video_output/inhibit.c
+test_src_video_output_inhibit_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_src_video_output_opengl_SOURCES = src/video_output/opengl.c
 test_src_video_output_opengl_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_src_video_output_spu_SOURCES = src/video_output/spu.c

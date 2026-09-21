@@ -108,6 +108,8 @@ typedef struct hls_playlist
     block_t *init_buff;
 
     bool ended;
+    /** Wall-clock time the playlist was finalized. */
+    vlc_tick_t ended_at;
 
     /**
      * Total duration of the muxed data.
@@ -180,6 +182,15 @@ typedef struct
             (i_##it == 0 ? &sys->variant_playlists : &sys->media_playlists),   \
             node)
 
+#define hls_active_playlists_foreach(it)                                       \
+    hls_playlists_foreach (it)                                                 \
+        if ((it)->ended) continue; else
+
+#define hls_active_playlist_foreach(it, list)                                  \
+    vlc_list_foreach_const (it, list, node)                                    \
+        if ((it)->ended) continue; else
+
+
 static int HTTPCallback(httpd_callback_sys_t *sys,
                         httpd_client_t *client,
                         httpd_message_t *answer,
@@ -236,7 +247,8 @@ static inline hls_track_t *MediaGetTrack(const hls_playlist_t *media_playlist)
 }
 
 VLC_MALLOC static char *GeneratePlaylistCodecInfo(const struct vlc_list *media_list,
-                                                  const hls_playlist_t *playlist)
+                                                  const hls_playlist_t *playlist,
+                                                  bool legacy_codecs)
 {
     es_format_vec_t already_described = VLC_VECTOR_INITIALIZER;
 
@@ -253,7 +265,7 @@ VLC_MALLOC static char *GeneratePlaylistCodecInfo(const struct vlc_list *media_l
 
         if (!is_stream_empty)
             vlc_memstream_putc(&out, ',');
-        if (hls_codec_Format(&out, &track->input->fmt) != VLC_SUCCESS)
+        if (hls_codec_Format(&out, &track->input->fmt, legacy_codecs) != VLC_SUCCESS)
             goto error;
         is_stream_empty = false;
         vlc_vector_push(&already_described, &track->input->fmt);
@@ -261,7 +273,7 @@ VLC_MALLOC static char *GeneratePlaylistCodecInfo(const struct vlc_list *media_l
 
     /* Describe codecs from all the EXT-X-MEDIA tracks. */
     const hls_playlist_t *media;
-    vlc_list_foreach_const (media, media_list, node)
+    hls_active_playlist_foreach (media, media_list)
     {
         track = MediaGetTrack(media);
 
@@ -270,7 +282,7 @@ VLC_MALLOC static char *GeneratePlaylistCodecInfo(const struct vlc_list *media_l
 
         if (!is_stream_empty)
             vlc_memstream_putc(&out, ',');
-        if (hls_codec_Format(&out, &track->input->fmt) != VLC_SUCCESS)
+        if (hls_codec_Format(&out, &track->input->fmt, legacy_codecs) != VLC_SUCCESS)
             goto error;
         is_stream_empty = false;
         vlc_vector_push(&already_described, &track->input->fmt);
@@ -295,7 +307,7 @@ static bool HasMediaRendition(const sout_stream_sys_t *sys,
                               enum es_format_category_e cat)
 {
     const hls_playlist_t *playlist;
-    vlc_list_foreach_const (playlist, &sys->media_playlists, node)
+    hls_active_playlist_foreach (playlist, &sys->media_playlists)
     {
         if (MediaGetTrack(playlist)->input->fmt.i_cat == cat)
             return true;
@@ -350,7 +362,7 @@ static int GenerateMainManifest(const sout_stream_sys_t *sys,
     bool spu_default_set = false;
 
     const hls_playlist_t *playlist;
-    vlc_list_foreach_const (playlist, &sys->media_playlists, node)
+    hls_active_playlist_foreach (playlist, &sys->media_playlists)
     {
         const hls_track_t *track = MediaGetTrack(playlist);
         const es_format_t *fmt = &track->input->fmt;
@@ -404,7 +416,7 @@ static int GenerateMainManifest(const sout_stream_sys_t *sys,
     }
 
     /* Format EXT-X-STREAM-INF */
-    vlc_list_foreach_const (playlist, &sys->variant_playlists, node)
+    hls_active_playlist_foreach (playlist, &sys->variant_playlists)
     {
         MANIFEST_START_TAG("#EXT-X-STREAM-INF")
             unsigned int bandwidth = 0;
@@ -413,8 +425,8 @@ static int GenerateMainManifest(const sout_stream_sys_t *sys,
                 bandwidth += track->input->fmt.i_bitrate;
             MANIFEST_ADD_ATTRIBUTE("BANDWIDTH=%u", bandwidth);
 
-            char *codecs =
-                GeneratePlaylistCodecInfo(&sys->media_playlists, playlist);
+            char *codecs = GeneratePlaylistCodecInfo(
+                &sys->media_playlists, playlist, sys->config.legacy_codecs);
             if (unlikely(codecs == NULL))
                 goto error;
             MANIFEST_ADD_ATTRIBUTE("CODECS=\"%s\"", codecs);
@@ -748,6 +760,17 @@ static hls_block_chain_t ExtractSegment(hls_playlist_t *playlist)
             return ExtractSubtitleSegment(&playlist->muxed_output, min_length);
         case HLS_PLAYLIST_TYPE_MP4:
         case HLS_PLAYLIST_TYPE_TS:
+            /* Draining: the last segment does not need to take care of the
+             * next one being IFrame padded. */
+            if (playlist->ended && playlist->muxed_output.length <= max_length)
+            {
+                hls_block_chain_t seg = {
+                    .begin = playlist->muxed_output.begin,
+                    .length = playlist->muxed_output.length,
+                };
+                hls_block_chain_Reset(&playlist->muxed_output);
+                return seg;
+            }
             return ExtractAVSegment(
                 playlist, &playlist->muxed_output, min_length, max_length);
     }
@@ -996,6 +1019,9 @@ static ssize_t AccessOutWrite(sout_access_out_t *access, block_t *block)
         if (it->access == access)
             PlaylistWriteMuxedOutput(it, block, length);
 
+        if (it->ended)
+            continue;
+
         if (!IsSegmentReady(it,
                             sys->config.segment_length,
                             sys->config.max_segment_length))
@@ -1005,7 +1031,7 @@ static ssize_t AccessOutWrite(sout_access_out_t *access, block_t *block)
 
     if (segments_ready)
     {
-        hls_playlists_foreach (it)
+        hls_active_playlists_foreach (it)
         {
             while (IsSegmentReady(it,
                                   sys->config.segment_length,
@@ -1103,6 +1129,7 @@ static hls_playlist_t *CreatePlaylist(sout_stream_t *stream,
     playlist->type = type;
     playlist->config = &sys->config;
     playlist->ended = false;
+    playlist->ended_at = VLC_TICK_INVALID;
     playlist->muxed_duration = 0;
     playlist->video_track_count = 0;
 
@@ -1184,7 +1211,8 @@ access_err:
 
 static void DeletePlaylist(hls_playlist_t *playlist)
 {
-    sout_MuxDelete(playlist->mux);
+    if (playlist->mux != NULL)
+        sout_MuxDelete(playlist->mux);
 
     sout_AccessOutDelete(playlist->access);
 
@@ -1210,6 +1238,25 @@ static void DeletePlaylist(hls_playlist_t *playlist)
     free(playlist->init_section_url);
 
     free(playlist);
+}
+
+static int UpdateMainManifest(sout_stream_t *stream)
+{
+    sout_stream_sys_t *sys = stream->p_sys;
+
+    struct hls_storage *new_manifest;
+    const int ret = GenerateMainManifest(sys, &new_manifest);
+    if (unlikely(ret != VLC_SUCCESS))
+        return ret;
+
+    if (sys->http_host != NULL)
+        httpd_UrlCatch(sys->http_manifest, HTTPD_MSG_GET, HTTPCallback,
+                       (httpd_callback_sys_t *)new_manifest);
+
+    if (sys->manifest != NULL)
+        hls_storage_Destroy(sys->manifest);
+    sys->manifest = new_manifest;
+    return VLC_SUCCESS;
 }
 
 static hls_playlist_t *AddPlaylist(sout_stream_t *stream,
@@ -1272,8 +1319,7 @@ Add(sout_stream_t *stream, const es_format_t *fmt, const char *es_id)
 
     vlc_list_append(&track->node, &playlist->tracks);
 
-    struct hls_storage *new_manifest;
-    const int manifest_ret = GenerateMainManifest(sys, &new_manifest);
+    const int manifest_ret = UpdateMainManifest(stream);
     if (unlikely(manifest_ret != VLC_SUCCESS))
     {
         msg_Err(stream, "Failed to generate main manifest: %s",
@@ -1282,18 +1328,6 @@ Add(sout_stream_t *stream, const es_format_t *fmt, const char *es_id)
         free(track);
         goto error;
     }
-
-    if (sys->http_host != NULL)
-    {
-        httpd_UrlCatch(sys->http_manifest,
-                       HTTPD_MSG_GET,
-                       HTTPCallback,
-                       (httpd_callback_sys_t *)new_manifest);
-    }
-
-    if (sys->manifest != NULL)
-        hls_storage_Destroy(sys->manifest);
-    sys->manifest = new_manifest;
 
     if (map != NULL && map->playlist_ref == NULL)
         map->playlist_ref = playlist;
@@ -1326,10 +1360,15 @@ static void Del(sout_stream_t *stream, void *id)
             map->playlist_ref = NULL;
 
         track->playlist_ref->ended = true;
-        ExtractAndAddSegment(track->playlist_ref, sys);
-        UpdatePlaylistManifest(track->playlist_ref);
+        track->playlist_ref->ended_at = vlc_tick_now();
 
-        DeletePlaylist(track->playlist_ref);
+        sout_MuxDelete(track->playlist_ref->mux);
+        track->playlist_ref->mux = NULL;
+
+        while (track->playlist_ref->muxed_output.begin != NULL &&
+               ExtractAndAddSegment(track->playlist_ref, sys) == VLC_SUCCESS)
+          ;
+        UpdatePlaylistManifest(track->playlist_ref);
     }
 
     free(track);
@@ -1357,11 +1396,33 @@ static void SetPCR(sout_stream_t *stream, vlc_tick_t pcr)
     const hls_playlist_t *playlist;
     vlc_list_foreach_const (playlist, &sys->media_playlists, node)
     {
-        if (playlist->type != HLS_PLAYLIST_TYPE_WEBVTT)
+        if (playlist->type != HLS_PLAYLIST_TYPE_WEBVTT || playlist->mux == NULL)
             continue;
 
         hls_sub_segmenter_SignalStreamUpdate(playlist->mux,
                                              sys->elapsed_stream_time);
+    }
+
+    /* Prune finalized playlists once the wall-clock time exceeds the window a
+     * client could still be playing them for. */
+    if (sys->config.max_segments != 0)
+    {
+        const vlc_tick_t now = vlc_tick_now();
+        const vlc_tick_t keep_window =
+            sys->config.max_segments * sys->config.max_segment_length
+            + sys->config.segment_length;
+        hls_playlist_t *pl;
+        bool pruned = false;
+        hls_playlists_foreach (pl)
+        {
+            if (pl->ended && now - pl->ended_at > keep_window)
+            {
+                DeletePlaylist(pl);
+                pruned = true;
+            }
+        }
+        if (pruned)
+            UpdateMainManifest(stream);
     }
 }
 
@@ -1406,6 +1467,10 @@ static void Close(sout_stream_t *stream)
 {
     sout_stream_sys_t *sys = stream->p_sys;
 
+    hls_playlist_t *pl;
+    hls_playlists_foreach(pl)
+        DeletePlaylist(pl);
+
     if (sys->http_host != NULL)
     {
         httpd_UrlDelete(sys->http_manifest);
@@ -1437,6 +1502,7 @@ static int Open(vlc_object_t *this)
         "base-url",
         "host-http",
         "max-memory",
+        "legacy-codecs",
         "num-seg",
         "out-dir",
         "pace",
@@ -1454,6 +1520,8 @@ static int Open(vlc_object_t *this)
     sys->config.max_segments =
         var_GetInteger(stream, SOUT_CFG_PREFIX "num-seg");
     sys->config.pace = var_GetBool(stream, SOUT_CFG_PREFIX "pace");
+    sys->config.legacy_codecs =
+        var_GetBool(stream, SOUT_CFG_PREFIX "legacy-codecs");
     sys->config.segment_length =
         VLC_TICK_FROM_SEC(var_GetInteger(stream, SOUT_CFG_PREFIX "seg-len"));
     sys->config.max_segment_length =
@@ -1595,6 +1663,14 @@ variant_error:
 
 #define SEGTYPE_LONGTEXT N_("Specifies the segments container")
 #define SEGTYPE_TEXT N_("Segment muxed format")
+#define LEGACYCODECS_TEXT N_("Use legacy codec identifiers")
+#define LEGACYCODECS_LONGTEXT                                                  \
+    N_("Use legacy codec identifiers instead of the spec-compliant ones. "     \
+       "Some codecs that were unofficially supported before an official "      \
+       "MPEG standardization differ in identifiers (eg. flac and opus). "      \
+       "Enable this for compatibility with clients that do not support the "   \
+       "standard identifiers.")
+
 static const char *const SEGMENT_TYPE_LIST[] = {
     "ts",
     "fmp4",
@@ -1622,6 +1698,7 @@ vlc_module_begin()
     add_integer(SOUT_CFG_PREFIX "num-seg", 0, NUMSEG_TEXT, NUMSEG_TEXT)
     add_string(SOUT_CFG_PREFIX "out-dir", NULL, OUTDIR_TEXT, OUTDIR_LONGTEXT)
     add_bool(SOUT_CFG_PREFIX "pace", false, PACE_TEXT, PACE_LONGTEXT)
+    add_bool(SOUT_CFG_PREFIX "legacy-codecs", false, LEGACYCODECS_TEXT, LEGACYCODECS_LONGTEXT)
     add_integer(SOUT_CFG_PREFIX "seg-len", 4, SEGLEN_TEXT, SEGLEN_LONGTEXT)
         change_integer_range(1, 60)
     add_integer(SOUT_CFG_PREFIX "max-seg-len", 0, MAXSEGLEN_TEXT, MAXSEGLEN_LONGTEXT)

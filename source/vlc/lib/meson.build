@@ -1,6 +1,7 @@
 libvlc_sources = [
     'core.c',
     'dialog.c',
+    'downloader.c',
     'renderer_discoverer.c',
     'error.c',
     'log.c',
@@ -21,6 +22,26 @@ libvlc_cargs = []
 if host_system in ['windows', 'os/2']
     libvlc_cargs += ['-DLIBVLC_DLL_EXPORT']
 endif
+
+
+if host_system == 'windows'
+    libvlc_rc = configure_file(
+        input: 'libvlc_win32_rc.rc.in',
+        output: 'libvlc_win32_rc.rc',
+        configuration: rc_conf,
+        install: false,
+    )
+    libvlc_sources += windows_rc.compile_resources(
+        libvlc_rc,
+        include_directories: [
+            vlc_src_root / 'share',
+            vlc_src_root / 'extras/package/win32',
+        ],
+        implicit_include_directories: true,
+        depend_files: files('../extras/package/win32/libvlc.dll.manifest'),
+    )
+endif
+
 
 libvlc = library('vlc',
     libvlc_sources, rev_target,
