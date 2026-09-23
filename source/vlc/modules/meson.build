@@ -451,6 +451,8 @@ foreach module : vlc_modules
         'extra_files',
         'enabled',
         'shortname',
+        'plugin_dir',
+        'install',
     ]
     foreach key : module.keys()
         if key not in valid_dict_keys
@@ -484,6 +486,12 @@ foreach module : vlc_modules
         shortname = module['shortname']
     endif
 
+    if module.has_key('plugin_dir')
+        plugin_dir = plugins_path / module['plugin_dir']
+    else
+        plugin_dir = plugins_path
+    endif
+
     vlc_plugin = library(
         module['name'] + '_plugin',
         module['sources'] + win_extra_sources,
@@ -499,8 +507,8 @@ foreach module : vlc_modules
         nasm_args: [module.get('nasm_args', []), []],
         extra_files: module.get('extra_files', []),
         build_by_default: true,
-        install: true,
-        install_dir: plugins_path,
+        install: module.get('install', true),
+        install_dir: plugin_dir,
         kwargs: kwargs,
         shortname: shortname,
     )
