@@ -915,7 +915,7 @@ InterfaceWindowHandlerWin32::~InterfaceWindowHandlerWin32()
     QApplication::instance()->removeNativeEventFilter(this);
 }
 
-void InterfaceWindowHandlerWin32::toggleWindowVisibility()
+void InterfaceWindowHandlerWin32::toggleWindowVisibility(bool _requestActivate)
 {
 
     switch ( m_window->visibility() )
@@ -923,11 +923,13 @@ void InterfaceWindowHandlerWin32::toggleWindowVisibility()
     case QWindow::Hidden:
         /* If hidden, show it */
         setInterfaceShown();
-        requestActivate();
+        if (_requestActivate)
+            requestActivate();
         break;
     case QWindow::Minimized:
         setInterfaceMinimized();
-        requestActivate();
+        if (_requestActivate)
+            requestActivate();
         break;
     default:
         {
@@ -949,7 +951,7 @@ void InterfaceWindowHandlerWin32::toggleWindowVisibility()
             }
             if( !hwnd || !GetWindowInfo( hwnd, &wi ) || (wi.dwExStyle&WS_EX_TOPMOST) )
                 setInterfaceHiden();
-            else
+            else if (_requestActivate)
                 requestActivate();
         }
         break;
@@ -1011,6 +1013,7 @@ bool InterfaceWindowHandlerWin32::eventFilter(QObject* obj, QEvent* ev)
     MSG* msg = static_cast<MSG*>( message );
 
     short cmd;
+    bool handled = false;
     switch( msg->message )
     {
         case WM_APPCOMMAND:
@@ -1024,7 +1027,7 @@ bool InterfaceWindowHandlerWin32::eventFilter(QObject* obj, QEvent* ev)
                 break;
             }
 
-            *result = TRUE;
+            handled = true;
 
             switch(cmd)
             {
@@ -1074,10 +1077,13 @@ bool InterfaceWindowHandlerWin32::eventFilter(QObject* obj, QEvent* ev)
                     break;
                 default:
                      msg_Dbg( p_intf, "unknown APPCOMMAND = %d", cmd);
-                     *result = FALSE;
+                     handled = false;
                      break;
             }
-            if (*result) return true;
+            if( result )
+                *result = handled ? TRUE : FALSE;
+            if( handled )
+                return true;
             break;
     }
     return false;

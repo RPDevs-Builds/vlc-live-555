@@ -95,6 +95,12 @@ option('avx',
     value : 'auto',
     description : 'AVX (1-2) optimizations')
 
+option('split_sections',
+    type : 'feature',
+    value : 'auto',
+    description : 'Split compiled sections and remove unused ones')
+
+
 # TODO: Missing neon option
 # TODO: Missing sve option
 # TODO: Missing altivec option
@@ -132,6 +138,11 @@ option('css_engine',
     type : 'feature',
     value : 'auto',
     description : 'CSS selector engine for WebVTT')
+
+option('adaptive',
+    type : 'feature',
+    value : 'auto',
+    description : 'Adaptive streaming (DASH/HLS/Smooth) demux module')
 
 # Dependency options
 option('chromecast',
@@ -822,8 +833,13 @@ option('v4l2',
 
 option('nsis',
        type: 'feature',
-       value: 'disabled',
-       description: 'Generate NSIS files to create Windows installer')
+       value: 'auto',
+       description: 'Generate NSIS files to create Windows EXE installer')
+
+option('wix',
+       type: 'feature',
+       value: 'auto',
+       description: 'Generate WIX files to create Windows MSI installer')
 
 # TODO: Missing rpi-omxil
 # TODO: Missing gst-decode

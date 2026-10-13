@@ -346,6 +346,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/media-source/VLCLibraryMediaSourceViewNavigationState.m \
 	gui/macosx/library/media-source/VLCMediaSourceProvider.h \
 	gui/macosx/library/media-source/VLCMediaSourceProvider.m \
+	gui/macosx/library/media-source/VLCMediaSourceTableViewSorting.h \
+	gui/macosx/library/media-source/VLCMediaSourceTableViewSorting.m \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistDataSource.h \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistDataSource.m \
 	gui/macosx/library/playlist-library/VLCLibraryPlaylistViewController.h \
@@ -498,8 +500,6 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCScrollingClipView.m \
 	gui/macosx/views/VLCSettingTextField.h \
 	gui/macosx/views/VLCSettingTextField.m \
-	gui/macosx/views/VLCSnowEffectView.h \
-	gui/macosx/views/VLCSnowEffectView.m \
 	gui/macosx/views/VLCSpacingConstraint.h \
 	gui/macosx/views/VLCSpacingConstraint.m \
 	gui/macosx/views/VLCStackView.h \
@@ -577,6 +577,11 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/windows/video/VLCWindow.h \
 	gui/macosx/windows/video/VLCWindow.m
 
+if ENABLE_MACOSX_UI_SHADERS
+libmacosx_plugin_la_SOURCES += \
+	gui/macosx/views/VLCSnowEffectView.h \
+	gui/macosx/views/VLCSnowEffectView.m
+endif
 
 # User interface compilation
 

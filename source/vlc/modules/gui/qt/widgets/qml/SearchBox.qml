@@ -16,7 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Templates as T
 import QtQuick.Layouts
 
@@ -52,75 +51,17 @@ FocusScope {
     property bool popBelow: true
     property alias toggleButton: iconButton
     property alias textField: textField
-    readonly property bool expanded: (expandedState.state === "expanded")
+    readonly property bool expanded: popup.visible
 
     // public functions
 
     function expandAndFocus() {
-        expandedState.state = "expanded"
+        popup.open()
         textField.forceActiveFocus(Qt.ShortcutFocusReason)
     }
 
     function retract() {
-        expandedState.state = ""
-    }
-
-    StateGroup {
-        id: expandedState
-
-        state: ""
-
-        states: [
-            State {
-                name: "expanded"
-
-                PropertyChanges {
-                    target: popup
-                    explicit: true
-                    height: popup.implicitHeight
-                }
-
-                PropertyChanges {
-                    target: iconButton
-                    checked: true
-                }
-            },
-            State {
-                name: ""
-
-                PropertyChanges {
-                    target: textField
-                    text: ""
-                }
-
-                PropertyChanges {
-                    target: popup
-                    height: 0.0
-                }
-
-                PropertyChanges {
-                    target: iconButton
-                    focus: true
-                    checked: false
-                }
-            }
-        ]
-
-        transitions: Transition {
-            id: transition
-
-            from: ""; to: "expanded"
-            reversible: true
-
-            onRunningChanged: {
-                if (running)
-                    textField.clip = true
-                else
-                    textField.clip = false
-            }
-
-            NumberAnimation { property: "height"; easing.type: Easing.InOutSine; duration: VLCStyle.duration_long; }
-        }
+        popup.close()
     }
 
     readonly property ColorContext colorContext: ColorContext {
@@ -138,13 +79,14 @@ FocusScope {
         description: qsTr("Filter")
 
         focus: true
+        checked: popup.visible
 
         Navigation.parentItem: root
         Navigation.downItem: root.popBelow ? textField : null
         Navigation.upItem: root.popBelow ? null : textField
 
         onClicked: {
-            if (expandedState.state == "")
+            if (!popup.visible)
                 expandAndFocus()
             else
                 root.retract()
@@ -161,25 +103,56 @@ FocusScope {
             implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
                                      implicitContentHeight + topPadding + bottomPadding)
 
-            closePolicy: Popup.NoAutoClose
+            closePolicy: T.Popup.NoAutoClose
 
             Binding on closePolicy {
                 when: textField.text.length === 0
-                value: Popup.CloseOnPressOutside
+                value: T.Popup.CloseOnPressOutside
             }
 
             height: 0
-            visible: (height > 0)
 
             onOpened: {
                 textField.forceActiveFocus(iconButton.focusReason)
             }
 
             onClosed: {
-                root.retract()
-                textField.focus = false
-                focus = false
-                iconButton.focus = true
+                iconButton.forceActiveFocus(iconButton.focusReason)
+            }
+
+            onAboutToHide: {
+                textField.text = ""
+            }
+
+            component EnterExitTransition : Transition {
+                id: transition
+
+                property alias to: animation.to
+
+                NumberAnimation {
+                    id: animation
+
+                    property: "height"
+                    easing.type: Easing.InOutSine
+                    duration: VLCStyle.duration_long
+                }
+
+                onRunningChanged: {
+                    if (running)
+                        textField.clip = true
+                    else
+                        textField.clip = false
+                }
+            }
+
+            enter: EnterExitTransition {
+                // NOTE: It is intentional that `from` is not used.
+                to: popup.implicitHeight
+            }
+
+            exit: EnterExitTransition {
+                // NOTE: It is intentional that `from` is not used.
+                to: 0.0
             }
 
             contentItem: TextFieldExt {

@@ -23,6 +23,12 @@ egl_dep = dependency('egl', required: false)
 
 # Declared here so it's available in opengl subdir for egl_display_gbm
 drm_dep = dependency('libdrm', version: '>= 2.4.83', required: get_option('drm'))
+drm_includes = declare_dependency()
+if drm_dep.found()
+    drm_includes = declare_dependency(dependencies: drm_dep.partial_dependency(
+                                          includes: true, compile_args: true),
+                                      compile_args: '-DHAVE_LIBDRM=1')
+endif
 
 # Declared here, as it's used by both the libplacebo and wayland subfolders
 vulkan_dep = dependency('vulkan', version: '>= 1.0.26', required: get_option('vulkan'))
@@ -222,6 +228,29 @@ if caca_dep.found()
 endif
 
 #
+# Vulkan video outputs
+#
+if vulkan_dep.found()
+    vlc_modules += {
+        'name' : 'vk_win32',
+        'sources' : files('vulkan/platform.c', 'vulkan/platform_win32.c'),
+        'c_args' : ['-DVK_USE_PLATFORM_WIN32_KHR', '-DPLATFORM_NAME=Win32'],
+        'dependencies' : [vulkan_dep],
+        'plugin_dir' : 'video_output',
+        'enabled': host_system == 'windows' and not have_win_store,
+    }
+
+    vlc_modules += {
+        'name' : 'vk_android',
+        'sources' : files('vulkan/platform.c', 'vulkan/platform_android.c'),
+        'c_args' : ['-DVK_USE_PLATFORM_ANDROID_KHR', '-DPLATFORM_NAME=Android'],
+        'dependencies' : [vulkan_dep],
+        'plugin_dir' : 'video_output',
+        'enabled': host_system == 'android'
+    }
+endif
+
+#
 # x11 video outputs
 #
 
@@ -229,9 +258,10 @@ if xcb_dep.found()
     vlc_xcb_events_lib = library('vlc_xcb_events',
         files('xcb/events.c'),
         include_directories: [vlc_include_dirs],
+        link_args: gc_sections_linkargs,
         dependencies: [xcb_dep, libvlccore_dep],
         install: true,
-        install_dir: libdir_path,
+        install_dir: pkglibdir_path,
         )
 
     if xcb_randr_dep.found() and xproto_dep.found()

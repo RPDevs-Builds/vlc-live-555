@@ -209,7 +209,7 @@ typedef enum libvlc_list_action_t {
  * Enumeration of media stopping reasons
  */
 typedef enum libvlc_stopping_reason_t {
-    /** media is stopping due to an error (default) */
+    /** media is stopping due to an error */
     libvlc_stopping_reason_error,
     /** media has reached the end of stream */
     libvlc_stopping_reason_eos,
@@ -1653,7 +1653,7 @@ typedef void (*libvlc_audio_resume_cb)(void *data, int64_t pts);
  *
  * \param[in] data data pointer as passed to libvlc_audio_set_callbacks()
  */
-typedef void (*libvlc_audio_flush_cb)(void *data, int64_t pts);
+typedef void (*libvlc_audio_flush_cb)(void *data);
 
 /**
  * Callback prototype for audio buffer drain.

@@ -9,6 +9,7 @@
  *          Jean-Baptiste Kempf <jb@videolan.org>
  *          Felix Paul Kühne <fkuehne@videolan.org>
  *          Salah-Eddin Shaban <salshaaban@gmail.com>
+ *          Alexandre Janniaux <ajanni@videolabs.io>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -48,6 +49,15 @@
 static FcConfig *config;
 static uintptr_t refs;
 static vlc_mutex_t lock = VLC_STATIC_MUTEX;
+
+static void FontConfig_DefaultSubstitute( FcPattern *p_pattern )
+{
+#if FC_VERSION >= 21700
+    FcConfigSetDefaultSubstitute( config, p_pattern );
+#else
+    FcDefaultSubstitute( p_pattern );
+#endif
+}
 
 int FontConfig_Prepare( vlc_font_select_t *fs )
 {
@@ -94,6 +104,7 @@ int FontConfig_Prepare( vlc_font_select_t *fs )
     if( i_dialog_id != 0 )
         vlc_dialog_cancel( fs->p_obj, i_dialog_id );
 
+end:
 #endif
 
     if (ret != VLC_SUCCESS)
@@ -159,7 +170,7 @@ static void FontConfig_FillFaces( vlc_family_t *p_family )
         FcPatternAddString( pat, FC_FAMILY, (const FcChar8 *) p_family->psz_name );
         FcPatternAddBool( pat, FC_OUTLINE, FcTrue );
 
-        FcFontSet *fs = FcFontList( 0, pat, os );
+        FcFontSet *fs = FcFontList( config, pat, os );
         FcObjectSetDestroy( os );
         if( fs )
         {
@@ -204,7 +215,7 @@ int FontConfig_SelectAmongFamilies( vlc_font_select_t *fs, const fontfamilies_t 
     FcPatternAddBool( pat, FC_OUTLINE, FcTrue );
 
     /* */
-    FcDefaultSubstitute( pat );
+    FontConfig_DefaultSubstitute( pat );
     if( !FcConfigSubstitute( config, pat, FcMatchPattern ) )
     {
         FcPatternDestroy( pat );
@@ -213,9 +224,9 @@ int FontConfig_SelectAmongFamilies( vlc_font_select_t *fs, const fontfamilies_t 
 
     /* Find the best font for the pattern, destroy the pattern */
     p_matchpat = FcFontMatch( config, pat, &result );
+    FcPatternDestroy( pat );
     if( !p_matchpat )
         return VLC_EGENERIC;
-    FcPatternDestroy( pat );
     if( result == FcResultNoMatch )
     {
         *pp_result = NULL;
@@ -291,7 +302,7 @@ int FontConfig_GetFallbacksAmongFamilies( vlc_font_select_t *fs, const fontfamil
     vlc_family_t *p_current = NULL;
     if( FcConfigSubstitute( config, p_pattern, FcMatchPattern ) == FcTrue )
     {
-        FcDefaultSubstitute( p_pattern );
+        FontConfig_DefaultSubstitute( p_pattern );
         FcResult result;
         FcFontSet* p_font_set = FcFontSort( config, p_pattern, FcTrue, NULL, &result );
         if( p_font_set )

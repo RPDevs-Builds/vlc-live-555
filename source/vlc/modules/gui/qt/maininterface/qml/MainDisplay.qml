@@ -16,7 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 import VLC.Style
@@ -608,7 +607,7 @@ FocusScope {
                 if ((sidebar.state !== 'expanded') && item.expandable) {
                     // TODO: Investigate opening the menu on hover, if
                     //       we switch to `Popup.Item` type of menus.
-                    const mappedPos = mapToGlobal(item.x + item.width, item.y)
+                    const mappedPos = item.mapToGlobal(item.width, 0)
                     navigationBarContextMenu.popup(item.index, mappedPos, !item.hovered)
 
                     return
@@ -757,10 +756,12 @@ FocusScope {
 
                 leftPadding: playqueueResizeHandle.visualBorder.width
                 rightPadding: VLCStyle.applicationHorizontalMargin
-                bottomPadding: VLCStyle.margin_normal + Math.max(VLCStyle.applicationVerticalMargin - g_mainDisplay.displayMargin, 0)
+                bottomPadding: Math.max(VLCStyle.applicationVerticalMargin - g_mainDisplay.displayMargin, 0)
                 topPadding: VLCStyle.layoutTitle_top_padding
 
                 useAcrylic: !VLCStyle.isScreenSmall
+
+                view.fadingEdge.pixelAlignedForDPR: !miniPlayer.visible
 
                 Navigation.parentItem: g_mainDisplay
                 Navigation.upItem: localTopbar

@@ -54,8 +54,9 @@ struct libvlc_downloader_t
     /* list of ongoing tasks (terminated tasks are removed) */
     struct vlc_list submitted_tasks;
 
-    /* list of downloader threads (dead threads joined at libvlc_downloader_queue,
-       all threads are joined at libvlc_downloader_destroy) */
+    /* list of downloader threads (dead threads joined at
+       libvlc_downloader_submit, all threads are joined at
+       libvlc_downloader_destroy) */
     struct vlc_list threads;
 };
 
@@ -82,6 +83,9 @@ struct libvlc_downloader_task
 
     /* required for ongoing task abortion */
     bool interrupted;
+
+    /* guard against a re-submission of the same handle */
+    bool submitted;
 
     vlc_atomic_rc_t rc;
 
@@ -112,6 +116,7 @@ DownloaderTaskNew(libvlc_downloader_t *downloader, libvlc_media_t *media,
     task->pause_requested = false;
     vlc_cond_init(&task->interrupt_cond);
     task->interrupted = false;
+    task->submitted = false;
     task->status = libvlc_downloader_status_pending;
     task->parser_task = NULL;
     task->thread = NULL;
@@ -130,9 +135,6 @@ DownloaderTaskDestroy(struct libvlc_downloader_task *task)
 
     if (task->parser_task)
         libvlc_parser_task_release(task->parser_task);
-
-    if (task->s)
-        vlc_stream_Delete(task->s);
 
     free(task);
 }
@@ -293,6 +295,9 @@ cleanup_locked:
     task->thread->terminated = true;
     vlc_mutex_unlock(&downloader->lock);
     free(buf);
+    if (task->s != NULL)
+        vlc_stream_Delete(task->s);
+
     libvlc_downloader_task_release(task);
     return NULL;
 }
@@ -337,7 +342,13 @@ static void notify_subitems(const struct libvlc_downloader_cbs *cbs, void *cbs_o
     if (mlist == NULL)
         return;
 
-    cbs->on_subitems(cbs_opaque, task, mlist);
+    libvlc_media_list_lock(mlist);
+    int count = libvlc_media_list_count(mlist);
+    libvlc_media_list_unlock(mlist);
+
+    if (count > 0)
+        cbs->on_subitems(cbs_opaque, task, mlist);
+
     libvlc_media_list_release(mlist);
 }
 
@@ -420,8 +431,8 @@ static const struct libvlc_parser_cbs parser_cbs = {
 };
 
 libvlc_downloader_task *
-libvlc_downloader_queue(libvlc_downloader_t *downloader, const libvlc_downloader_request_t *req,
-                        const struct libvlc_downloader_cbs *cbs, void *cbs_opaque)
+libvlc_downloader_task_new(libvlc_downloader_t *downloader, const libvlc_downloader_request_t *req,
+                           const struct libvlc_downloader_cbs *cbs, void *cbs_opaque)
 {
     assert(downloader != NULL);
     assert(req != NULL && req->media != NULL);
@@ -451,6 +462,18 @@ libvlc_downloader_queue(libvlc_downloader_t *downloader, const libvlc_downloader
         return NULL;
     }
 
+    return task;
+}
+
+int
+libvlc_downloader_submit(libvlc_downloader_t *downloader, libvlc_downloader_task *task)
+{
+    assert(downloader != NULL);
+    assert(task != NULL);
+    assert(!task->submitted);
+
+    task->submitted = true;
+
     vlc_mutex_lock(&downloader->lock);
     vlc_list_append(&task->node, &downloader->submitted_tasks);
 
@@ -474,11 +497,14 @@ libvlc_downloader_queue(libvlc_downloader_t *downloader, const libvlc_downloader
         vlc_mutex_lock(&downloader->lock);
         vlc_list_remove(&task->node);
         vlc_mutex_unlock(&downloader->lock);
-        DownloaderTaskDestroy(task);
-        return NULL;
+        task->submitted = false;
+        /* no callback will be invoked, drop the callback reference. The caller
+           keeps its own and may submit the task again. */
+        libvlc_downloader_task_release(task);
+        return -1;
     }
 
-    return task;
+    return 0;
 }
 
 size_t libvlc_downloader_cancel(libvlc_downloader_t *downloader, libvlc_downloader_task *task)

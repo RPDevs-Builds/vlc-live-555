@@ -520,7 +520,16 @@ static void MainLoopDemux( input_thread_t *p_input, bool *pb_changed )
     if( i_ret == VLC_DEMUXER_SUCCESS )
         i_ret = demux_Demux( p_demux );
 
-    i_ret = i_ret > 0 ? VLC_DEMUXER_SUCCESS : ( i_ret < 0 ? VLC_DEMUXER_EGENERIC : VLC_DEMUXER_EOF);
+    if( i_ret != VLC_DEMUXER_BUFFERING )
+        i_ret = i_ret > 0 ? VLC_DEMUXER_SUCCESS : ( i_ret < 0 ? VLC_DEMUXER_EGENERIC : VLC_DEMUXER_EOF);
+
+    if( i_ret == VLC_DEMUXER_BUFFERING )
+    {
+        if( !es_out_GetBuffering( p_priv->p_es_out ) )
+            es_out_SetRebufferState( p_priv->p_es_out, true );
+    }
+    else
+        es_out_SetRebufferState( p_priv->p_es_out, false );
 
     if( i_ret == VLC_DEMUXER_SUCCESS )
     {
@@ -2839,7 +2848,7 @@ static int InputSourceInit( input_source_t *in, input_thread_t *p_input,
                             const char *psz_forced_demux, bool b_in_can_fail )
 {
     input_thread_private_t *priv = input_priv(p_input);
-    const char *psz_access, *psz_demux, *psz_path, *psz_anchor = NULL;
+    const char *psz_access, *psz_demux, *psz_path, *psz_anchor;
     const bool master = priv->master == in;
 
     assert( psz_mrl );
@@ -3447,6 +3456,7 @@ static void input_SplitMRL( const char **access, const char **demux,
                             const char **path, const char **anchor, char *buf )
 {
     char *p;
+    *anchor = "";
 
     /* Separate <path> from <access>[/<demux>]:// */
     p = strchr( buf, ':');
@@ -3463,8 +3473,6 @@ static void input_SplitMRL( const char **access, const char **demux,
             *(p++) = '\0';
             *anchor = p;
         }
-        else
-            *anchor = "";
     }
     else
     {

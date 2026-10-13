@@ -250,7 +250,7 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
 #define VOLUME_MAX_TEXT N_( "Maximum Volume displayed" )
 
 #define AUTORAISE_ON_PLAYBACK_TEXT N_( "When to raise the interface" )
-#define AUTORAISE_ON_PLAYBACK_LONGTEXT N_( "This option allows the interface to be raised automatically " \
+#define AUTORAISE_ON_PLAYBACK_LONGTEXT N_( "This option allows the interface to be shown and raised automatically " \
     "when a video/audio playback starts, or never." )
 
 #define QT_CLIENT_SIDE_DECORATION_TEXT N_( "Enable window titlebar" )
@@ -868,6 +868,12 @@ static void *Thread( void *obj )
 #endif
     Q_INIT_RESOURCE( shaders );
 
+    // Qt Widgets uses shaders with RHI, which is
+    // enabled with `QT_WIDGETS_RHI`. Currently the
+    // shaders are pre-baked, so we don't need to
+    // require Qt shader tools when building qtbase.
+    Q_INIT_RESOURCE( gui_shaders );
+
     // NOTE:  Qt declarative 6.8.0 initializes scenegraph_shaders,
     //        but not scenegraph_curve_shaders. Curve shaders
     //        are used in particular cases even when curve
@@ -901,10 +907,6 @@ static void *Thread( void *obj )
     // at the moment, the vout is created in another thread than the rendering thread
     QApplication::setAttribute( Qt::AA_DontCheckOpenGLContextThreadAffinity );
     QQuickWindow::setDefaultAlphaBuffer(true);
-
-#if defined(QT_STATIC) || defined(__APPLE__)
-    QQuickStyle::setStyle(QLatin1String("Basic"));
-#endif
 
     /* Start the QApplication here */
     QApplication app( argc, argv );
@@ -979,6 +981,39 @@ static void *Thread( void *obj )
     // It is guaranteed that the returned format is supported, if a format is returned.
     static const auto createCompatibleOpenGLFormat = []() -> std::optional<QSurfaceFormat> {
         QOpenGLContext defaultCtx;
+
+        QSurfaceFormat defaultFormat = defaultCtx.format();
+
+        /// <QSGDefaultContext::defaultSurfaceFormat()>
+        /// This is copied from `QSGDefaultContext::defaultSurfaceFormat()`, since
+        /// it is not public. The default `QSurfaceFormat::defaultFormat()` that is
+        /// provided by Qt Gui naturally does not consider the default format of
+        /// Qt Quick:
+        // These depend solely on the env.vars., not QQuickGraphicsConfiguration
+        // since that does not have a flag that maps 100% to QSG_NO_xx_BUFFER.
+        static bool useDepth = qEnvironmentVariableIsEmpty("QSG_NO_DEPTH_BUFFER");
+        static bool useStencil = qEnvironmentVariableIsEmpty("QSG_NO_STENCIL_BUFFER");
+        static bool enableDebug = qEnvironmentVariableIsSet("QSG_OPENGL_DEBUG");
+        static bool disableVSync = qEnvironmentVariableIsSet("QSG_NO_VSYNC");
+        if (useDepth && defaultFormat.depthBufferSize() == -1)
+            defaultFormat.setDepthBufferSize(24);
+        else if (!useDepth)
+            defaultFormat.setDepthBufferSize(0);
+        if (useStencil && defaultFormat.stencilBufferSize() == -1)
+            defaultFormat.setStencilBufferSize(8);
+        else if (!useStencil)
+            defaultFormat.setStencilBufferSize(0);
+        if (enableDebug)
+            defaultFormat.setOption(QSurfaceFormat::DebugContext);
+        if (QQuickWindow::hasDefaultAlphaBuffer())
+            defaultFormat.setAlphaBufferSize(8);
+        defaultFormat.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+        if (disableVSync) // swapInterval defaults to 1, it has no -1 special value
+            defaultFormat.setSwapInterval(0);
+        /// </QSGDefaultContext::defaultSurfaceFormat()>
+
+        defaultCtx.setFormat(defaultFormat);
+
         // This is really unnecessary to check, since Qt should not be using unavailable contexts, but nevertheless.
         if (Q_UNLIKELY(!defaultCtx.create()))
             return std::nullopt;
@@ -1133,56 +1168,79 @@ static void *Thread( void *obj )
         // settings value can be string (ini file), do not use `typeId()`:
         if (graphicsApiValue.isValid() && Q_LIKELY(graphicsApiValue.canConvert<int>()))
         {
-            // A cached (by then) valid graphics api is found, use it:
-            QQuickWindow::setGraphicsApi(static_cast<QSGRendererInterface::GraphicsApi>(graphicsApiValue.value<int>()));
-            if (p_intf->mainSettings->value(graphicsApiRhiSoftwareKey).value<bool>())
-                enableRhiSoftwareRenderer();
 
-            // Asynchronous re-probe to see if the cached graphics api is still applicable.
-            // If not, QQuickWindow is going to emit scene graph error, and the application is
-            // likely going to terminate. However, when the user starts the application again
-            // there will not be an error thanks to this. We can not prevent the error, as
-            // it is decided to not make compositor initializaation wait to not reduce the startup
-            // speed. Startup time is defined as the time it takes to start playing the initial
-            // item. Currently the player waits for the interface, and QQuickWindow initialization
-            // is therefore not enforced to be synchronous (`QWindow::setVisible(true)` which
-            // initializes the scene graph thus rhi is asynchronous).
+            //some part of the probing needs to be executed on the GUI thread and some part will be ran in a background thread,
+            //so we defer the execution of this once the app is started. We can't start the task directly as qApp isn't set yet
+            //and there are scenarios where the main loop will never be run.
+            QMetaObject::invokeMethod(&app, [&](){
+                // A cached (by then) valid graphics api is found, use it:
+                QQuickWindow::setGraphicsApi(static_cast<QSGRendererInterface::GraphicsApi>(graphicsApiValue.value<int>()));
+                if (p_intf->mainSettings->value(graphicsApiRhiSoftwareKey).value<bool>())
+                    enableRhiSoftwareRenderer();
 
-            class RhiProbeTask : public AsyncTask<QPair<QSGRendererInterface::GraphicsApi, bool>>
-            {
-            public:
-                RhiProbeTask() = default;
+                // Asynchronous re-probe to see if the cached graphics api is still applicable.
+                // If not, QQuickWindow is going to emit scene graph error, and the application is
+                // likely going to terminate. However, when the user starts the application again
+                // there will not be an error thanks to this. We can not prevent the error, as
+                // it is decided to not make compositor initializaation wait to not reduce the startup
+                // speed. Startup time is defined as the time it takes to start playing the initial
+                // item. Currently the player waits for the interface, and QQuickWindow initialization
+                // is therefore not enforced to be synchronous (`QWindow::setVisible(true)` which
+                // initializes the scene graph thus rhi is asynchronous).
 
-                QPair<QSGRendererInterface::GraphicsApi, bool> execute() override
+                class RhiProbeTask : public AsyncTask<QPair<QSGRendererInterface::GraphicsApi, bool>>
                 {
-                    return probeRhi();
+                public:
+                    RhiProbeTask() = default;
+
+                    QPair<QSGRendererInterface::GraphicsApi, bool> execute() override
+                    {
+                        return probeRhi();
+                    }
+
+                    //prevent the main loop (qApp) from exiting until the task is complete
+                    //the lock is taken on RhiProbeTask creation which occurs in the main loop
+                    QEventLoopLocker m_applocker;
+                };
+
+                const auto rhiProbeTask = QPointer(new RhiProbeTask);
+                QObject::connect(rhiProbeTask, &BaseAsyncTask::result, qApp, [rhiProbeTask, settings = QPointer(p_intf->mainSettings)]() {
+                    // We can not use `QQuickWindow::setGraphicsApi()` here, as QQuickWindow
+                    // may have already tried to initialize the scene graph hence rhi. If the
+                    // cached graphics api is not optimal or not available anymore, the next
+                    // startup will use the refreshed value. That's the best we can do here
+                    // without forcing QQuickWindow to wait (hence delaying startup).
+                    assert(settings);
+                    const QPair<QSGRendererInterface::GraphicsApi, bool> rhiResult = rhiProbeTask->takeResult();
+                    settings->setValue(graphicsApiKey, static_cast<int>(rhiResult.first));
+                    settings->setValue(graphicsApiRhiSoftwareKey, rhiResult.second);
+                    settings->sync();
+                    qApp->setProperty(asyncRhiProbeCompletedProperty, true);
+                    qDebug() << "Asynchronous rhi re-probe completed. Graphics api (QSGRendererInterface::GraphicsApi):"
+                             << rhiResult.first
+                             << "Prefer software renderer:"
+                             << rhiResult.second;
+                    rhiProbeTask->abandon();
+                }, Qt::QueuedConnection);
+
+                const auto globalThreadPool = QThreadPool::globalInstance();
+                assert(globalThreadPool);
+
+                if (graphicsApiValue.toInt() == QSGRendererInterface::OpenGL)
+                {
+                    // Due to asynchronous probing, we need to set the default
+                    // format before the main interface window's (`::create()`)
+                    // is called. Since previous probe result succeeded with
+                    // OpenGL and required version, we can assume that the there
+                    // will be again a compatible OpenGL format, rather than
+                    // storing and re-using the version (considering that it
+                    // takes negligible time to re-create the compatible format):
+                    if (const auto format = createCompatibleOpenGLFormat()) /* [[likely]] */
+                        QSurfaceFormat::setDefaultFormat(*format);
                 }
-            };
 
-            const auto rhiProbeTask = QPointer(new RhiProbeTask);
-            QObject::connect(rhiProbeTask, &BaseAsyncTask::result, qApp, [rhiProbeTask, settings = QPointer(p_intf->mainSettings)]() {
-                // We can not use `QQuickWindow::setGraphicsApi()` here, as QQuickWindow
-                // may have already tried to initialize the scene graph hence rhi. If the
-                // cached graphics api is not optimal or not available anymore, the next
-                // startup will use the refreshed value. That's the best we can do here
-                // without forcing QQuickWindow to wait (hence delaying startup).
-                assert(settings);
-                const QPair<QSGRendererInterface::GraphicsApi, bool> rhiResult = rhiProbeTask->takeResult();
-                settings->setValue(graphicsApiKey, static_cast<int>(rhiResult.first));
-                settings->setValue(graphicsApiRhiSoftwareKey, rhiResult.second);
-                settings->sync();
-                qApp->setProperty(asyncRhiProbeCompletedProperty, true);
-                qDebug() << "Asynchronous rhi re-probe completed. Graphics api (QSGRendererInterface::GraphicsApi):"
-                         << rhiResult.first
-                         << "Prefer software renderer:"
-                         << rhiResult.second;
-                rhiProbeTask->abandon();
+                rhiProbeTask->start(*globalThreadPool, -1);
             }, Qt::QueuedConnection);
-
-            const auto globalThreadPool = QThreadPool::globalInstance();
-            assert(globalThreadPool);
-
-            rhiProbeTask->start(*globalThreadPool, -1);
         }
         else
         {
@@ -1387,6 +1445,7 @@ static void *Thread( void *obj )
 
     /* Last settings */
     app.setQuitOnLastWindowClosed( false );
+    app.setQuitLockEnabled( false );
 
     /* Loads and tries to apply the preferred QStyle */
 #define QTSTYLE_KEY "MainWindow/QtStyle"

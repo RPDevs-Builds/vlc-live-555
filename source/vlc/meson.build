@@ -871,6 +871,20 @@ if host_system != 'os/2'
         language: ['c'])
 endif
 
+if get_option('optimization') != '0'
+    add_project_arguments(cc.get_supported_arguments([
+        '-fno-math-errno', '-funsafe-math-optimizations',
+        '-fno-rounding-math', '-fno-signaling-nans', '-fcx-limited-range'
+    ]), language: ['c', 'cpp'])
+    if cc.has_argument('-funroll-loops')
+        add_project_arguments('-funroll-loops', language: ['c', 'objc'])
+    endif
+    if cpp.has_argument('-funroll-loops')
+        add_project_arguments('-funroll-loops', language: ['cpp'])
+    endif
+endif
+
+
 # Stack smashing protection (default enabled for optimized builds)
 if (get_option('ssp')
     .disable_auto_if(get_option('optimization') == '0')
@@ -907,10 +921,16 @@ endif
 # Drops unused symbols.
 # ELF linkers use --gc-sections, while Mach-O uses -dead_strip.
 gc_sections_linkargs = []
+if get_option('split_sections').allowed()
 if cc.has_link_argument('-Wl,--gc-sections')
     gc_sections_linkargs += '-Wl,--gc-sections'
 elif cc.has_link_argument('-Wl,-dead_strip')
     gc_sections_linkargs += '-Wl,-dead_strip'
+endif
+
+add_project_arguments(cc.get_supported_arguments([
+    '-fdata-sections', '-ffunction-sections'
+]), language: ['c', 'cpp'])
 endif
 
 # Check for struct sockaddr_storage type
@@ -1019,9 +1039,7 @@ if host_system == 'windows'
     libdir_path = prefix_path
     pkglibdir_path = libdir_path / vlc_pkg_suffix
     plugins_path = prefix_path / 'plugins'
-    libvlc_header_path = prefix_path / 'sdk/include/vlc'
-    plugins_header_path = prefix_path / 'sdk/include/vlc/plugins'
-    vlccore_lib_path = prefix_path / 'sdk/lib'
+    vlc_sdk_path = prefix_path / 'sdk'
     bindir_path = prefix_path
     libexecdir_path = prefix_path
     pkglibexecdir_path = prefix_path
@@ -1030,14 +1048,15 @@ else
     libdir_path = prefix_path / get_option('libdir')
     pkglibdir_path = libdir_path / vlc_pkg_suffix
     plugins_path = pkglibdir_path / 'plugins'
-    libvlc_header_path = prefix_path / 'include' / vlc_pkg_suffix
-    plugins_header_path = prefix_path / 'include' / vlc_pkg_suffix / 'plugins'
-    vlccore_lib_path = prefix_path / 'lib'
+    vlc_sdk_path = prefix_path
     bindir_path = prefix_path / 'bin'
     libexecdir_path = prefix_path / get_option('libexecdir')
     pkglibexecdir_path = libexecdir_path / vlc_pkg_suffix
     localedir_path = prefix_path / get_option('localedir')
 endif
+libvlc_header_path = vlc_sdk_path / 'include' / vlc_pkg_suffix
+plugins_header_path = vlc_sdk_path / 'include' / vlc_pkg_suffix / 'plugins'
+vlccore_lib_path = vlc_sdk_path / 'lib'
 
 cdata.set_quoted('LIBDIR', libdir_path)
 cdata.set_quoted('PKGLIBDIR', pkglibdir_path)
@@ -1075,14 +1094,6 @@ vlc_about = custom_target('vlc_about.h',
                                    '@INPUT1@',
                                    '@INPUT2@',
                                    '@OUTPUT@'])
-
-if host_system == 'windows'
-    windows_rc = import('windows')
-    # not quoted values
-    rc_conf = cdata
-    rc_conf.set('VERSION', vlc_version)
-    rc_conf.set('COPYRIGHT_YEARS', vlc_copyright_years)
-endif
 
 # Enable stream outputs
 if get_option('stream_outputs')
@@ -1142,7 +1153,7 @@ if get_option('default_monospace_font_family') != ''
 endif
 
 gcrypt_dep = dependency('libgcrypt',
-                         version: '>= 1.6.0',
+                         version: '>= 1.8.5',
                          required: get_option('libgcrypt'))
 if gcrypt_dep.found()
     cdata.set('HAVE_GCRYPT', 1)
@@ -1172,6 +1183,15 @@ subdir('compat')
 
 # Headers
 subdir('include')
+
+if host_system == 'windows'
+    windows_rc = import('windows')
+    # not quoted values
+    rc_conf = configuration_data()
+    rc_conf.merge_from(cdata)
+    rc_conf.set('VERSION', vlc_version)
+    rc_conf.set('COPYRIGHT_YEARS', vlc_copyright_years)
+endif
 
 # libvlccore
 subdir('src')

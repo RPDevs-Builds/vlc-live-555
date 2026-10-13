@@ -37,7 +37,6 @@ if host_system == 'windows'
             vlc_src_root / 'share',
             vlc_src_root / 'extras/package/win32',
         ],
-        implicit_include_directories: true,
         depend_files: files('../extras/package/win32/libvlc.dll.manifest'),
     )
 endif
@@ -52,6 +51,7 @@ libvlc = library('vlc',
     include_directories: [vlc_include_dirs],
     c_args: libvlc_cargs,
     link_with: [vlc_libcompat],
+    link_args: gc_sections_linkargs,
     dependencies: [libvlccore_dep, m_lib, threads_dep],
     install: true,
     install_dir: libdir_path,

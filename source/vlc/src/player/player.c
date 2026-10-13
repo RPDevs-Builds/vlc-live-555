@@ -213,7 +213,7 @@ vlc_player_GetAtoBLoopDeadline(vlc_player_t *player)
             return VLC_TICK_MIN;
         b_time = input->abloop_state[1].pos * input->length;
     }
-    return now + (b_time - ts) * input->rate;
+    return now + (vlc_tick_t) ((b_time - ts) / input->rate);
 }
 
 static void *
@@ -251,7 +251,6 @@ vlc_player_mainloop_Thread(void *data)
         vlc_list_foreach(input, &player->mainloop.stop_inputs, node)
         {
             input_Stop(input->thread);
-            input->stopping_reason = VLC_PLAYER_MEDIA_STOPPING_USER;
             vlc_player_input_HandleState(input, VLC_PLAYER_STATE_STOPPING,
                                          VLC_TICK_INVALID);
             vlc_player_destructor_AddStoppingInput(player, input);

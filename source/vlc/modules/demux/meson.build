@@ -456,7 +456,7 @@ vlc_modules += {
 # sid
 sid_dep = dependency('libsidplay2', required: get_option('sid'))
 if cpp.check_header('sidplay/builders/resid.h', dependencies: sid_dep)
-resid_dep = cpp.find_library('resid-builder', dirs: contrib_libdir)
+resid_dep = cpp.find_library('resid-builder', dirs: contrib_libdir, required: get_option('sid'))
 vlc_modules += {
     'name' : 'sid',
     'sources' : files('sid.cpp'),
@@ -471,6 +471,7 @@ endif
 
 vlc_modules += {
     'name' : 'adaptive',
+    'enabled' : get_option('adaptive').allowed(),
     'sources' : files(
         # DASH specific sources
         'dash/mpd/AdaptationSet.cpp',
@@ -683,6 +684,15 @@ vlc_modules += {
     'dependencies' : [socket_libs, m_lib, z_dep, gcrypt_dep],
     'link_with' : vlc_http_lib,
     'plugin_dir' : 'demux',
+}
+
+vlc_modules += {
+    'name' : 'ytdl',
+    'sources' : files('ytdl.c'),
+    'c_args' : host_system == 'windows' ? '-DEXEEXT=".exe"' : '-DEXEEXT=""',
+    'link_with' : vlc_json_lib,
+    'plugin_dir' : 'demux',
+    'enabled' : host_system not in ['android', 'emscripten']
 }
 
 # noseek demux

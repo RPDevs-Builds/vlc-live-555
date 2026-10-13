@@ -16,7 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Templates as T
 import QtQuick.Window
 import QtQuick.Layouts
 
@@ -79,13 +79,13 @@ ListView {
     keyNavigationEnabled: false
     keyNavigationWraps: false
 
-    ScrollBar.vertical: {
+    T.ScrollBar.vertical: {
         // By default vertical scroll bar is only used when the orientation is vertical.
         if (root.defaultScrollBar && (root.orientation === ListView.Vertical))
             return root.defaultScrollBar.createObject() // rely on JS/QML engine's garbage collection
         return null
     }
-    ScrollBar.horizontal: {
+    T.ScrollBar.horizontal: {
         // By default horizontal scroll bar is only used when the orientation is horizontal.
         if (root.defaultScrollBar && (root.orientation === ListView.Horizontal))
             return root.defaultScrollBar.createObject() // rely on JS/QML engine's garbage collection
@@ -354,8 +354,8 @@ ListView {
     // WARNING: Add displaced transition is disabled, because it is
     //          often not executed properly, and causes items to have
     //          incorrect positions. It is currently not possible to
-    //          recover from that situation. Fortunately move and
-    //          remove displaced seemingly are not affected from that
+    //          recover from that situation. Fortunately move displaced 
+    //          seemingly is not affected from that
     //          issue. See QTBUG-131106, QTBUG-89158, ...
 
     component DefaultDisplacedTransition : Transition {
@@ -378,8 +378,17 @@ ListView {
         view: root
     }
 
-    removeDisplaced: DefaultDisplacedTransition {
-        view: root
+    // NOTE: removeDisplaced uses a 0ms transition as a workaround for QTBUG-131106.
+    // Disabling the transition (or setting it to null) breaks item recycling (reuseItems: true)
+    // during multi-slice deletions, causing delegate position overlap.
+    // The 0ms transition preserves the Transition lifecycle while avoiding displacement coordinate desync.
+    removeDisplaced: Transition {
+        enabled: !!root.acceptDropFunc
+
+        NumberAnimation {
+            property: (root.orientation === ListView.Vertical) ? "y" : "x"
+            duration: 0
+        }
     }
 
     // Events

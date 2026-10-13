@@ -36,7 +36,6 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
                 vlc_src_root / 'share/icons',
                 vlc_src_root / 'extras/package/win32',
             ],
-            implicit_include_directories: true,
             depend_files: files('../extras/package/win32/vlc.exe.manifest'),
         )
     endif
@@ -44,6 +43,7 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
     executable('vlc',
         vlc_sources + vlc_win_extra,
         link_with: [libvlc, libvlccore],
+        link_args: gc_sections_linkargs,
         include_directories: [vlc_include_dirs],
         dependencies: vlc_deps,
         install: true,
@@ -57,6 +57,7 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
     executable('vlc-static',
         vlc_sources,
         link_with: [libvlc, libvlccore],
+        link_args: gc_sections_linkargs,
         include_directories: [vlc_include_dirs],
         dependencies: vlc_deps,
         c_args: [vlc_top_builddir_def, vlc_top_srcdir_def],
@@ -67,11 +68,13 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
     vlc_cache_gen_dep = executable('vlc-cache-gen',
         ['cachegen.c'] + vlc_win_extra,
         link_with: [vlc_libcompat, libvlc],
+        link_args: gc_sections_linkargs,
         include_directories: [vlc_include_dirs],
         install: true,
         install_dir: pkglibexecdir_path,
     )
 
+    if not meson.is_cross_build() or find_program('exe_wrapper', required: false).found()
     plugins_dat  = custom_target('plugins.dat',
         # `vlc_cache_gen_dep.full_path()` doesn't work since the executable is not built yet.
         # `vlc_cache_gen_dep` creates a build order dependency.
@@ -81,6 +84,7 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
         depends: vlc_plugins_targets_array,
         build_by_default: not meson.is_cross_build(),
     )
+    endif
 
     vlc_preparser_sources = [
       'preparser/main.c',
@@ -93,6 +97,7 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
     executable('vlc-preparser',
         vlc_preparser_sources + vlc_win_extra,
         link_with: [libvlc, libvlccore, vlc_libcompat],
+        link_args: gc_sections_linkargs,
         include_directories: [vlc_include_dirs],
         dependencies: vlc_deps,
         install: true,
@@ -103,6 +108,7 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
     vlc_preparser_static_dep = executable('vlc-preparser-static',
         vlc_preparser_sources + vlc_win_extra,
         link_with: [libvlc, libvlccore, vlc_libcompat],
+        link_args: gc_sections_linkargs,
         include_directories: [vlc_include_dirs],
         dependencies: vlc_deps,
         c_args: [vlc_top_builddir_def, vlc_top_srcdir_def],

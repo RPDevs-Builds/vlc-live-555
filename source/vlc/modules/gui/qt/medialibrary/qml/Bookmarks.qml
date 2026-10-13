@@ -16,7 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
-import QtQuick.Controls
 
 import VLC.MediaLibrary
 
@@ -95,6 +94,7 @@ Item {
 
             height: control.barHeight
             width: height
+            backgroundColor: bookmarkButton.colorContext.fg.primary
 
             x: control.width * model.position - width/2
             y: VLCStyle.dp(1, VLCStyle.scale)

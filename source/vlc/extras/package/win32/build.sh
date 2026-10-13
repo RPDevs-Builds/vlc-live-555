@@ -70,7 +70,7 @@ do
              INSTALLER=$OPTARG
          ;;
          W)
-             WIXPATH=--with-wix="$OPTARG"
+             WIXPATH="$OPTARG"
          ;;
          s)
              INTERACTIVE="yes"
@@ -202,20 +202,29 @@ fi
 make -j$JOBS
 
 # avoid installing wine on WSL
-# wine is needed to build Qt with shaders
-if test -z "$(command -v wine)"
-then
-    if test -n "$(command -v wsl.exe)"
-    then
+# wine is needed to build Qt with shaders or running vlc-cache-gen
+if test -z "$(command -v wine)"; then
+    if test -n "$(command -v wsl.exe)"; then
         echo "Using wsl.exe to replace wine"
         echo "#!/bin/sh" > build/bin/wine
         echo "\"\$@\"" >> build/bin/wine
         chmod +x build/bin/wine
+        WIN32_PATH_CMD=wslpath
+    else
+        WIN32_PATH_CMD=cygpath
+    fi
+else
+    if test -n "$(command -v wsl.exe)"; then
+        WIN32_PATH_CMD=wslpath
+    else
+        WIN32_PATH_CMD=winepath
     fi
 fi
 HOST="$(cc -dumpmachine)"
 HOST_ARCH="${HOST%%-*}"
 if [ "$HOST_ARCH" = "$ARCH" ]; then
+    VLC_EXE_WRAPPER="wine"
+elif [ "$HOST_ARCH" = "x86_64" ] && [ "$ARCH" = "i686" ]; then
     VLC_EXE_WRAPPER="wine"
 fi
 
@@ -396,6 +405,8 @@ if [ -n "$WITH_LTO" ]; then
     CONTRIBFLAGS="$CONTRIBFLAGS --enable-lto"
 fi
 
+CONTRIBFLAGS="$CONTRIBFLAGS --enable-sections"
+
 if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
     # avoid using gcc-ar with the clang toolchain, if both are installed
     VLC_AR="$TRIPLET-ar"
@@ -560,6 +571,9 @@ if [ "$INSTALLER" = "n" ]; then
     MCOMPILEFLAGS="$MCOMPILEFLAGS --verbose"
 fi
 
+if [ -z "$WIXPATH" ]; then
+    WIXPATH="$( pwd -P )/contrib/$CONTRIB_PREFIX/bin"
+fi
 
 if [ -n "$BUILD_MESON" ]; then
     # disable alarm() calls in tests. The timeout is handled by meson
@@ -574,14 +588,11 @@ if [ -n "$BUILD_MESON" ]; then
         VLC_LDFLAGS="$VLC_LDFLAGS -Wl,-pdb="
     fi
 
-    BUILD_PATH="$( pwd -P )"
-
-    # we don't want to install in <destdir>/usr/local, just <destdir>
-    MCONFIGFLAGS="$MCONFIGFLAGS --prefix=/"
-
     if [ "$INSTALLER" = "n" ] || [ "$INSTALLER" = "r" ] || [ "$INSTALLER" = "u" ]; then
         MCONFIGFLAGS="$MCONFIGFLAGS -Dnsis=enabled"
     fi
+
+    BUILD_PATH="$( pwd -P )"
 
     # generate the crossfile.meson
     test -e $SHORTARCH-meson/crossfile.meson && unlink $SHORTARCH-meson/crossfile.meson
@@ -612,12 +623,29 @@ if [ -n "$BUILD_MESON" ]; then
     if [ -x "$(command -v ${CONTRIB_PREFIX}-luac)" ]; then
         printf 'luac = '"'"'%s'"'"'\n' "$(command -v ${CONTRIB_PREFIX}-luac)" >&3
     fi
+    if [ -n "$WIN32_PATH_CMD" ]; then
+        printf 'cygpath = '"'"'%s'"'"'\n' "$(command -v ${WIN32_PATH_CMD})" >&3
+    fi
+    if [ -e "${WIXPATH}/candle.exe" ]; then
+        printf 'candle.exe = '"'"'%s'"'"'\n' "${WIXPATH}/candle.exe" >&3
+    fi
+    if [ -e "${WIXPATH}/light.exe" ]; then
+        printf 'light.exe = '"'"'%s'"'"'\n' "${WIXPATH}/light.exe" >&3
+    fi
 
     printf '\n[host_machine]\n' >&3
     printf 'system = '"'"'windows'"'"'\n' >&3
     printf 'cpu_family = '"'"'%s'"'"'\n' "${MESON_CPU_FAMILY}" >&3
     printf 'endian = '"'"'little'"'"'\n' >&3
     printf 'cpu = '"'"'%s'"'"'\n' "${ARCH}" >&3
+
+    if [ -n "$INSTALL_PATH" ]; then
+        MDESTDIR="$INSTALL_PATH"
+    else
+        MDESTDIR="${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH"
+    fi
+    # we don't want to install in <destdir>/usr/local, just <destdir>
+    MCONFIGFLAGS="$MCONFIGFLAGS --prefix=$MDESTDIR"
 
 
     info "Configuring VLC"
@@ -632,31 +660,41 @@ if [ -n "$BUILD_MESON" ]; then
     info "Compiling"
     meson compile -j $JOBS -C ${BUILD_PATH}/$SHORTARCH-meson ${MCOMPILEFLAGS}
 
-    if [ -n "$INSTALL_PATH" ]; then
-        MDESTDIR="$INSTALL_PATH"
-    else
-        MDESTDIR="${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH"
-    fi
-    MINSTALLFLAGS="--destdir=$MDESTDIR $MINSTALLFLAGS"
+    MINSTALLFLAGS="--strip --no-rebuild $MINSTALLFLAGS"
 
     if [ "$INSTALLER" = "n" ]; then
-        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
-        makensis $MDESTDIR/spad.nsi
-        makensis $MDESTDIR/vlc.win32.nsi
-
         VLC_GIT_TAG="$(git describe --tags --long --match '?.*.*' --always)"
+
+        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
+        if [ -z "$WINSTORE" ]; then
+            # generate .exe installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-win32-exe
+            # generate .msi installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-msi
+        fi
+
         rm -rf ${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z
         cd ${BUILD_PATH}/$SHORTARCH-meson && \
             7z a -t7z -m0=lzma -mx=9 -mfb=64 -md=32m -ms=on vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z vlc-$SHORTARCH
     elif [ "$INSTALLER" = "r" ]; then
         meson dist -C ${BUILD_PATH}/$SHORTARCH-meson -j$JOBS --no-tests
         meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
-        makensis $MDESTDIR/spad.nsi
-        makensis $MDESTDIR/vlc.win32.nsi
+        if [ -z "$WINSTORE" ]; then
+            # generate .exe installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-win32-exe
+            # generate .msi installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-msi
+        fi
     elif [ "$INSTALLER" = "u" ]; then
         meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
-        makensis $MDESTDIR/spad.nsi
-        makensis $MDESTDIR/vlc.win32.nsi
+        if [ -z "$WINSTORE" ]; then
+            # generate .exe installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-win32-exe
+            # generate .msi installer
+            ninja -C ${BUILD_PATH}/$SHORTARCH-meson package-msi
+        fi
+    elif [ -n "$INSTALL_PATH" ]; then
+        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
     fi
 else
     info "Bootstrapping"
@@ -693,7 +731,7 @@ else
     fi
 
     info "Configuring VLC"
-    ${SCRIPT_PATH}/configure.sh --host=$TRIPLET --with-contrib=../contrib/$CONTRIB_PREFIX "$WIXPATH" $CONFIGFLAGS LTCFLAGS=-O0
+    ${SCRIPT_PATH}/configure.sh --host=$TRIPLET --with-contrib=../contrib/$CONTRIB_PREFIX --with-wix="$WIXPATH" $CONFIGFLAGS LTCFLAGS=-O0
 
     info "Compiling"
     make -j$JOBS ${COMPILEFLAGS}

@@ -493,7 +493,6 @@ if host_system == 'windows'
             vlc_src_root / 'share',
             vlc_src_root / 'extras/package/win32',
         ],
-        implicit_include_directories: true,
         depend_files: files('../extras/package/win32/libvlccore.dll.manifest'),
     )
 endif
@@ -510,6 +509,7 @@ libvlccore = library(
     c_args: vlccore_cargs,
     link_args: libvlccore_link_args,
     link_with: [vlc_libcompat],
+    link_args: gc_sections_linkargs,
     dependencies: libvlccore_deps,
     install: true,
     install_dir: libdir_path,

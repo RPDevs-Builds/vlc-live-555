@@ -243,6 +243,7 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
     /* Main Interface statusbar */
     /* and title of the Main Interface*/
     connect( THEMIM, &PlayerController::inputChanged, this, &MainCtx::onInputChanged );
+    connect( THEMIM, &PlayerController::hasVideoOutputChanged, this, &MainCtx::onVOutChanged );
 
     /* END CONNECTS ON IM */
 
@@ -527,6 +528,13 @@ void MainCtx::onInputChanged( bool hasInput )
     else if ( ( autoRaise & MainCtx::RAISE_AUDIO ) == 0 )
         return;
     emit askRaise();
+}
+
+void MainCtx::onVOutChanged( bool video )
+{
+    int autoRaise = var_InheritInteger( p_intf, "qt-auto-raise" );
+    if ( video && ( autoRaise & MainCtx::RAISE_VIDEO ) )
+        emit askRaise();
 }
 
 #ifdef KeyPress
@@ -1090,12 +1098,12 @@ void MainCtx::setAttachedToolTip(QObject *toolTip)
         if (Q_UNLIKELY(!engine)) // Very unlikely, if not impossible
             return;
         QQmlComponent component(engine);
-        component.setData(QByteArrayLiteral("import QtQuick; import QtQuick.Controls; Item { }"), {});
+        component.setData(QByteArrayLiteral("import QtQuick; import QtQuick.Templates as T; Item { }"), {});
         QObject* const obj = component.create();
         assert(obj);
         // Consider disabling setting of custom attached
         // tooltip if the following assertion fails:
-        if (QQmlProperty::read(obj, QStringLiteral("ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() != toolTip)
+        if (QQmlProperty::read(obj, QStringLiteral("T.ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() != toolTip)
             qmlWarning(obj) << "Could not set self as custom ToolTip!";
         obj->deleteLater();
     }, Qt::QueuedConnection);

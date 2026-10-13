@@ -28,6 +28,12 @@
 #include <EGL/eglext.h>
 #include <va/va_drmcommon.h>
 
+#ifndef HAVE_LIBDRM 
+# include <drm/drm_fourcc.h>
+#else
+# include <drm_fourcc.h>
+#endif
+
 #include <vlc_common.h>
 #include <vlc_window.h>
 #include <vlc_codec.h>
@@ -46,14 +52,43 @@ typedef void *GLeglImageOES;
 typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum target, GLeglImageOES image);
 #endif
 
-#define DRM_FORMAT_MOD_VENDOR_NONE    0
-#define DRM_FORMAT_RESERVED           ((1ULL << 56) - 1)
 
-#define fourcc_mod_code(vendor, val) \
-        ((((EGLuint64KHR)DRM_FORMAT_MOD_VENDOR_## vendor) << 56) | ((val) & 0x00ffffffffffffffULL))
+/* From max number of plane in libva and DRM */
+#define INTEROP_MAX_PLANES 4
 
-#define DRM_FORMAT_MOD_INVALID  fourcc_mod_code(NONE, DRM_FORMAT_RESERVED)
+/**
+ * It maps the formats from the DRM infrastructure to the attributes 
+ * expected by OpenGL to allocate textures.
+ */
+static const struct {
+    uint32_t drm_fourcc;
+    int32_t internal;
+    uint32_t format, type;
+} plane_tex_cfgs[] = {
+    { DRM_FORMAT_R8,           GL_RED,      GL_RED,  GL_UNSIGNED_BYTE },
+    { DRM_FORMAT_GR88,         GL_RG,       GL_RG,   GL_UNSIGNED_BYTE },
+    { DRM_FORMAT_R16,          GL_R16,      GL_RED,  GL_UNSIGNED_SHORT },
+    { DRM_FORMAT_GR1616,       GL_RG16,     GL_RG,   GL_UNSIGNED_SHORT },
+    { DRM_FORMAT_ABGR16161616, GL_RGBA16,   GL_RGBA, GL_UNSIGNED_SHORT },
+    { DRM_FORMAT_XYUV8888,     GL_RGBA,     GL_RGBA, GL_UNSIGNED_BYTE },
+    { DRM_FORMAT_Y412,         GL_RGBA16,   GL_RGBA, GL_UNSIGNED_SHORT },
+    { DRM_FORMAT_Y410,         GL_RGB10_A2, GL_RGBA,
+      GL_UNSIGNED_INT_2_10_10_10_REV },
+};
 
+struct plane_format
+{
+    uint32_t drm_fourcc;
+    vlc_rational_t width;
+    vlc_rational_t height;
+};
+
+struct frame_format
+{
+    vlc_fourcc_t chroma;
+    size_t plane_count;
+    struct plane_format planes[INTEROP_MAX_PLANES];
+};
 
 struct priv
 {
@@ -76,8 +111,8 @@ struct priv
         PFNGLBINDTEXTUREPROC BindTexture;
     } gl;
 
-    unsigned fourcc;
-    EGLint drm_fourccs[3];
+    unsigned va_fourcc;
+    struct frame_format format;
 
     struct {
         picture_t *                 pic;
@@ -85,20 +120,20 @@ struct priv
          * (GPU tiling, compression, etc...) */
         VADRMPRIMESurfaceDescriptor va_surface_descriptor;
         unsigned                    num_planes;
-        void *                      egl_images[3];
+        EGLImageKHR                 egl_images[INTEROP_MAX_PLANES];
     } last;
 };
 
 static EGLImageKHR
-vaegl_image_create(const struct vlc_gl_interop *interop, EGLint w, EGLint h,
-                   EGLint fourcc, EGLint fd, EGLint offset, EGLint pitch,
-                   EGLuint64KHR modifier)
+CreatePlaneImage(const struct vlc_gl_interop *interop, EGLint w, EGLint h,
+                 uint32_t drm_fourcc, EGLint fd, EGLint offset, EGLint pitch,
+                 EGLuint64KHR modifier)
 {
     struct priv *priv = interop->priv;
     const EGLint attribs[] = {
         EGL_WIDTH, w,
         EGL_HEIGHT, h,
-        EGL_LINUX_DRM_FOURCC_EXT, fourcc,
+        EGL_LINUX_DRM_FOURCC_EXT, (EGLint)drm_fourcc,
         EGL_DMA_BUF_PLANE0_FD_EXT, fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT, pitch,
@@ -112,51 +147,17 @@ vaegl_image_create(const struct vlc_gl_interop *interop, EGLint w, EGLint h,
 }
 
 static void
-vaegl_image_destroy(const struct vlc_gl_interop *interop, EGLImageKHR image)
+ReleaseLastPicture(const struct vlc_gl_interop *interop)
 {
     struct priv *priv = interop->priv;
-    priv->egl.destroyImageKHR(priv->egl.display, image);
-}
 
-static void
-vaegl_release_last_pic(const struct vlc_gl_interop *interop, struct priv *priv)
-{
     for (unsigned i = 0; i < priv->last.num_planes; ++i)
-        vaegl_image_destroy(interop, priv->last.egl_images[i]);
+        priv->egl.destroyImageKHR(priv->egl.display, priv->last.egl_images[i]);
 
     for (unsigned i = 0; i < priv->last.va_surface_descriptor.num_objects; ++i)
         close(priv->last.va_surface_descriptor.objects[i].fd);
 
     picture_Release(priv->last.pic);
-}
-
-static int
-vaegl_init_fourcc(struct priv *priv, unsigned va_fourcc)
-{
-    switch (va_fourcc)
-    {
-        case VA_FOURCC_NV12:
-            priv->drm_fourccs[0] = VLC_FOURCC('R', '8', ' ', ' ');
-            priv->drm_fourccs[1] = VLC_FOURCC('G', 'R', '8', '8');
-            break;
-        case VA_FOURCC_P010:
-        case VA_FOURCC_P012:
-            priv->drm_fourccs[0] = VLC_FOURCC('R', '1', '6', ' ');
-            priv->drm_fourccs[1] = VLC_FOURCC('G', 'R', '3', '2');
-            break;
-        case VA_FOURCC_Y210:
-        case VA_FOURCC_Y212:
-            priv->drm_fourccs[0] = VLC_FOURCC('A', 'B', '4', '8');
-            break;
-        case VA_FOURCC_XYUV:
-        case VA_FOURCC_Y410:
-        case VA_FOURCC_Y412:
-            priv->drm_fourccs[0] = va_fourcc;
-            break;
-        default: return VLC_EGENERIC;
-    }
-    priv->fourcc = va_fourcc;
-    return VLC_SUCCESS;
 }
 
 static int
@@ -170,17 +171,17 @@ tc_vaegl_update(const struct vlc_gl_interop *interop, uint32_t textures[],
 
     if (pic == priv->last.pic)
     {
-        for (unsigned i = 0; i < priv->last.va_surface_descriptor.num_layers; ++i)
+        for (unsigned i = 0; i < priv->last.num_planes; ++i)
         {
             priv->gl.BindTexture(interop->tex_target, textures[i]);
-            priv->glEGLImageTargetTexture2DOES(interop->tex_target, priv->last.egl_images[i]);
+            priv->glEGLImageTargetTexture2DOES(interop->tex_target,
+                                               priv->last.egl_images[i]);
         }
         return VLC_SUCCESS;
     }
 
     VADRMPRIMESurfaceDescriptor va_surface_descriptor;
-    EGLImageKHR egl_images[3] = { };
-    bool release_image = false;
+    EGLImageKHR egl_images[INTEROP_MAX_PLANES] = { NULL };
     unsigned num_planes = 0;
 
     {
@@ -192,8 +193,7 @@ tc_vaegl_update(const struct vlc_gl_interop *interop, uint32_t textures[],
                                       VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
                                       VA_EXPORT_SURFACE_READ_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS,
                                       &va_surface_descriptor))
-        goto error;
-    release_image = true;
+        return VLC_EGENERIC;
 
     num_planes = va_surface_descriptor.num_layers;
     for (unsigned i = 0; i < num_planes; ++i)
@@ -201,12 +201,12 @@ tc_vaegl_update(const struct vlc_gl_interop *interop, uint32_t textures[],
         unsigned obj_idx = va_surface_descriptor.layers[i].object_index[0];
 
         egl_images[i] =
-            vaegl_image_create(interop, tex_width[i], tex_height[i],
-                               priv->drm_fourccs[i],
-                               va_surface_descriptor.objects[obj_idx].fd,
-                               va_surface_descriptor.layers[i].offset[0],
-                               va_surface_descriptor.layers[i].pitch[0],
-                               va_surface_descriptor.objects[obj_idx].drm_format_modifier);
+            CreatePlaneImage(interop, tex_width[i], tex_height[i],
+                             priv->format.planes[i].drm_fourcc,
+                             va_surface_descriptor.objects[obj_idx].fd,
+                             va_surface_descriptor.layers[i].offset[0],
+                             va_surface_descriptor.layers[i].pitch[0],
+                             va_surface_descriptor.objects[obj_idx].drm_format_modifier);
         if (egl_images[i] == NULL)
             goto error;
     }
@@ -218,7 +218,7 @@ tc_vaegl_update(const struct vlc_gl_interop *interop, uint32_t textures[],
     }
 
     if (priv->last.pic != NULL)
-        vaegl_release_last_pic(interop, priv);
+        ReleaseLastPicture(interop);
     priv->last.pic = picture_Hold(pic);
 
     priv->last.va_surface_descriptor = va_surface_descriptor;
@@ -230,14 +230,12 @@ tc_vaegl_update(const struct vlc_gl_interop *interop, uint32_t textures[],
     return VLC_SUCCESS;
 
 error:
-    if (release_image)
-    {
-        for (unsigned i = 0; i < va_surface_descriptor.num_objects; ++i)
-            close(va_surface_descriptor.objects[i].fd);
+    for (unsigned i = 0; i < INTEROP_MAX_PLANES && egl_images[i] != NULL; ++i)
+        priv->egl.destroyImageKHR(priv->egl.display, egl_images[i]);
 
-        for (unsigned i = 0; i < 3 && egl_images[i] != NULL; ++i)
-            vaegl_image_destroy(interop, egl_images[i]);
-    }
+    for (unsigned i = 0; i < va_surface_descriptor.num_objects; ++i)
+        close(va_surface_descriptor.objects[i].fd);
+
     return VLC_EGENERIC;
 }
 
@@ -247,7 +245,7 @@ Close(struct vlc_gl_interop *interop)
     struct priv *priv = interop->priv;
 
     if (priv->last.pic != NULL)
-        vaegl_release_last_pic(interop, priv);
+        ReleaseLastPicture(interop);
 
     free(priv);
 }
@@ -322,17 +320,17 @@ tc_va_check_derive_image(const struct vlc_gl_interop *interop)
         EGLint w = (desc.width * interop->texs[i].w.num) / interop->texs[i].w.den;
         EGLint h = (desc.height * interop->texs[i].h.num) / interop->texs[i].h.den;
         EGLImageKHR egl_image =
-            vaegl_image_create(interop, w, h, priv->drm_fourccs[i],
-                               desc.objects[obj_idx].fd,
-                               desc.layers[i].offset[0], desc.layers[i].pitch[0],
-                               desc.objects[obj_idx].drm_format_modifier);
+            CreatePlaneImage(interop, w, h, priv->format.planes[i].drm_fourcc,
+                             desc.objects[obj_idx].fd,
+                             desc.layers[i].offset[0], desc.layers[i].pitch[0],
+                             desc.objects[obj_idx].drm_format_modifier);
         if (egl_image == NULL)
         {
             msg_Warn(o, "Can't create Image KHR: kernel too old ?");
             ret = VLC_EGENERIC;
             goto done_desc;
         }
-        vaegl_image_destroy(interop, egl_image);
+        priv->egl.destroyImageKHR(priv->egl.display, egl_image);
     }
 
     ret = VLC_SUCCESS;
@@ -347,47 +345,144 @@ done:
     return ret;
 }
 
-static void
-GetChromaVaFourcc(vlc_fourcc_t opaque_chroma, int *va_fourcc,
-                  vlc_fourcc_t *sw_chroma)
+/**
+ * Describe a VLC VAAPI fourcc for libva and how the planes are setup
+ */
+static int
+DescribeChroma(vlc_fourcc_t chroma, unsigned *va_fourcc,
+               struct frame_format *format)
 {
-    switch (opaque_chroma)
+    switch (chroma)
     {
         case VLC_CODEC_VAAPI_420:
             *va_fourcc = VA_FOURCC_NV12;
-            *sw_chroma = VLC_CODEC_NV12;
+            *format = (struct frame_format) {
+                .chroma = VLC_CODEC_NV12,
+                .plane_count = 2,
+                .planes = {
+                    { DRM_FORMAT_R8,   { 1, 1 }, { 1, 1 } },
+                    { DRM_FORMAT_GR88, { 1, 2 }, { 1, 2 } },
+                },
+            };
             break;
         case VLC_CODEC_VAAPI_420_10BPP:
-            *va_fourcc = VA_FOURCC_P010;
-            *sw_chroma = VLC_CODEC_P010;
-            break;
         case VLC_CODEC_VAAPI_420_12BPP:
-            *va_fourcc = VA_FOURCC_P012;
-            *sw_chroma = VLC_CODEC_P012;
+            *va_fourcc = chroma == VLC_CODEC_VAAPI_420_10BPP
+                ? VA_FOURCC_P010 : VA_FOURCC_P012;
+            *format = (struct frame_format) {
+                .chroma = chroma == VLC_CODEC_VAAPI_420_10BPP
+                    ? VLC_CODEC_P010 : VLC_CODEC_P012,
+                .plane_count = 2,
+                .planes = {
+                    { DRM_FORMAT_R16,    { 1, 1 }, { 1, 1 } },
+                    { DRM_FORMAT_GR1616, { 1, 2 }, { 1, 2 } },
+                },
+            };
             break;
         case VLC_CODEC_VAAPI_422_10BPP:
-            *va_fourcc = VA_FOURCC_Y210;
-            *sw_chroma = VLC_CODEC_Y210;
-            break;
         case VLC_CODEC_VAAPI_422_12BPP:
-            *va_fourcc = VA_FOURCC_Y212;
-            *sw_chroma = VLC_CODEC_Y212;
+            *va_fourcc = chroma == VLC_CODEC_VAAPI_422_10BPP
+                ? VA_FOURCC_Y210 : VA_FOURCC_Y212;
+            *format = (struct frame_format) {
+                .chroma = chroma == VLC_CODEC_VAAPI_422_10BPP
+                    ? VLC_CODEC_Y210 : VLC_CODEC_Y212,
+                .plane_count = 1,
+                .planes = {
+                    { DRM_FORMAT_ABGR16161616, { 1, 2 }, { 1, 1 } },
+                },
+            };
             break;
         case VLC_CODEC_VAAPI_444:
             *va_fourcc = VA_FOURCC_XYUV;
-            *sw_chroma = VLC_CODEC_VUYX;
+            *format = (struct frame_format) {
+                .chroma = VLC_CODEC_VUYX,
+                .plane_count = 1,
+                .planes = {
+                    { DRM_FORMAT_XYUV8888, { 1, 1 }, { 1, 1 } },
+                },
+            };
             break;
         case VLC_CODEC_VAAPI_444_10BPP:
-            *va_fourcc = VA_FOURCC_Y410;
-            *sw_chroma = VLC_CODEC_Y410;
-            break;
         case VLC_CODEC_VAAPI_444_12BPP:
-            *va_fourcc = VA_FOURCC_Y412;
-            *sw_chroma = VLC_CODEC_Y412;
+        {
+            const bool is10bit = chroma == VLC_CODEC_VAAPI_444_10BPP;
+
+            *va_fourcc = is10bit ? VA_FOURCC_Y410 : VA_FOURCC_Y412;
+            *format = (struct frame_format) {
+                .chroma = is10bit ? VLC_CODEC_Y410 : VLC_CODEC_Y412,
+                .plane_count = 1,
+                .planes = {
+                    { is10bit ? DRM_FORMAT_Y410 : DRM_FORMAT_Y412,
+                      { 1, 1 }, { 1, 1 } },
+                },
+            };
             break;
+        }
         default:
-            vlc_assert_unreachable();
+            /* Not a vaapi chroma */
+            return VLC_EGENERIC;
     }
+
+    return VLC_SUCCESS;
+}
+
+/**
+ * Setup the interop texture sampling infos from the input frame format.
+ */
+static int
+ConfigureTextures(struct vlc_gl_interop *interop,
+                  const struct frame_format *format)
+{
+    if (format->plane_count > ARRAY_SIZE(interop->texs))
+        return VLC_EGENERIC;
+
+    for (size_t i = 0; i < format->plane_count; i++)
+    {
+        const struct plane_format *plane = &format->planes[i];
+        const size_t cfg = ARRAY_SIZE(plane_tex_cfgs);
+        size_t j;
+
+        for (j = 0; j < cfg; j++)
+            if (plane_tex_cfgs[j].drm_fourcc == plane->drm_fourcc)
+                break;
+
+        if (j == cfg)
+        {
+            msg_Dbg(interop->gl, "no texture for a %4.4s plane",
+                    (const char *)&plane->drm_fourcc);
+            return VLC_EGENERIC;
+        }
+
+        interop->texs[i] = (struct vlc_gl_tex_cfg) {
+            .w = plane->width,
+            .h = plane->height,
+            .internal = plane_tex_cfgs[j].internal,
+            .format = plane_tex_cfgs[j].format,
+            .type = plane_tex_cfgs[j].type,
+        };
+    }
+
+    interop->tex_count = (unsigned)format->plane_count;
+    return VLC_SUCCESS;
+}
+
+/**
+ * Whether we can allocate the textures at the requested precision
+ */
+static bool
+CanAllocateTexture(struct vlc_gl_interop *interop)
+{
+    for (unsigned i = 0; i < interop->tex_count; ++i)
+    {
+        const struct vlc_gl_tex_cfg *tex = &interop->texs[i];
+
+        if (tex->type == GL_UNSIGNED_SHORT &&
+            vlc_gl_interop_GetTexFormatSize(interop, GL_TEXTURE_2D, tex->format,
+                                            tex->internal, tex->type) != 16)
+            return false;
+    }
+
+    return true;
 }
 
 static int
@@ -398,11 +493,8 @@ Open(struct vlc_gl_interop *interop)
     if (interop->vctx == NULL)
         return VLC_EGENERIC;
     vlc_decoder_device *dec_device = vlc_video_context_HoldDevice(interop->vctx);
-    if (dec_device->type != VLC_DECODER_DEVICE_VAAPI
-     || !vlc_vaapi_IsChromaOpaque(interop->fmt_in.i_chroma))
-    {
+    if (dec_device->type != VLC_DECODER_DEVICE_VAAPI)
         goto error;
-    }
 
     struct vlc_gl_extension_vt extension_vt;
     vlc_gl_LoadExtensionFunctions(interop->gl, &extension_vt);
@@ -413,99 +505,16 @@ Open(struct vlc_gl_interop *interop)
     priv = interop->priv = calloc(1, sizeof(struct priv));
     if (unlikely(priv == NULL))
         goto error;
-    priv->fourcc = 0;
 
-    int va_fourcc;
-    vlc_fourcc_t vlc_sw_chroma;
-    GetChromaVaFourcc(interop->fmt_in.i_chroma, &va_fourcc, &vlc_sw_chroma);
-    switch (interop->fmt_in.i_chroma)
-    {
-        case VLC_CODEC_VAAPI_420: /* VLC_CODEC_NV12 */
-            interop->tex_count = 2;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 1},
-                .h = {1, 1},
-                .internal = GL_RED,
-                .format = GL_RED,
-                .type = GL_UNSIGNED_BYTE,
-            };
-            interop->texs[1] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 2},
-                .h = {1, 2},
-                .internal = GL_RG,
-                .format = GL_RG,
-                .type = GL_UNSIGNED_BYTE,
-            };
+    /* Non-vaapi chroma are filtered out here */
+    if (DescribeChroma(interop->fmt_in.i_chroma, &priv->va_fourcc,
+                       &priv->format) != VLC_SUCCESS)
+        goto error;
 
-            break;
-        case VLC_CODEC_VAAPI_420_10BPP: /* VLC_CODEC_P010 */
-        case VLC_CODEC_VAAPI_420_12BPP: /* VLC_CODEC_P012 */
-            if (vlc_gl_interop_GetTexFormatSize(interop, GL_TEXTURE_2D, GL_RG,
-                                                GL_RG16, GL_UNSIGNED_SHORT) != 16)
-                goto error;
+    if (ConfigureTextures(interop, &priv->format) != VLC_SUCCESS)
+        goto error;
 
-            interop->tex_count = 2;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 1},
-                .h = {1, 1},
-                .internal = GL_R16,
-                .format = GL_RED,
-                .type = GL_UNSIGNED_SHORT,
-            };
-            interop->texs[1] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 2},
-                .h = {1, 2},
-                .internal = GL_RG16,
-                .format = GL_RG,
-                .type = GL_UNSIGNED_SHORT,
-            };
-            break;
-        case VLC_CODEC_VAAPI_422_10BPP: /* VLC_CODEC_Y210 */
-        case VLC_CODEC_VAAPI_422_12BPP: /* VLC_CODEC_Y212 */
-            interop->tex_count = 1;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 2},
-                .h = {1, 1},
-                .internal = GL_RGBA16,
-                .format = GL_RGBA,
-                .type = GL_UNSIGNED_SHORT,
-            };
-            break;
-        case VLC_CODEC_VAAPI_444: /* VLC_CODEC_VUYX */
-            interop->tex_count = 1;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 1},
-                .h = {1, 1},
-                .internal = GL_RGBA,
-                .format = GL_RGBA,
-                .type = GL_UNSIGNED_BYTE,
-            };
-            break;
-        case VLC_CODEC_VAAPI_444_10BPP: /* VLC_CODEC_Y410 */
-            interop->tex_count = 1;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 1},
-                .h = {1, 1},
-                .internal = GL_RGB10_A2,
-                .format = GL_RGBA,
-                .type = GL_UNSIGNED_INT_2_10_10_10_REV,
-            };
-            break;
-        case VLC_CODEC_VAAPI_444_12BPP: /* VLC_CODEC_Y412 */
-            interop->tex_count = 1;
-            interop->texs[0] = (struct vlc_gl_tex_cfg) {
-                .w = {1, 1},
-                .h = {1, 1},
-                .internal = GL_RGBA16,
-                .format = GL_RGBA,
-                .type = GL_UNSIGNED_SHORT,
-            };
-            break;
-        default:
-            vlc_assert_unreachable();
-    }
-
-    if (vaegl_init_fourcc(priv, va_fourcc))
+    if (!CanAllocateTexture(interop))
         goto error;
 
     priv->egl.getCurrentDisplay = vlc_gl_GetProcAddress(interop->gl, "eglGetCurrentDisplay");
@@ -558,7 +567,7 @@ Open(struct vlc_gl_interop *interop)
     video_format_TransformBy(&interop->fmt_out, TRANSFORM_VFLIP);
 
     interop->tex_target = GL_TEXTURE_2D;
-    interop->fmt_out.i_chroma = vlc_sw_chroma;
+    interop->fmt_out.i_chroma = priv->format.chroma;
     interop->fmt_out.space = interop->fmt_in.space;
 
     static const struct vlc_gl_interop_ops ops = {
