@@ -1,3 +1,5 @@
+2026.10.23:
+- The bug fix in version 2026.10.21 was not complete.  This should fix it for real.
 2026.10.22:
 - Fixed a bug that had accidentally been introduced in version 2026.07.23: We now correctly
   parse the "RTP/SAVP" and "RTP/SAVP/TCP" profile strings.
