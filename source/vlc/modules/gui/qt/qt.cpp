@@ -60,21 +60,12 @@ extern "C" char **environ;
 #include <QList>
 #include <QTranslator>
 
-#if __has_include(<rhi/qrhi.h>) // Qt 6.6
-#define RHI_HEADER_AVAILABLE
+
 #include <rhi/qrhi.h>
-#elif __has_include(<QtGui/private/qrhi_p.h>) && \
-      QT_VERSION >= QT_VERSION_CHECK(6, 4, 0) // `QRhi::probe()` is available since Qt 6.4
-#define RHI_HEADER_AVAILABLE
-#include <QtGui/private/qrhi_p.h>
-#include <QtGui/private/qrhigles2_p.h> // for `QRhiGles2InitParams`
-#endif
-#ifdef RHI_HEADER_AVAILABLE
 #include <QOffscreenSurface>
 #include <QThreadPool>
 #include <QThread>
 #include "util/asynctask.hpp"
-#endif
 
 #ifdef _WIN32
 #include <QOperatingSystemVersion>
@@ -100,6 +91,7 @@ extern "C" char **environ;
 #include "dialogs/help/help.hpp"     /* Launch Update */
 #include "util/dismiss_popup_event_filter.hpp"
 #include "maininterface/compositor.hpp"
+#include "maininterface/mainui.hpp"
 #include "util/vlctick.hpp"
 #include "util/shared_input_item.hpp"
 #include "util/vlcqtmessagehandler.hpp"
@@ -204,6 +196,12 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
 #define RECENTPLAY_FILTER_LONGTEXT N_( "Regular expression used to filter " \
         "the recent items played in the player." )
 
+#define SLIDERCOL_TEXT N_( "Define the colors of the legacy volume slider" )
+#define SLIDERCOL_LONGTEXT N_( "Define the colors of the legacy volume slider\n" \
+                       "By specifying the 12 numbers separated by a ';'\n" \
+            "Default is '255;255;255;20;226;20;255;176;15;235;30;20'\n" \
+            "An alternative can be '30;30;50;40;40;100;50;50;160;150;150;255'")
+
 #define QT_MODE_TEXT N_( "Selection of the starting mode and look" )
 #define QT_MODE_LONGTEXT N_( "Start VLC with:\n" \
                              " - normal mode\n"  \
@@ -294,7 +292,7 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
 #define PIP_MODE_LONGTEXT N_( "Picture-in-picture mode allows playing video contained in a smaller area so that the interface remains usable." )
 
 #define ACCENT_COLOR_TEXT N_( "Accent color" )
-#define ACCENT_COLOR_LONGTEXT N_( "Adjusts the accent color, special values are 'default' and 'system' (requires Qt 6.6) ." )
+#define ACCENT_COLOR_LONGTEXT N_( "Adjusts the accent color, special values are 'default' and 'system'." )
 
 static const int initial_prefs_view_list[] = { 0, 1, 2 };
 static const char *const initial_prefs_view_list_texts[] =
@@ -436,7 +434,8 @@ vlc_module_begin ()
     add_bool( "qt-error-dialogs", true, ERROR_TEXT,
               nullptr )
 
-    add_obsolete_string( "qt-slider-colours")
+    add_string( "qt-slider-colours", "153;210;153;20;210;20;255;199;15;245;39;29",
+                SLIDERCOL_TEXT, SLIDERCOL_LONGTEXT )
 
     add_bool( "qt-privacy-ask", true, PRIVACY_TEXT, nullptr )
         change_private ()
@@ -1044,7 +1043,6 @@ static void *Thread( void *obj )
         }
     };
 
-#ifdef RHI_HEADER_AVAILABLE
     // NOTE: Qt Quick does not have a cross-API RHI fallback procedure (as of Qt 6.7.1).
     //       We have to manually pick a graphics api here, since the default graphics
     //       api (Direct3D 11.2) may not be supported.
@@ -1253,24 +1251,6 @@ static void *Thread( void *obj )
             p_intf->mainSettings->sync();
         }
     }
-#else
-    if (qEnvironmentVariable("QT_QUICK_BACKEND", QStringLiteral("rhi")) == QLatin1String("rhi"))
-    {
-        if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL)
-        {
-            // At least set the default format without RHI probing if RHI headers are not available:
-            if (std::optional<QSurfaceFormat> format = createCompatibleOpenGLFormat())
-            {
-                QSurfaceFormat::setDefaultFormat(*format);
-            }
-            else
-            {
-                qCritical() << "Falling back to software mode...";
-                QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-            }
-        }
-    }
-#endif
 
     app.setApplicationDisplayName( qtr("VLC media player") );
     app.setApplicationVersion( QString::fromUtf8(VERSION_MESSAGE) );
@@ -1500,6 +1480,9 @@ static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason )
     if ( p_intf->p_compositor &&  cleanupReason == CLEANUP_APP_TERMINATED)
     {
         p_intf->p_compositor.reset();
+
+        // the QML engines are destroyed along with the compositor
+        MainUI::clearPendingQMLTypes();
 
         delete p_intf->mainSettings;
         p_intf->mainSettings = nullptr;

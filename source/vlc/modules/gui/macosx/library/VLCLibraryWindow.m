@@ -22,6 +22,7 @@
 
 #import "VLCLibraryWindow.h"
 
+#import <Carbon/Carbon.h>
 #import <QuartzCore/CAMediaTimingFunction.h>
 
 #import <vlc_common.h>
@@ -30,6 +31,8 @@
 #import <vlc_url.h>
 
 #import "VLCLibraryDataTypes.h"
+
+#import "coreinteraction/VLCHotkeysController.h"
 
 #import "extensions/NSAnimationContext+VLCAdditions.h"
 #import "extensions/NSColor+VLCAdditions.h"
@@ -64,6 +67,8 @@
 #import "library/home-library/VLCLibraryHomeViewController.h"
 
 #import "library/playlist-library/VLCLibraryPlaylistViewController.h"
+
+#import "library/search-library/VLCLibrarySearchOverviewController.h"
 
 #import "library/video-library/VLCLibraryVideoDataSource.h"
 #import "library/video-library/VLCLibraryVideoViewController.h"
@@ -292,10 +297,20 @@ static int ShowController(vlc_object_t * __unused p_this,
 - (void)applySegmentView:(VLCLibrarySegment *)segment
 {
     self.librarySearchField.placeholderString = segment.searchFieldPlaceholder;
+    const BOOL wasSearchOverview = [self.librarySegmentViewController isKindOfClass:VLCLibrarySearchOverviewController.class];
     if (![self.librarySegmentViewController isKindOfClass:segment.libraryViewControllerClass]) {
+        [self stopSearchTimer];
+        if (wasSearchOverview) {
+            [(VLCLibrarySearchOverviewController *)self.librarySegmentViewController dismissSearch];
+        }
         _librarySegmentViewController = [segment newLibraryViewController];
     }
     [self applyToolbarDisplayFlagsForSegment:segment];
+    if ([self.librarySegmentViewController isKindOfClass:VLCLibrarySearchOverviewController.class]) {
+        [VLCMain.sharedInstance.libraryController filterByString:@""];
+    } else if (wasSearchOverview) {
+        [self updateFilterString];
+    }
     [segment presentLibraryViewUsingController:self.librarySegmentViewController];
     [self invalidateRestorableState];
 }
@@ -324,6 +339,7 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)displayLibraryView:(NSView *)view
 {
+    self.splitViewController.libraryContentUnderlapsNavigationSidebar = view == self.homeLibraryView;
     view.translatesAutoresizingMaskIntoConstraints = NO;
     if ([self.libraryTargetView.subviews containsObject:self.loadingOverlayView]) {
         self.libraryTargetView.subviews = @[view, self.loadingOverlayView];
@@ -368,6 +384,7 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)displayNoResultsMessage
 {
+    self.splitViewController.libraryContentUnderlapsNavigationSidebar = NO;
     if (self.noResultsLabel == nil) {
         _noResultsLabel = [[VLCNoResultsLabel alloc] init];
         _noResultsLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -417,15 +434,18 @@ static int ShowController(vlc_object_t * __unused p_this,
 - (IBAction)filterLibrary:(id)sender
 {
     [self stopSearchTimer];
+    if ([self.librarySegmentViewController isKindOfClass:VLCLibrarySearchOverviewController.class]) {
+        if (!self.embeddedVideoPlaybackActive) {
+            [(VLCLibrarySearchOverviewController *)self.librarySegmentViewController presentOverview];
+        }
+        return;
+    }
+
     self.searchInputTimer = [NSTimer scheduledTimerWithTimeInterval:0.3
                                                             target:self
                                                            selector:@selector(updateFilterString)
                                                            userInfo:nil
                                                             repeats:NO];
-
-    if (self.librarySegmentType == VLCLibraryHomeSegmentType) {
-        return;
-    }
 
     // Trigger completions
     NSText * const fieldEditor = self.librarySearchField.currentEditor;
@@ -436,7 +456,7 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)updateFilterString
 {
-    if (self.librarySegmentType == VLCLibraryHomeSegmentType) {
+    if ([self.librarySegmentViewController isKindOfClass:VLCLibrarySearchOverviewController.class]) {
         return;
     }
 
@@ -612,6 +632,7 @@ static int ShowController(vlc_object_t * __unused p_this,
 
 - (void)presentVideoView
 {
+    self.splitViewController.libraryContentUnderlapsNavigationSidebar = NO;
     for (NSView *subview in _libraryTargetView.subviews) {
         [subview removeFromSuperview];
     }
@@ -850,6 +871,24 @@ static int ShowController(vlc_object_t * __unused p_this,
     if (!self.splitViewController.mainVideoModeEnabled) {
         [self showControlsBar];
     }
+}
+
+- (void)keyDown:(NSEvent *)event
+{
+    if (event.keyCode == kVK_Space) {
+        if (self.firstResponder != self.librarySearchField) {
+            // First try performKeyEquivalent on the first responder
+            if ([self.firstResponder respondsToSelector:@selector(performKeyEquivalent:)] &&
+                [self.firstResponder performKeyEquivalent:event]) {
+                return;
+            }
+
+            // Only use hotkey if no one else handled it
+            if ([VLCMain.sharedInstance.hotkeysController performKeyEquivalent:event])
+                return;
+        }
+    }
+    [super keyDown:event];
 }
 
 @end

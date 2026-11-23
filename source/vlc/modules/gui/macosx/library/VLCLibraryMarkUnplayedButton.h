@@ -1,39 +1,32 @@
 /*****************************************************************************
- * Copyright (C) 2024 VLC authors and VideoLAN
+ * VLCLibraryMarkUnplayedButton.h: MacOS X interface module
+ *****************************************************************************
+ * Copyright (C) 2026 VLC authors and VideoLAN
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * ( at your option ) any later version.
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-#ifndef DOUBLECLICKIGNORINGITEM_HPP
-#define DOUBLECLICKIGNORINGITEM_HPP
 
-#include <QQuickItem>
+#import <Cocoa/Cocoa.h>
+#import <vlc_media_library.h>
 
-// TODO: Remove Qt >= 6.4
-//       413522: QQuickItem: ignore double-clicks by default; remove allowDoubleClick
-class DoubleClickIgnoringItem : public QQuickItem
-{
-    // Q_OBJECT
+NS_ASSUME_NONNULL_BEGIN
 
-public:
-    DoubleClickIgnoringItem(QQuickItem *parent = nullptr) : QQuickItem(parent) { }
+@interface VLCLibraryMarkUnplayedButton : NSButton
 
-protected:
-    void mouseDoubleClickEvent(QMouseEvent *ev) override
-    {
-        ev->ignore();
-    }
-};
+- (void)configureForMediaType:(vlc_ml_media_type_t)mediaType;
 
-#endif // DOUBLECLICKIGNORINGITEM_HPP
+@end
+
+NS_ASSUME_NONNULL_END

@@ -46,6 +46,8 @@
 
 #include <Metal/Metal.h>
 
+#import "coreinteraction/VLCHotkeysController.h"
+
 #import "extensions/NSString+Helpers.h"
 
 #import "library/VLCLibraryController.h"
@@ -120,6 +122,7 @@ NSString * const kVLCPreferencesVersion = @"VLCPreferencesVersion";
     VLCConvertAndSaveWindowController *_convertAndSaveWindow;
     VLCClickerManager *_clickerManager;
     VLCDetachedAudioWindow *_detachedAudioWindow;
+    VLCHotkeysController *_hotkeysController;
 #ifdef HAVE_SPARKLE
     SPUStandardUpdaterController *_sparkleUpdaterController;
 #endif
@@ -316,6 +319,8 @@ static VLCMain *sharedInstance = nil;
         _videoEffectsPanel = [[VLCVideoEffectsWindowController alloc] init];
         _audioEffectsPanel = [[VLCAudioEffectsWindowController alloc] init];
 
+        _hotkeysController = [[VLCHotkeysController alloc] init];
+
         if ([NSApp currentSystemPresentationOptions] & NSApplicationPresentationFullScreen)
             [_playQueueController.playerController setFullscreen:YES];
     }
@@ -361,11 +366,7 @@ static VLCMain *sharedInstance = nil;
 {
     _launched = YES;
 
-    if (_libraryWindowController == nil) {
-        _libraryWindowController = [[VLCLibraryWindowController alloc] initWithLibraryWindow];
-    }
-
-    [_libraryWindowController.window makeKeyAndOrderFront:nil];
+    [self.libraryWindow makeKeyAndOrderFront:nil];
 
     if (!_p_intf)
         return;
@@ -489,6 +490,11 @@ static VLCMain *sharedInstance = nil;
 
 - (VLCLibraryWindow *)libraryWindow
 {
+    // Video output can be enabled before applicationDidFinishLaunching:.
+    if (_libraryWindowController == nil) {
+        _libraryWindowController = [[VLCLibraryWindowController alloc] initWithLibraryWindow];
+    }
+
     return (VLCLibraryWindow *)_libraryWindowController.window;
 }
 

@@ -139,6 +139,7 @@ class MainCtx : public QObject
     Q_PROPERTY(MainInterfaceModes mainInterfaceModes READ getMainInterfaceModes NOTIFY mainInterfaceModesChanged FINAL)
     Q_PROPERTY(MainInterfaceMode effectiveMainInterfaceMode READ getEffectiveMainInterfaceMode NOTIFY mainInterfaceModesChanged FINAL)
     Q_PROPERTY(MainInterfaceMode initialEffectiveMainInterfaceMode READ getInitialEffectiveMainInterfaceMode CONSTANT FINAL)
+    Q_PROPERTY(QString volumeSliderColors READ volumeSliderColors CONSTANT FINAL)
 
     //Property to get Operating System info
     Q_PROPERTY(OsType osName READ getOSName CONSTANT)
@@ -298,15 +299,6 @@ public:
                                                                         unsigned char patch)
                                                                        { return QT_VERSION_CHECK(major, minor, patch); }
 
-    Q_INVOKABLE static /*constexpr*/ inline bool qtQuickControlRejectsHoverEvents() {
-        // QTBUG-100543
-        return (QT_VERSION < QT_VERSION_CHECK(6, 3, 0) && QT_VERSION >= QT_VERSION_CHECK(6, 2, 5)) ||
-               (QT_VERSION < QT_VERSION_CHECK(6, 4, 0) && QT_VERSION >= QT_VERSION_CHECK(6, 3, 1)) ||
-               (QT_VERSION >= QT_VERSION_CHECK(6, 4, 0));
-    }
-
-    Q_INVOKABLE QJSValue urlListToMimeData(const QJSValue& array);
-
     Q_INVOKABLE static void setFiltersChildMouseEvents(QQuickItem *item, bool enable)
     {
         assert(item);
@@ -403,6 +395,8 @@ public:
     MainInterfaceMode getEffectiveMainInterfaceMode() const;
 
     MainInterfaceMode getInitialEffectiveMainInterfaceMode() const { return m_initialEffectiveMainInterfaceMode; }
+
+    Q_INVOKABLE QString volumeSliderColors() const;
 
     Q_INVOKABLE static double dp(const double px, const double scale);
     Q_INVOKABLE double dp(const double px) const;
