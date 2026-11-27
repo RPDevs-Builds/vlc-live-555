@@ -33,11 +33,13 @@
 #import <vlc_bits.h>
 #import <vlc_boxes.h>
 #import "../vt_utils.h"
+#import "../cc.h"
 #import "../../packetizer/h264_nal.h"
 #import "../../packetizer/h264_slice.h"
 #import "../../packetizer/hxxx_nal.h"
 #import "../../packetizer/hxxx_sei.h"
 #import "../../packetizer/vp9_frame.h"
+#import "../../packetizer/av1_obu.h"
 #import "vp9_repack.h"
 #import "pacer.h"
 #import "dpb.h"
@@ -63,6 +65,12 @@
 enum { kCMVideoCodecType_VP9 = 'vp09' };
 #endif
 
+#if (!TARGET_OS_OSX    || __MAC_OS_X_VERSION_MAX_ALLOWED   < 130000) && \
+    (!TARGET_OS_IPHONE || __IPHONE_OS_VERSION_MAX_ALLOWED  < 160000) && \
+    (!TARGET_OS_TV     || __TV_OS_VERSION_MAX_ALLOWED      < 160000)
+enum { kCMVideoCodecType_AV1 = 'av01' };
+#endif
+
 #pragma mark - local prototypes
 
 enum vtsession_status
@@ -82,6 +90,7 @@ static int HandleVTStatus(decoder_t *, OSStatus, enum vtsession_status *);
 static int DecodeBlock(decoder_t *, block_t *);
 static void RequestFlush(decoder_t *);
 static void Drain(decoder_t *p_dec, bool flush);
+static bool UpdateHDRMetadata(decoder_t *, const frame_info_t *);
 static void DecoderCallback(void *, void *, OSStatus, VTDecodeInfoFlags,
                             CVPixelBufferRef, CMTime, CMTime);
 static Boolean deviceSupportsHardwareDecode(CMVideoCodecType codec);
@@ -356,6 +365,8 @@ static block_t *ProcessBlockH264(decoder_t *p_dec, block_t *p_block, bool *pb_co
     struct vt_h264_context *h264ctx = p_sys->p_codec_context;
     p_block = hxxx_helper_process_block(&h264ctx->hh, p_block);
     *pb_config_changed = hxxx_helper_has_new_config(&h264ctx->hh);
+    if (*pb_config_changed)
+        h264ctx->b_extra_has_config = false;
     return p_block;
 }
 
@@ -478,18 +489,16 @@ static bool LateStartH264(decoder_t *p_dec)
     return !hxxx_helper_has_config(&h264ctx->hh);
 }
 
-static bool ConfigureVoutH264(decoder_t *p_dec)
+static bool ConfigureVoutHxxx(decoder_t *p_dec, const struct hxxx_helper *hh,
+                              bool b_extra_has_config)
 {
-    decoder_sys_t *p_sys = p_dec->p_sys;
-    struct vt_h264_context *h264ctx = p_sys->p_codec_context;
-
     if (p_dec->fmt_in->video.primaries == COLOR_PRIMARIES_UNDEF)
     {
         video_color_primaries_t primaries;
         video_transfer_func_t transfer;
         video_color_space_t colorspace;
         video_color_range_t full_range;
-        if (hxxx_helper_get_colorimetry(&h264ctx->hh,
+        if (hxxx_helper_get_colorimetry(hh,
                                         &primaries,
                                         &transfer,
                                         &colorspace,
@@ -502,11 +511,12 @@ static bool ConfigureVoutH264(decoder_t *p_dec)
         }
     }
 
-    if (!p_dec->fmt_in->video.i_visible_width || !p_dec->fmt_in->video.i_visible_height)
+    if (!b_extra_has_config ||
+        !p_dec->fmt_in->video.i_visible_width || !p_dec->fmt_in->video.i_visible_height)
     {
         unsigned i_offset_x, i_offset_y, i_width, i_height, i_vis_width, i_vis_height;
         if (VLC_SUCCESS ==
-           hxxx_helper_get_current_picture_size(&h264ctx->hh,
+           hxxx_helper_get_current_picture_size(hh,
                                                 &i_offset_x, &i_offset_y,
                                                 &i_width, &i_height,
                                                 &i_vis_width, &i_vis_height))
@@ -525,7 +535,7 @@ static bool ConfigureVoutH264(decoder_t *p_dec)
     {
         int i_sar_num, i_sar_den;
         if (VLC_SUCCESS ==
-            hxxx_helper_get_current_sar(&h264ctx->hh, &i_sar_num, &i_sar_den))
+            hxxx_helper_get_current_sar(hh, &i_sar_num, &i_sar_den))
         {
             p_dec->fmt_out.video.i_sar_num = i_sar_num;
             p_dec->fmt_out.video.i_sar_den = i_sar_den;
@@ -533,6 +543,13 @@ static bool ConfigureVoutH264(decoder_t *p_dec)
     }
 
     return true;
+}
+
+static bool ConfigureVoutH264(decoder_t *p_dec)
+{
+    decoder_sys_t *p_sys = p_dec->p_sys;
+    struct vt_h264_context *h264ctx = p_sys->p_codec_context;
+    return ConfigureVoutHxxx(p_dec, &h264ctx->hh, h264ctx->b_extra_has_config);
 }
 
 static bool VideoToolboxNeedsToRestartH264(decoder_t *p_dec,
@@ -546,6 +563,10 @@ static bool VideoToolboxNeedsToRestartH264(decoder_t *p_dec,
     int sarn, sard;
 
     if (hxxx_helper_get_current_picture_size(hh, &ox, &oy, &w, &h, &vw, &vh) != VLC_SUCCESS)
+        return true;
+
+    if (vw != p_dec->fmt_out.video.i_visible_width ||
+        vh != p_dec->fmt_out.video.i_visible_height)
         return true;
 
     if (hxxx_helper_get_current_sar(hh, &sarn, &sard) != VLC_SUCCESS)
@@ -568,7 +589,13 @@ static bool VideoToolboxNeedsToRestartH264(decoder_t *p_dec,
         {
             b_ret = !VTDecompressionSessionCanAcceptFormatDescription(session,
                                                                       newvideoFormatDesc);
-            CFRelease(newvideoFormatDesc);
+            if (b_ret)
+                CFRelease(newvideoFormatDesc);
+            else
+            {
+                CFRelease(p_sys->videoFormatDescription);
+                p_sys->videoFormatDescription = newvideoFormatDesc;
+            }
         }
         CFRelease(decoderConfiguration);
     }
@@ -856,7 +883,7 @@ static bool ConfigureVoutHEVC(decoder_t *p_dec)
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     struct vt_hevc_context *hevcctx = p_sys->p_codec_context;
-    if (!ConfigureVoutH264(p_dec))
+    if (!ConfigureVoutHxxx(p_dec, &hevcctx->hh, hevcctx->b_extra_has_config))
         return false;
 
     if (hevcctx->b_dovi)
@@ -870,7 +897,17 @@ static bool ConfigureVoutHEVC(decoder_t *p_dec)
     return true;
 }
 
-#define ProcessBlockHEVC ProcessBlockH264
+static block_t *ProcessBlockHEVC(decoder_t *p_dec, block_t *p_block, bool *pb_config_changed)
+{
+    decoder_sys_t *p_sys = p_dec->p_sys;
+    struct vt_hevc_context *hevcctx = p_sys->p_codec_context;
+    p_block = hxxx_helper_process_block(&hevcctx->hh, p_block);
+    *pb_config_changed = hxxx_helper_has_new_config(&hevcctx->hh);
+    if (*pb_config_changed)
+        hevcctx->b_extra_has_config = false;
+    return p_block;
+}
+
 #define VideoToolboxNeedsToRestartHEVC VideoToolboxNeedsToRestartH264
 
 static CFDictionaryRef CopyDecoderExtradataMPEG4(decoder_t *p_dec)
@@ -1010,6 +1047,261 @@ static bool ConfigureVoutVP9(decoder_t *p_dec)
         fmt->i_width = vlc_align(h->frame_width_minus1 + 1, VT_ALIGNMENT);
         fmt->i_visible_height = h->render_height_minus1 + 1;
         fmt->i_height = vlc_align(h->frame_height_minus1 + 1, VT_ALIGNMENT);
+    }
+
+    return true;
+}
+
+/** AV1 Specific */
+
+struct vt_av1_context
+{
+    av1_OBU_sequence_header_t *seq;
+    cc_data_t cc;
+};
+
+static void CleanAV1(void *codec_ctx)
+{
+    struct vt_av1_context *av1ctx = codec_ctx;
+    if (av1ctx->seq)
+        AV1_release_sequence_header(av1ctx->seq);
+    free(av1ctx);
+}
+
+static void ParseAV1HDRMetadata(decoder_t *dec, const uint8_t *p_obu,
+                                size_t i_obu, frame_info_t *p_info)
+{
+    av1_OBU_hdr_metadata_t meta;
+    if (!AV1_OBU_parse_hdr_metadata(p_obu, i_obu, &meta))
+        return;
+
+    const video_format_t *fmt = &dec->fmt_in->video;
+    if (meta.i_type == AV1_METADATA_TYPE_HDR_MDCV &&
+        !fmt->mastering.max_luminance)
+    {
+        for (size_t i = 0; i < ARRAY_SIZE(p_info->mastering.primaries); i++)
+            p_info->mastering.primaries[i] = meta.mastering.primaries[i];
+        for (size_t i = 0; i < ARRAY_SIZE(p_info->mastering.white_point); i++)
+            p_info->mastering.white_point[i] = meta.mastering.white_point[i];
+        p_info->mastering.max_luminance = meta.mastering.max_luminance;
+        p_info->mastering.min_luminance = meta.mastering.min_luminance;
+    }
+    else if (meta.i_type == AV1_METADATA_TYPE_HDR_CLL &&
+             !fmt->lighting.MaxCLL && !fmt->lighting.MaxFALL)
+    {
+        p_info->lighting.MaxCLL = meta.lighting.MaxCLL;
+        p_info->lighting.MaxFALL = meta.lighting.MaxFALL;
+    }
+}
+
+static bool ExtractAV1Captions(struct vt_av1_context *av1ctx,
+                               const uint8_t *p_obu, size_t i_obu)
+{
+    uint8_t i_country_code;
+    const uint8_t *p_payload;
+    size_t i_payload;
+    if (!AV1_OBU_get_itut_t35(p_obu, i_obu, &i_country_code,
+                              &p_payload, &i_payload) ||
+        i_country_code != 0xb5 || i_payload <= 9 ||
+        memcmp(p_payload, "\x00\x31GA94\x03", 7))
+        return false;
+
+    cc_Extract(&av1ctx->cc, CC_PAYLOAD_GA94, true,
+               &p_payload[7], i_payload - 7);
+    return true;
+}
+
+static void QueueAV1Captions(decoder_t *dec, struct vt_av1_context *av1ctx,
+                             vlc_tick_t pts)
+{
+    cc_data_t *cc = &av1ctx->cc;
+    if (!cc->b_reorder && !cc->i_data)
+        return;
+
+    block_t *p_cc = block_Alloc(cc->i_data);
+    if (p_cc)
+    {
+        memcpy(p_cc->p_buffer, cc->p_data, cc->i_data);
+        p_cc->i_pts = p_cc->i_dts = pts;
+        decoder_cc_desc_t desc = {
+            .i_608_channels = cc->i_608channels,
+            .i_708_channels = cc->i_708channels,
+            .i_reorder_depth = 4,
+        };
+        decoder_QueueCc(dec, p_cc, &desc);
+    }
+    cc_Flush(cc);
+}
+
+static bool InitAV1(decoder_t *dec)
+{
+    decoder_sys_t *sys = dec->p_sys;
+
+    struct vt_av1_context *av1ctx = calloc(1, sizeof(*av1ctx));
+    if (!av1ctx)
+        return false;
+    cc_Init(&av1ctx->cc);
+
+    if (dec->fmt_in->i_extra > 4)
+    {
+        AV1_OBU_iterator_ctx_t ctx;
+        AV1_OBU_iterator_init(&ctx, (const uint8_t *)dec->fmt_in->p_extra + 4,
+                              dec->fmt_in->i_extra - 4);
+
+        frame_info_t info = { 0 };
+        const uint8_t *p_obu;
+        size_t i_obu;
+        while (AV1_OBU_iterate_next(&ctx, &p_obu, &i_obu))
+        {
+            switch (AV1_OBUGetType(p_obu))
+            {
+                case AV1_OBU_SEQUENCE_HEADER:
+                    if (!av1ctx->seq)
+                        av1ctx->seq = AV1_OBU_parse_sequence_header(p_obu, i_obu);
+                    break;
+                case AV1_OBU_METADATA:
+                    ParseAV1HDRMetadata(dec, p_obu, i_obu, &info);
+                    break;
+                default:
+                    break;
+            }
+        }
+        UpdateHDRMetadata(dec, &info);
+    }
+
+    sys->p_codec_context = av1ctx;
+    return true;
+}
+
+static bool CodecSupportedAV1(decoder_t *dec)
+{
+    decoder_sys_t *sys = dec->p_sys;
+    struct vt_av1_context *av1ctx = sys->p_codec_context;
+
+    if (dec->fmt_in->i_extra <= 4 || !av1ctx->seq)
+        return false;
+
+    int profile, level, tier;
+    AV1_get_profile_level(av1ctx->seq, &profile, &level, &tier);
+
+    // Currently we have no API to query these values,
+    // it should be switched to such API once it exists.
+    // FB13801807
+    if (profile != 0 || level > 16)
+        return false;
+
+    // TODO: Support level idx 31 (unrestricted)
+    return true;
+}
+
+static CFDictionaryRef CopyDecoderExtradataAV1(decoder_t *dec)
+{
+    return ExtradataInfoCreate(CFSTR("av1C"),
+                               dec->fmt_in->p_extra,
+                               dec->fmt_in->i_extra);
+}
+
+static bool FillReorderInfoAV1(decoder_t *dec, const block_t *block,
+                               frame_info_t *info)
+{
+    decoder_sys_t *sys = dec->p_sys;
+    struct vt_av1_context *av1ctx = sys->p_codec_context;
+    cc_Flush(&av1ctx->cc);
+
+    AV1_OBU_iterator_ctx_t ctx;
+    AV1_OBU_iterator_init(&ctx, block->p_buffer, block->i_buffer);
+
+    const uint8_t *p_obu;
+    size_t i_obu;
+    bool b_captions = false;
+    bool b_first_frame = true;
+
+    info->i_num_ts = 2;
+    info->b_field = false;
+    info->b_progressive = true;
+
+    while (AV1_OBU_iterate_next(&ctx, &p_obu, &i_obu)) {
+        switch (AV1_OBUGetType(p_obu)) {
+            case AV1_OBU_SEQUENCE_HEADER:
+            {
+                av1_OBU_sequence_header_t *seq =
+                    AV1_OBU_parse_sequence_header(p_obu, i_obu);
+                if (!seq)
+                    return false;
+
+                if (av1ctx->seq)
+                    AV1_release_sequence_header(av1ctx->seq);
+
+                av1ctx->seq = seq;
+                break;
+            }
+
+            case AV1_OBU_FRAME_HEADER:
+            case AV1_OBU_REDUNDANT_FRAME_HEADER:
+            case AV1_OBU_FRAME:
+            {
+                if (!av1ctx->seq)
+                    return false;
+
+                av1_OBU_frame_header_t *frame_header =
+                    AV1_OBU_parse_frame_header(p_obu, i_obu, av1ctx->seq);
+                if (!frame_header)
+                    return false;
+
+                if (b_first_frame)
+                {
+                    info->b_keyframe =
+                        AV1_get_frame_type(frame_header) == AV1_FRAME_TYPE_KEY &&
+                        AV1_get_frame_visibility(frame_header);
+                    b_first_frame = false;
+                }
+                info->b_output_needed = AV1_get_frame_visibility(frame_header);
+
+                AV1_release_frame_header(frame_header);
+                break;
+            }
+
+            case AV1_OBU_METADATA:
+                ParseAV1HDRMetadata(dec, p_obu, i_obu, info);
+                b_captions |= ExtractAV1Captions(av1ctx, p_obu, i_obu);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    if (b_captions)
+        QueueAV1Captions(dec, av1ctx, block->i_pts);
+    return true;
+}
+
+static bool ConfigureVoutAV1(decoder_t *dec)
+{
+    decoder_sys_t *sys = dec->p_sys;
+    struct vt_av1_context *av1ctx = sys->p_codec_context;
+    video_format_t *fmt = &dec->fmt_out.video;
+
+    if (!av1ctx->seq)
+        return true;
+
+    if (dec->fmt_in->video.primaries == COLOR_PRIMARIES_UNDEF)
+        AV1_get_colorimetry(av1ctx->seq, &fmt->primaries, &fmt->transfer,
+                            &fmt->space, &fmt->color_range);
+
+    if (sys->i_cvpx_format == 0 && !sys->b_cvpx_format_forced)
+    {
+        switch (AV1_get_chroma(av1ctx->seq))
+        {
+            case VLC_CODEC_I420:
+                sys->i_cvpx_format = GetBestChroma(1, 8, 8);
+                break;
+            case VLC_CODEC_I420_10L:
+                sys->i_cvpx_format = GetBestChroma(1, 10, 10);
+                break;
+            default:
+                break;
+        }
     }
 
     return true;
@@ -1162,6 +1454,15 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
 
         case VLC_CODEC_VP9:
             return kCMVideoCodecType_VP9;
+
+        case VLC_CODEC_AV1:
+            if (!deviceSupportsHardwareDecode(kCMVideoCodecType_AV1))
+            {
+                msg_Warn(p_dec, "device doesn't support AV1");
+                return 0;
+            }
+            return kCMVideoCodecType_AV1;
+
 #if !TARGET_OS_IPHONE
         case VLC_CODEC_H263:
             return kCMVideoCodecType_H263;
@@ -1664,6 +1965,18 @@ static int OpenDecoder(vlc_object_t *p_this)
 
         case kCMVideoCodecType_MPEG4Video:
             p_sys->pf_copy_extradata = CopyDecoderExtradataMPEG4;
+            break;
+
+        case kCMVideoCodecType_AV1:
+            p_sys->pf_codec_init = InitAV1;
+            p_sys->pf_codec_clean = CleanAV1;
+            p_sys->pf_codec_supported = CodecSupportedAV1;
+            p_sys->pf_configure_vout = ConfigureVoutAV1;
+            p_sys->pf_copy_extradata = CopyDecoderExtradataAV1;
+            p_sys->pf_fill_reorder_info = FillReorderInfoAV1;
+            p_sys->dpb.b_strict_reorder = true;
+            p_sys->dpb.b_poc_based_reorder = false;
+            p_sys->start_sync_state = STATE_BITSTREAM_WAITING_RAP;
             break;
 
         default:

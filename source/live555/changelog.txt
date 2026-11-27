@@ -1,3 +1,8 @@
+2026.11.27:
+- Updated the "RTSPServer" code to reject HTTP "GET" and "POST" requests (used to set up
+  RTSP-over-HTTP tunneling) if we have already set up a RTSP-over-HTTP tunnel.
+  Also, protect against sockets being created but not freed if we handle multiple "POST"
+  requests.  (Thanks to Ozgun Kultekin, Wakefiled (wakefield.co) for reporting this.)
 2026.11.22:
 - Made "OnDemandServerMediaSubsession" a little more bulletproof against some potential
   memory leaks.
